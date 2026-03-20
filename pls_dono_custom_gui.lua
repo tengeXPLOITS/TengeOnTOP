@@ -30,6 +30,14 @@ if not LocalPlayer then
     return
 end
 
+local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
+if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
+    getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
+end
+if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_SOURCE == "" then
+    getgenv().PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
+end
+
 local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
 local voiceEnabled = false
@@ -2018,7 +2026,10 @@ local function claimBoothNow()
 end
 
 do
-    local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+    local queueOnTeleport = (syn and syn.queue_on_teleport)
+        or queue_on_teleport
+        or queueonteleport
+        or (fluxus and fluxus.queue_on_teleport)
     if queueOnTeleport then
         if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) == "string" and getgenv().PLS_DONO_AUTOEXEC_SOURCE ~= "" then
             pcall(function()
