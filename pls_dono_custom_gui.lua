@@ -386,7 +386,6 @@ local emotePresetOrder = {
     "happy",
     "korean gretting",
     "sturdy",
-    "shake that thang",
     "flowing breeze",
     "wake up call-ksi",
     "nonchalant",
@@ -403,7 +402,6 @@ local emotePresets = {
     ["happy"] = "10714352626",
     ["korean gretting"] = "9527883498",
     ["sturdy"] = "102571052202995",
-    ["shake that thang"] = "118364690209655",
     ["flowing breeze"] = "10714342957",
     ["wake up call-ksi"] = "10714168145",
     ["nonchalant"] = "126899447275562",
@@ -609,12 +607,16 @@ local updateBoothTextNow
 
 local flaggedBoothTexts = {
     "helicopter",
-    "gifting donations",
+    "gifting",
     "5x",
     "multiply",
-    "multiply your",
-    "help",
+    "multiplying",
+    "improving",
     "raising",
+    "1R$=",
+    "1R",
+    "homeless bacon",
+    
 }
 
 local modUsernames = {
@@ -1695,7 +1697,7 @@ serverHopNow = function()
             local playing = tonumber(server.playing or 0) or 0
             local maxPlayers = tonumber(server.maxPlayers or 0) or 0
             if id and id ~= game.JobId and maxPlayers > 0 and playing < maxPlayers and not hasVisited(id) then
-                if playing >= 21 and playing <= 23 then
+                if playing >= 23 and playing <= 24 then
                     table.insert(candidates, id)
                 end
             end
@@ -2146,7 +2148,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE 💸 | @buriedinplainview's UI reworked"
+    title.Text = "PLS DONATE 💸 | Updated: 3/20/26"
     title.Parent = topBar
 end
 
