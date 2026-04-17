@@ -6,44 +6,8 @@
     - Persistent settings with JSON file
 ]]
 
-if type(task) ~= "table" then
-    task = {}
-end
-local waitFunc = nil
-if type(task.wait) == "function" then
-    waitFunc = task.wait
-elseif type(wait) == "function" then
-    waitFunc = wait
-else
-    waitFunc = function()
-        -- fallback, avoid nil calls in restrictive executors
-    end
-end
-
-task.wait = task.wait or waitFunc
-
-if type(task.spawn) ~= "function" then
-    task.spawn = function(fn, ...)
-        local co = coroutine.create(fn)
-        coroutine.resume(co, ...)
-        return co
-    end
-end
-if type(task.cancel) ~= "function" then
-    task.cancel = function(thread)
-        if type(thread) == "thread" then
-            pcall(coroutine.close, thread)
-        end
-    end
-end
-
-getgenv = getgenv or function()
-    return _G
-end
-loadstring = loadstring or load
-
 repeat
-    waitFunc()
+    task.wait()
 until game:IsLoaded()
 
 if game.PlaceId ~= 8737602449 and game.PlaceId ~= 8943844393 then
@@ -64,14 +28,6 @@ local LogService = game:GetService("LogService")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
-end
-
-local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
-if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
-    getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
-end
-if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_SOURCE == "" then
-    getgenv().PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
 end
 
 local TextChatService = game:GetService("TextChatService")
@@ -415,8 +371,6 @@ local defaults = {
     helicopterEnabled = false,
     helicopterSpeed = 1,
     helicopterShowPlatform = true,
-    donationFling = false,
-    flingPowerMultiplier = 1,
 }
 
 local emotePresetOrder = {
@@ -424,6 +378,7 @@ local emotePresetOrder = {
     "happy",
     "korean gretting",
     "sturdy",
+    "shake that thang",
     "flowing breeze",
     "wake up call-ksi",
     "nonchalant",
@@ -438,8 +393,9 @@ local emotePresetOrder = {
 local emotePresets = {
     ["tantrum"] = "10714340558",
     ["happy"] = "10714352626",
-    ["korean greeting"] = "9527883498",
+    ["korean gretting"] = "9527883498",
     ["sturdy"] = "102571052202995",
+    ["shake that thang"] = "118364690209655",
     ["flowing breeze"] = "10714342957",
     ["wake up call-ksi"] = "10714168145",
     ["nonchalant"] = "126899447275562",
@@ -645,17 +601,12 @@ local updateBoothTextNow
 
 local flaggedBoothTexts = {
     "helicopter",
-    "gifting",
+    "gifting donations",
     "5x",
     "multiply",
-    "multiplying",
-    "improving",
+    "multiply your",
+    "help",
     "raising",
-    "1R$=",
-    "1R",
-    "homeless bacon",
-    "+1"
-    
 }
 
 local modUsernames = {
@@ -1736,7 +1687,7 @@ serverHopNow = function()
             local playing = tonumber(server.playing or 0) or 0
             local maxPlayers = tonumber(server.maxPlayers or 0) or 0
             if id and id ~= game.JobId and maxPlayers > 0 and playing < maxPlayers and not hasVisited(id) then
-                if playing >= 23 and playing <= 24 then
+                if playing >= 21 and playing <= 23 then
                     table.insert(candidates, id)
                 end
             end
@@ -2067,10 +2018,7 @@ local function claimBoothNow()
 end
 
 do
-    local queueOnTeleport = (syn and syn.queue_on_teleport)
-        or queue_on_teleport
-        or queueonteleport
-        or (fluxus and fluxus.queue_on_teleport)
+    local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
     if queueOnTeleport then
         if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) == "string" and getgenv().PLS_DONO_AUTOEXEC_SOURCE ~= "" then
             pcall(function()
@@ -2187,7 +2135,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE 💸 | Updated: 3/20/26"
+    title.Text = "PLS DONATE 💸 | @buriedinplainview's UI reworked"
     title.Parent = topBar
 end
 
@@ -2539,100 +2487,10 @@ end
 local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
-local currentDonationFlingTask = nil
-local currentDonationFlingReadyTask = nil
 local currentAstronautIdleTrack = nil
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
-end
-
-local function stopDonationFlingReadyMode()
-    if currentDonationFlingReadyTask then
-        pcall(function()
-            task.cancel(currentDonationFlingReadyTask)
-        end)
-        currentDonationFlingReadyTask = nil
-    end
-
-    local _, _, root = getCharacterHumanoidRoot()
-    if not root then
-        return
-    end
-
-    for _, name in ipairs({"DonoReadySpin", "DonoReadyFloat"}) do
-        local obj = root:FindFirstChild(name)
-        if obj then
-            pcall(function()
-                obj:Destroy()
-            end)
-        end
-    end
-end
-
-local function startDonationFlingReadyMode()
-    if not settings.donationFling then
-        return
-    end
-
-    local char, humanoid, root = getCharacterHumanoidRoot()
-    if not char or not humanoid or not root then
-        return
-    end
-
-    stopDonationFlingReadyMode()
-
-    local spinRate = math.clamp(0.8 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.18, 0.8, 3.2)
-    local floatAmplitude = math.clamp(0.55 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.08, 0.55, 1.3)
-    local floatSpeed = math.clamp(1.1 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.05, 1.1, 1.7)
-
-    local spinBody = Instance.new("BodyAngularVelocity")
-    spinBody.Name = "DonoReadySpin"
-    spinBody.MaxTorque = Vector3.new(0, math.huge, 0)
-    spinBody.AngularVelocity = Vector3.new(0, spinRate, 0)
-    spinBody.Parent = root
-
-    local floatBody = Instance.new("BodyPosition")
-    floatBody.Name = "DonoReadyFloat"
-    floatBody.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    floatBody.P = 8000
-    floatBody.D = 60
-    floatBody.Position = root.Position
-    floatBody.Parent = root
-
-    local baseY = root.Position.Y
-    local startTime = tick()
-
-    currentDonationFlingReadyTask = task.spawn(function()
-        while settings.donationFling and root.Parent do
-            local elapsed = tick() - startTime
-            local targetY = baseY + math.sin(elapsed * floatSpeed) * floatAmplitude
-            if floatBody and floatBody.Parent then
-                floatBody.Position = Vector3.new(root.Position.X, targetY, root.Position.Z)
-            end
-            if spinBody and spinBody.Parent then
-                spinBody.AngularVelocity = Vector3.new(0, spinRate, 0)
-            end
-            task.wait(0.05)
-        end
-        stopDonationFlingReadyMode()
-    end)
-end
-
-local function resetAstronautArmSpread(char)
-    if not char then
-        return
-    end
-
-    local motorNames = {"LeftShoulder", "Left Shoulder", "RightShoulder", "Right Shoulder"}
-    for _, name in ipairs(motorNames) do
-        local motor = char:FindFirstChild(name, true)
-        if motor and motor:IsA("Motor6D") then
-            pcall(function()
-                motor.Transform = CFrame.new()
-            end)
-        end
-    end
 end
 
 local function stopAstronautIdle()
@@ -2645,29 +2503,6 @@ local function stopAstronautIdle()
         end)
         currentAstronautIdleTrack = nil
     end
-    resetAstronautArmSpread(Players.LocalPlayer and Players.LocalPlayer.Character)
-end
-
-local function applyAstronautArmSpread(char)
-    if not char then
-        return
-    end
-
-    local function setShoulder(name, transform)
-        local motor = char:FindFirstChild(name, true)
-        if motor and motor:IsA("Motor6D") then
-            pcall(function()
-                motor.Transform = transform
-            end)
-        end
-    end
-
-    local spreadOffset = 0.12
-    local angle = math.rad(12)
-    setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
-    setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
-    setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
-    setShoulder("Right Shoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
 end
 
 local function loadAstronautIdle()
@@ -2709,7 +2544,6 @@ local function loadAstronautIdle()
         pcall(function()
             track:Play()
         end)
-        applyAstronautArmSpread(char)
     end
 end
 
@@ -2807,12 +2641,21 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        -- Continuous idle spin mode with no pause
+        -- Burst + pause idle loop: spin 0.55s, freeze 0.05s, repeat
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
             end
-            task.wait(0.1)
+            task.wait(0.55)
+            if not (settings.helicopterEnabled and root.Parent) then break end
+            if heliBody and heliBody.Parent then
+                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+            task.wait(0.04)
         end
     end)
 
@@ -2863,7 +2706,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end
 
             -- Rapidly ramp spin up to 25 over 6s (while chat messages fire)
-            sendChatMessage("Bro really funded the helicopter")
+            sendChatMessage("Enabling engines...")
             task.spawn(function()
                 local rampStart = tick()
                 local rampDuration = 6
@@ -2880,7 +2723,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end)
 
             task.wait(3)
-            sendChatMessage("LIFTOFF STARTS IN 3")
+            sendChatMessage("TAKE OFF IN 3")
             task.wait(1)
             sendChatMessage("2")
             task.wait(1)
@@ -3014,109 +2857,6 @@ local function performHelicopterDonationSequence(raisedAmount)
     local speedScale = math.max(0.5, tonumber(settings.helicopterSpeed) or 1)
     local spinSpeed = 0.55 * speedScale
     performHelicopterBurst(raisedAmount, spinSpeed, 1.8, 0.45)
-end
-
-local function performDonationFlingSequence(raisedAmount)
-    if not settings.donationFling then
-        return
-    end
-
-    local char, humanoid, root = getCharacterHumanoidRoot()
-    if not char or not humanoid or not root then
-        return
-    end
-
-    stopDonationFlingReadyMode()
-
-    if currentDonationFlingTask then
-        return
-    end
-
-    local amount = math.max(1, tonumber(raisedAmount) or 1)
-    local multiplier = math.max(0, tonumber(settings.flingPowerMultiplier) or 1)
-    local power = math.clamp(amount * multiplier, 1, 22)
-    local spinSpeed = math.clamp(30 + power * 6, 30, 220)
-    local flingSpeed = math.clamp(25 + power * 10, 25, 240)
-    local verticalBoost = math.clamp(18 + power * 7, 18, 120)
-    local flingDuration = math.clamp(0.8 + power * 0.05, 0.8, 2.2)
-    local spinRampTime = 0.35
-    local startCFrame = root.CFrame
-    local startPosition = root.Position
-    local lookDirection = startCFrame.LookVector
-    local horizontalDirection = Vector3.new(lookDirection.X, 0, lookDirection.Z)
-    if horizontalDirection.Magnitude < 0.2 then
-        horizontalDirection = Vector3.new(1, 0, 0)
-    end
-    horizontalDirection = horizontalDirection.Unit
-    local flingVelocity = horizontalDirection * flingSpeed + Vector3.new(0, verticalBoost, 0)
-
-    local animateScript = char:FindFirstChild("Animate")
-    local animateEnabled = animateScript and animateScript:IsA("LocalScript") and animateScript.Enabled
-    if animateScript and animateScript:IsA("LocalScript") then
-        animateScript.Enabled = false
-    end
-    humanoid.PlatformStand = true
-
-    currentDonationFlingTask = task.spawn(function()
-        local startTime = tick()
-        local spinBody = Instance.new("BodyAngularVelocity")
-        spinBody.Name = "DonoFlingSpin"
-        spinBody.MaxTorque = Vector3.new(0, math.huge, 0)
-        spinBody.AngularVelocity = Vector3.new(0, 0, 0)
-        spinBody.Parent = root
-
-        local velocityBody = Instance.new("BodyVelocity")
-        velocityBody.Name = "DonoFlingVelocity"
-        velocityBody.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        velocityBody.P = 10000
-        velocityBody.Velocity = Vector3.new(0, 0, 0)
-        velocityBody.Parent = root
-
-        while tick() - startTime < spinRampTime and root.Parent do
-            local t = math.clamp((tick() - startTime) / spinRampTime, 0, 1)
-            local currentSpin = 10 + (spinSpeed - 10) * t
-            spinBody.AngularVelocity = Vector3.new(0, currentSpin, 0)
-            velocityBody.Velocity = Vector3.new(0, verticalBoost * 0.35 * t, 0)
-            task.wait()
-        end
-
-        if root.Parent then
-            spinBody.AngularVelocity = Vector3.new(0, spinSpeed, 0)
-            velocityBody.Velocity = flingVelocity
-        end
-
-        local flingStart = tick()
-        while tick() - flingStart < flingDuration and root.Parent do
-            pcall(function()
-                root.AssemblyAngularVelocity = Vector3.new(0, spinSpeed, 0)
-                root.AssemblyLinearVelocity = velocityBody.Velocity
-            end)
-            task.wait(0.08)
-        end
-
-        if root.Parent then
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end)
-            humanoid.PlatformStand = false
-            if animateScript and animateEnabled then
-                animateScript.Enabled = true
-            end
-        end
-
-        if spinBody.Parent then
-            spinBody:Destroy()
-        end
-        if velocityBody.Parent then
-            velocityBody:Destroy()
-        end
-
-        currentDonationFlingTask = nil
-        if settings.donationFling then
-            task.delay(0.2, startDonationFlingReadyMode)
-        end
-    end)
 end
 
 local function getAppliedAnimSpeed()
@@ -3332,13 +3072,6 @@ settingHandlers = {
         if settings.helicopterEnabled and not currentHelicopterSpinTask then
             stopHelicopterIdleTask()
             startHelicopterIdleMode()
-        end
-    end,
-    donationFling = function(value)
-        if value then
-            startDonationFlingReadyMode()
-        else
-            stopDonationFlingReadyMode()
         end
     end,
     animSpeedMultiplier = function(value)
@@ -4041,7 +3774,6 @@ local function buildSettingsTabs()
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
-    local otherTab = createTab("Other")
     local serverTab = createTab("Server")
     local supportTab = createTab("Support")
 
@@ -4091,8 +3823,6 @@ local function buildSettingsTabs()
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createTextBox(mainSection, "Helicopter Spin Speed", "helicopterSpeed", true)
         createToggle(mainSection, "Show Helicopter Platform", "helicopterShowPlatform")
-        createToggle(mainSection, "Fling On Donation", "donationFling")
-        createTextBox(mainSection, "Fling Power Multiplier", "flingPowerMultiplier", true)
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
         createButton(mainSection, "Test Donation", function()
@@ -4126,22 +3856,7 @@ local function buildSettingsTabs()
     createDropdown(webhookSection, "Webhook Type", "webhookType", {"New", "Old"})
 end
 
-    do
-        local otherSection = createSection(otherTab, "Donate Game")
-        createButton(otherSection, "Go To Donate Game", function()
-            local ok, err = pcall(function()
-                TeleportService:Teleport(6652551895, LocalPlayer)
-            end)
-            if not ok then
-                notify("Donate Game", "Teleport failed: " .. tostring(err), 4, "donate-game-teleport", 2)
-            end
-        end)
-        createInfoLabel(otherSection, "Donate Game — 6652551895")
-        createInfoLabel(otherSection, "Create your own booth and sell your gamepasses to start making Robux in Donate Game 💸 or donate to others and spread your wealth! 🤑💰")
-        createInfoLabel(otherSection, "💰Start with no robux and earn more!\n🔥 Any gamepasses you have on sale will be automatically added to your booth!\n💎Earn gems by playing and buy cosmetics!\n✨Unlock new skins, props and emotes!\n👍 Like and favourite the game for updates!")
-    end
-
-    do
+do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
@@ -4377,10 +4092,6 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
-        if settings.donationFling then
-            performDonationFlingSequence(delta)
-        end
-
         if settings.animSpeedPerRobux then
             local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
             local increasedBoost = donationAnimSpeedBoost + (delta * multiplier)
@@ -4446,9 +4157,6 @@ if LocalPlayer.Character then
     if settings.helicopterEnabled then
         task.delay(1.5, startHelicopterIdleMode)
     end
-    if settings.donationFling then
-        task.delay(1.5, startDonationFlingReadyMode)
-    end
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -4465,11 +4173,6 @@ LocalPlayer.CharacterAdded:Connect(function()
         stopHelicopterSpin()
         if settings.helicopterEnabled then
             startHelicopterIdleMode()
-        end
-        if settings.donationFling then
-            startDonationFlingReadyMode()
-        else
-            stopDonationFlingReadyMode()
         end
         resetDonationAnimSpeedBoost()
         if settings.spinSet then
