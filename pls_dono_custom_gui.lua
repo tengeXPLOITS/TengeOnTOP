@@ -379,6 +379,8 @@ local defaults = {
     helicopterEnabled = false,
     helicopterSpeed = 1,
     helicopterShowPlatform = true,
+    donationFling = false,
+    flingPowerMultiplier = 1,
 }
 
 local emotePresetOrder = {
@@ -2501,10 +2503,84 @@ end
 local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
+local currentDonationFlingTask = nil
+local currentDonationFlingReadyTask = nil
 local currentAstronautIdleTrack = nil
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
+end
+
+local function stopDonationFlingReadyMode()
+    if currentDonationFlingReadyTask then
+        pcall(function()
+            task.cancel(currentDonationFlingReadyTask)
+        end)
+        currentDonationFlingReadyTask = nil
+    end
+
+    local _, _, root = getCharacterHumanoidRoot()
+    if not root then
+        return
+    end
+
+    for _, name in ipairs({"DonoReadySpin", "DonoReadyFloat"}) do
+        local obj = root:FindFirstChild(name)
+        if obj then
+            pcall(function()
+                obj:Destroy()
+            end)
+        end
+    end
+end
+
+local function startDonationFlingReadyMode()
+    if not settings.donationFling then
+        return
+    end
+
+    local char, humanoid, root = getCharacterHumanoidRoot()
+    if not char or not humanoid or not root then
+        return
+    end
+
+    stopDonationFlingReadyMode()
+
+    local spinRate = math.clamp(0.8 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.18, 0.8, 3.2)
+    local floatAmplitude = math.clamp(0.55 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.08, 0.55, 1.3)
+    local floatSpeed = math.clamp(1.1 + math.max(0, tonumber(settings.flingPowerMultiplier) or 1) * 0.05, 1.1, 1.7)
+
+    local spinBody = Instance.new("BodyAngularVelocity")
+    spinBody.Name = "DonoReadySpin"
+    spinBody.MaxTorque = Vector3.new(0, math.huge, 0)
+    spinBody.AngularVelocity = Vector3.new(0, spinRate, 0)
+    spinBody.Parent = root
+
+    local floatBody = Instance.new("BodyPosition")
+    floatBody.Name = "DonoReadyFloat"
+    floatBody.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    floatBody.P = 8000
+    floatBody.D = 60
+    floatBody.Position = root.Position
+    floatBody.Parent = root
+
+    local baseY = root.Position.Y
+    local startTime = tick()
+
+    currentDonationFlingReadyTask = task.spawn(function()
+        while settings.donationFling and root.Parent do
+            local elapsed = tick() - startTime
+            local targetY = baseY + math.sin(elapsed * floatSpeed) * floatAmplitude
+            if floatBody and floatBody.Parent then
+                floatBody.Position = Vector3.new(root.Position.X, targetY, root.Position.Z)
+            end
+            if spinBody and spinBody.Parent then
+                spinBody.AngularVelocity = Vector3.new(0, spinRate, 0)
+            end
+            task.wait(0.05)
+        end
+        stopDonationFlingReadyMode()
+    end)
 end
 
 local function resetAstronautArmSpread(char)
@@ -2550,8 +2626,8 @@ local function applyAstronautArmSpread(char)
         end
     end
 
-    local spreadOffset = 0.06
-    local angle = math.rad(6)
+    local spreadOffset = 0.12
+    local angle = math.rad(12)
     setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
@@ -2636,16 +2712,6 @@ local function triggerLandingExplosion(humanoid, root)
 
     pcall(function()
         humanoid.Health = 0
-    end)
-
-    pcall(function()
-        local explosion = Instance.new("Explosion")
-        explosion.Position = root.Position
-        explosion.BlastRadius = 0
-        explosion.BlastPressure = 0
-        explosion.DestroyJointRadiusPercent = 0
-        explosion.Visible = false
-        explosion.Parent = Workspace
     end)
 end
 
@@ -2914,6 +2980,109 @@ local function performHelicopterDonationSequence(raisedAmount)
     performHelicopterBurst(raisedAmount, spinSpeed, 1.8, 0.45)
 end
 
+local function performDonationFlingSequence(raisedAmount)
+    if not settings.donationFling then
+        return
+    end
+
+    local char, humanoid, root = getCharacterHumanoidRoot()
+    if not char or not humanoid or not root then
+        return
+    end
+
+    stopDonationFlingReadyMode()
+
+    if currentDonationFlingTask then
+        return
+    end
+
+    local amount = math.max(1, tonumber(raisedAmount) or 1)
+    local multiplier = math.max(0, tonumber(settings.flingPowerMultiplier) or 1)
+    local power = math.clamp(amount * multiplier, 1, 22)
+    local spinSpeed = math.clamp(30 + power * 6, 30, 220)
+    local flingSpeed = math.clamp(25 + power * 10, 25, 240)
+    local verticalBoost = math.clamp(18 + power * 7, 18, 120)
+    local flingDuration = math.clamp(0.8 + power * 0.05, 0.8, 2.2)
+    local spinRampTime = 0.35
+    local startCFrame = root.CFrame
+    local startPosition = root.Position
+    local lookDirection = startCFrame.LookVector
+    local horizontalDirection = Vector3.new(lookDirection.X, 0, lookDirection.Z)
+    if horizontalDirection.Magnitude < 0.2 then
+        horizontalDirection = Vector3.new(1, 0, 0)
+    end
+    horizontalDirection = horizontalDirection.Unit
+    local flingVelocity = horizontalDirection * flingSpeed + Vector3.new(0, verticalBoost, 0)
+
+    local animateScript = char:FindFirstChild("Animate")
+    local animateEnabled = animateScript and animateScript:IsA("LocalScript") and animateScript.Enabled
+    if animateScript and animateScript:IsA("LocalScript") then
+        animateScript.Enabled = false
+    end
+    humanoid.PlatformStand = true
+
+    currentDonationFlingTask = task.spawn(function()
+        local startTime = tick()
+        local spinBody = Instance.new("BodyAngularVelocity")
+        spinBody.Name = "DonoFlingSpin"
+        spinBody.MaxTorque = Vector3.new(0, math.huge, 0)
+        spinBody.AngularVelocity = Vector3.new(0, 0, 0)
+        spinBody.Parent = root
+
+        local velocityBody = Instance.new("BodyVelocity")
+        velocityBody.Name = "DonoFlingVelocity"
+        velocityBody.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        velocityBody.P = 10000
+        velocityBody.Velocity = Vector3.new(0, 0, 0)
+        velocityBody.Parent = root
+
+        while tick() - startTime < spinRampTime and root.Parent do
+            local t = math.clamp((tick() - startTime) / spinRampTime, 0, 1)
+            local currentSpin = 10 + (spinSpeed - 10) * t
+            spinBody.AngularVelocity = Vector3.new(0, currentSpin, 0)
+            velocityBody.Velocity = Vector3.new(0, verticalBoost * 0.35 * t, 0)
+            task.wait()
+        end
+
+        if root.Parent then
+            spinBody.AngularVelocity = Vector3.new(0, spinSpeed, 0)
+            velocityBody.Velocity = flingVelocity
+        end
+
+        local flingStart = tick()
+        while tick() - flingStart < flingDuration and root.Parent do
+            pcall(function()
+                root.AssemblyAngularVelocity = Vector3.new(0, spinSpeed, 0)
+                root.AssemblyLinearVelocity = velocityBody.Velocity
+            end)
+            task.wait(0.08)
+        end
+
+        if root.Parent then
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+            humanoid.PlatformStand = false
+            if animateScript and animateEnabled then
+                animateScript.Enabled = true
+            end
+        end
+
+        if spinBody.Parent then
+            spinBody:Destroy()
+        end
+        if velocityBody.Parent then
+            velocityBody:Destroy()
+        end
+
+        currentDonationFlingTask = nil
+        if settings.donationFling then
+            task.delay(0.2, startDonationFlingReadyMode)
+        end
+    end)
+end
+
 local function getAppliedAnimSpeed()
     local speed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
     if settings.animSpeedPerRobux then
@@ -3127,6 +3296,13 @@ settingHandlers = {
         if settings.helicopterEnabled and not currentHelicopterSpinTask then
             stopHelicopterIdleTask()
             startHelicopterIdleMode()
+        end
+    end,
+    donationFling = function(value)
+        if value then
+            startDonationFlingReadyMode()
+        else
+            stopDonationFlingReadyMode()
         end
     end,
     animSpeedMultiplier = function(value)
@@ -3829,9 +4005,9 @@ local function buildSettingsTabs()
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
+    local otherTab = createTab("Other")
     local serverTab = createTab("Server")
     local supportTab = createTab("Support")
-    local otherTab = createTab("Other")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
@@ -3879,6 +4055,8 @@ local function buildSettingsTabs()
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createTextBox(mainSection, "Helicopter Spin Speed", "helicopterSpeed", true)
         createToggle(mainSection, "Show Helicopter Platform", "helicopterShowPlatform")
+        createToggle(mainSection, "Fling On Donation", "donationFling")
+        createTextBox(mainSection, "Fling Power Multiplier", "flingPowerMultiplier", true)
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
         createButton(mainSection, "Test Donation", function()
@@ -4163,6 +4341,10 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
+        if settings.donationFling then
+            performDonationFlingSequence(delta)
+        end
+
         if settings.animSpeedPerRobux then
             local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
             local increasedBoost = donationAnimSpeedBoost + (delta * multiplier)
@@ -4228,6 +4410,9 @@ if LocalPlayer.Character then
     if settings.helicopterEnabled then
         task.delay(1.5, startHelicopterIdleMode)
     end
+    if settings.donationFling then
+        task.delay(1.5, startDonationFlingReadyMode)
+    end
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -4244,6 +4429,11 @@ LocalPlayer.CharacterAdded:Connect(function()
         stopHelicopterSpin()
         if settings.helicopterEnabled then
             startHelicopterIdleMode()
+        end
+        if settings.donationFling then
+            startDonationFlingReadyMode()
+        else
+            stopDonationFlingReadyMode()
         end
         resetDonationAnimSpeedBoost()
         if settings.spinSet then
@@ -4326,3 +4516,4 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
