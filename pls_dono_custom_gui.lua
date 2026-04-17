@@ -6,8 +6,35 @@
     - Persistent settings with JSON file
 ]]
 
+local task = task or {}
+local waitFunc = nil
+if type(task.wait) == "function" then
+    waitFunc = task.wait
+elseif type(wait) == "function" then
+    waitFunc = wait
+else
+    waitFunc = function()
+        coroutine.yield()
+    end
+end
+
+if type(task.spawn) ~= "function" then
+    task.spawn = function(fn, ...)
+        local co = coroutine.create(fn)
+        coroutine.resume(co, ...)
+        return co
+    end
+end
+if type(task.cancel) ~= "function" then
+    task.cancel = function(thread)
+        if type(thread) == "thread" then
+            pcall(coroutine.close, thread)
+        end
+    end
+end
+
 repeat
-    task.wait()
+    waitFunc()
 until game:IsLoaded()
 
 if game.PlaceId ~= 8737602449 and game.PlaceId ~= 8943844393 then
@@ -29,25 +56,6 @@ local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
 end
-
-local task = task or {}
-if type(task.wait) ~= "function" then
-    task.wait = wait
-end
-if type(task.spawn) ~= "function" then
-    task.spawn = spawn or function(fn, ...)
-        local co = coroutine.create(function()
-            fn(...)
-        end)
-        coroutine.resume(co)
-        return co
-    end
-end
-if type(task.cancel) ~= "function" then
-    task.cancel = function(thread)
-        if type(thread) == "thread" then
-            pcall(coroutine.close, thread)
-        end
     end
 end
 
@@ -4537,4 +4545,5 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
 
