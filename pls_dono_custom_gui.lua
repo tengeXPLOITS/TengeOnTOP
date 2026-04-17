@@ -6,7 +6,9 @@
     - Persistent settings with JSON file
 ]]
 
-local task = task or {}
+if type(task) ~= "table" then
+    task = {}
+end
 local waitFunc = nil
 if type(task.wait) == "function" then
     waitFunc = task.wait
@@ -17,6 +19,8 @@ else
         -- fallback, avoid nil calls in restrictive executors
     end
 end
+
+task.wait = task.wait or waitFunc
 
 if type(task.spawn) ~= "function" then
     task.spawn = function(fn, ...)
@@ -60,8 +64,6 @@ local LogService = game:GetService("LogService")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
-end
-    end
 end
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
@@ -4550,4 +4552,3 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
