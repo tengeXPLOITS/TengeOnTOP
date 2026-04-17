@@ -400,7 +400,7 @@ local emotePresetOrder = {
 local emotePresets = {
     ["tantrum"] = "10714340558",
     ["happy"] = "10714352626",
-    ["korean gretting"] = "9527883498",
+    ["korean greeting"] = "9527883498",
     ["sturdy"] = "102571052202995",
     ["flowing breeze"] = "10714342957",
     ["wake up call-ksi"] = "10714168145",
@@ -616,6 +616,7 @@ local flaggedBoothTexts = {
     "1R$=",
     "1R",
     "homeless bacon",
+    "+1"
     
 }
 
@@ -2506,6 +2507,22 @@ local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
 end
 
+local function resetAstronautArmSpread(char)
+    if not char then
+        return
+    end
+
+    local motorNames = {"LeftShoulder", "Left Shoulder", "RightShoulder", "Right Shoulder"}
+    for _, name in ipairs(motorNames) do
+        local motor = char:FindFirstChild(name, true)
+        if motor and motor:IsA("Motor6D") then
+            pcall(function()
+                motor.Transform = CFrame.new()
+            end)
+        end
+    end
+end
+
 local function stopAstronautIdle()
     if currentAstronautIdleTrack then
         pcall(function()
@@ -2516,6 +2533,29 @@ local function stopAstronautIdle()
         end)
         currentAstronautIdleTrack = nil
     end
+    resetAstronautArmSpread(Players.LocalPlayer and Players.LocalPlayer.Character)
+end
+
+local function applyAstronautArmSpread(char)
+    if not char then
+        return
+    end
+
+    local function setShoulder(name, transform)
+        local motor = char:FindFirstChild(name, true)
+        if motor and motor:IsA("Motor6D") then
+            pcall(function()
+                motor.Transform = transform
+            end)
+        end
+    end
+
+    local spreadOffset = 0.06
+    local angle = math.rad(6)
+    setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
+    setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
+    setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
+    setShoulder("Right Shoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
 end
 
 local function loadAstronautIdle()
@@ -2557,6 +2597,7 @@ local function loadAstronautIdle()
         pcall(function()
             track:Play()
         end)
+        applyAstronautArmSpread(char)
     end
 end
 
@@ -2595,6 +2636,16 @@ local function triggerLandingExplosion(humanoid, root)
 
     pcall(function()
         humanoid.Health = 0
+    end)
+
+    pcall(function()
+        local explosion = Instance.new("Explosion")
+        explosion.Position = root.Position
+        explosion.BlastRadius = 0
+        explosion.BlastPressure = 0
+        explosion.DestroyJointRadiusPercent = 0
+        explosion.Visible = false
+        explosion.Parent = Workspace
     end)
 end
 
@@ -2654,21 +2705,12 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        -- Burst + pause idle loop: spin 0.55s, freeze 0.05s, repeat
+        -- Continuous idle spin mode with no pause
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
             end
-            task.wait(0.55)
-            if not (settings.helicopterEnabled and root.Parent) then break end
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
-            end
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end)
-            task.wait(0.04)
+            task.wait(0.1)
         end
     end)
 
@@ -2719,7 +2761,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end
 
             -- Rapidly ramp spin up to 25 over 6s (while chat messages fire)
-            sendChatMessage("Enabling engines...")
+            sendChatMessage("Bro really funded the helicopter")
             task.spawn(function()
                 local rampStart = tick()
                 local rampDuration = 6
@@ -2736,7 +2778,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end)
 
             task.wait(3)
-            sendChatMessage("TAKE OFF IN 3")
+            sendChatMessage("LIFTOFF STARTS IN 3")
             task.wait(1)
             sendChatMessage("2")
             task.wait(1)
@@ -3789,6 +3831,7 @@ local function buildSettingsTabs()
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server")
     local supportTab = createTab("Support")
+    local otherTab = createTab("Other")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
@@ -3869,7 +3912,22 @@ local function buildSettingsTabs()
     createDropdown(webhookSection, "Webhook Type", "webhookType", {"New", "Old"})
 end
 
-do
+    do
+        local otherSection = createSection(otherTab, "Donate Game")
+        createButton(otherSection, "Go To Donate Game", function()
+            local ok, err = pcall(function()
+                TeleportService:Teleport(6652551895, LocalPlayer)
+            end)
+            if not ok then
+                notify("Donate Game", "Teleport failed: " .. tostring(err), 4, "donate-game-teleport", 2)
+            end
+        end)
+        createInfoLabel(otherSection, "Donate Game — 6652551895")
+        createInfoLabel(otherSection, "Create your own booth and sell your gamepasses to start making Robux in Donate Game 💸 or donate to others and spread your wealth! 🤑💰")
+        createInfoLabel(otherSection, "💰Start with no robux and earn more!\n🔥 Any gamepasses you have on sale will be automatically added to your booth!\n💎Earn gems by playing and buy cosmetics!\n✨Unlock new skins, props and emotes!\n👍 Like and favourite the game for updates!")
+    end
+
+    do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
