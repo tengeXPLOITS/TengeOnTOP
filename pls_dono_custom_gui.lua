@@ -2493,6 +2493,44 @@ local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
 end
 
+local function resetAstronautArmSpread(char)
+    if not char then
+        return
+    end
+
+    local motorNames = {"LeftShoulder", "Left Shoulder", "RightShoulder", "Right Shoulder"}
+    for _, name in ipairs(motorNames) do
+        local motor = char:FindFirstChild(name, true)
+        if motor and motor:IsA("Motor6D") then
+            pcall(function()
+                motor.Transform = CFrame.new()
+            end)
+        end
+    end
+end
+
+local function applyAstronautArmSpread(char)
+    if not char then
+        return
+    end
+
+    local function setShoulder(name, transform)
+        local motor = char:FindFirstChild(name, true)
+        if motor and motor:IsA("Motor6D") then
+            pcall(function()
+                motor.Transform = transform
+            end)
+        end
+    end
+
+    local spreadOffset = 0.12
+    local angle = math.rad(14)
+    setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
+    setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
+    setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
+    setShoulder("Right Shoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
+end
+
 local function stopAstronautIdle()
     if currentAstronautIdleTrack then
         pcall(function()
@@ -2503,6 +2541,7 @@ local function stopAstronautIdle()
         end)
         currentAstronautIdleTrack = nil
     end
+    resetAstronautArmSpread(Players.LocalPlayer and Players.LocalPlayer.Character)
 end
 
 local function loadAstronautIdle()
@@ -2544,6 +2583,7 @@ local function loadAstronautIdle()
         pcall(function()
             track:Play()
         end)
+        applyAstronautArmSpread(char)
     end
 end
 
@@ -2641,21 +2681,12 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        -- Burst + pause idle loop: spin 0.55s, freeze 0.05s, repeat
+        -- Continuous idle spin with no pause
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
             end
-            task.wait(0.55)
-            if not (settings.helicopterEnabled and root.Parent) then break end
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
-            end
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end)
-            task.wait(0.04)
+            task.wait(0.1)
         end
     end)
 
@@ -3012,9 +3043,32 @@ local function getSpinMover()
     return nil
 end
 
+local function setSpinImmobility(enabled)
+    local char, humanoid, _ = getCharacterHumanoidRoot()
+    if not char or not humanoid then
+        return
+    end
+
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript and animateScript:IsA("LocalScript") then
+        animateScript.Enabled = not enabled
+    end
+
+    humanoid.PlatformStand = enabled
+    if enabled then
+        pcall(function()
+            for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+                track:Stop()
+            end
+        end)
+    else
+        applySelectedAnimation()
+    end
+end
+
 local function applySpinState()
-    local _, _, root = getCharacterHumanoidRoot()
-    if not root then
+    local char, humanoid, root = getCharacterHumanoidRoot()
+    if not root or not humanoid then
         return
     end
 
@@ -3027,8 +3081,12 @@ local function applySpinState()
             existing.Parent = root
         end
         existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
-    elseif existing and existing:IsA("BodyAngularVelocity") then
-        existing:Destroy()
+        setSpinImmobility(true)
+    else
+        if existing and existing:IsA("BodyAngularVelocity") then
+            existing:Destroy()
+        end
+        setSpinImmobility(false)
     end
 end
 
@@ -3774,6 +3832,7 @@ local function buildSettingsTabs()
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
+    local otherTab = createTab("Other")
     local serverTab = createTab("Server")
     local supportTab = createTab("Support")
 
@@ -3854,6 +3913,16 @@ local function buildSettingsTabs()
     createToggle(webhookSection, "Ping Everyone", "pingEveryone")
     createTextBox(webhookSection, "Ping Above Donation", "pingAboveDono", true)
     createDropdown(webhookSection, "Webhook Type", "webhookType", {"New", "Old"})
+end
+
+do
+    local otherSection = createSection(otherTab, "Other Settings")
+    createInfoLabel(otherSection, "Donate Game: teleport to the donate server for testing.")
+    createButton(otherSection, "Go to Donate Game", function()
+        pcall(function()
+            TeleportService:Teleport(8737602449, LocalPlayer)
+        end)
+    end)
 end
 
 do
