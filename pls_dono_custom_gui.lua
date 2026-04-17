@@ -14,7 +14,7 @@ elseif type(wait) == "function" then
     waitFunc = wait
 else
     waitFunc = function()
-        coroutine.yield()
+        -- fallback, avoid nil calls in restrictive executors
     end
 end
 
@@ -32,6 +32,11 @@ if type(task.cancel) ~= "function" then
         end
     end
 end
+
+getgenv = getgenv or function()
+    return _G
+end
+loadstring = loadstring or load
 
 repeat
     waitFunc()
@@ -4545,5 +4550,4 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
 
