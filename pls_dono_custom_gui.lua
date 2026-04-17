@@ -30,6 +30,27 @@ if not LocalPlayer then
     return
 end
 
+local task = task or {}
+if type(task.wait) ~= "function" then
+    task.wait = wait
+end
+if type(task.spawn) ~= "function" then
+    task.spawn = spawn or function(fn, ...)
+        local co = coroutine.create(function()
+            fn(...)
+        end)
+        coroutine.resume(co)
+        return co
+    end
+end
+if type(task.cancel) ~= "function" then
+    task.cancel = function(thread)
+        if type(thread) == "thread" then
+            pcall(coroutine.close, thread)
+        end
+    end
+end
+
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
     getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
