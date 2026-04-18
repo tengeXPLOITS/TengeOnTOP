@@ -1,4 +1,4 @@
-if game.PlaceId ~= 6652551895 then return end
+-- if game.PlaceId ~= 6652551895 then return end
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
