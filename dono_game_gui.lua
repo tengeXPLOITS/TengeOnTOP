@@ -1,5 +1,8 @@
 -- if game.PlaceId ~= 6652551895 then return end
 
+if not game then game = workspace and workspace.Parent end
+if not game then return end
+
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
