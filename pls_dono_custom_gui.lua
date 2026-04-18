@@ -316,6 +316,7 @@ end
 -- Recover gracefully if a previous run crashed before creating the UI.
 getgenv().PLS_DONO_CUSTOM_GUI_LOADED = nil
 getgenv().PLS_DONO_CUSTOM_GUI_LOADED = true
+getgenv().PLS_DONO_CURRENT_CHARACTER = game:GetService("Players").LocalPlayer.Character
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
@@ -4012,6 +4013,7 @@ end)
 
 task.spawn(function()
     while task.wait(0.8) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         local boothLocation = getBoothLocation()
         local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
         local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
@@ -4024,6 +4026,7 @@ end)
 task.spawn(function()
     local lastHopTick = 0
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.antiBotServers then
             local interval = math.max(2, tonumber(settings.antiBotInterval) or 8)
             task.wait(interval)
@@ -4047,6 +4050,7 @@ end)
 task.spawn(function()
     local lastPopulationHopTick = 0
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.populationHopEnabled then
             local interval = math.max(3, tonumber(settings.populationCheckInterval) or 10)
             task.wait(interval)
@@ -4064,6 +4068,7 @@ end)
 task.spawn(function()
     local lastModHopTick = 0
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.modEvader then
             task.wait(3)
             local detectedPlayer = findDetectedModPlayer()
@@ -4082,6 +4087,7 @@ end)
 task.spawn(function()
     local lastTextUpdate = 0
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.textUpdateToggle then
             local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
             if tick() - lastTextUpdate >= delaySeconds then
@@ -4233,6 +4239,7 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.serverHopToggle then
             local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
             if tick() - hopTimerResetTick >= (delayMinutes * 60) then
@@ -4249,6 +4256,7 @@ end)
 task.spawn(function()
     local lastBegTick = 0
     while task.wait(1) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.autoBeg then
             local delaySeconds = math.max(3, tonumber(settings.begDelay) or 300)
             if tick() - lastBegTick >= delaySeconds then
@@ -4263,6 +4271,7 @@ end)
 
 task.spawn(function()
     while task.wait(0.4) do
+        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.spinSet and claimedBoothSlot then
             local _, _, root = getCharacterHumanoidRoot()
             local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
