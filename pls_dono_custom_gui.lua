@@ -307,7 +307,7 @@ local function cloneRef(v)
     return v
 end
 
-local CoreGui = cloneRef(game:GetService("CoreGui"))
+local CoreGui = game:GetService("Players").LocalPlayer.PlayerGui
 
 if getgenv().PLS_DONO_CUSTOM_GUI_LOADED and CoreGui:FindFirstChild("PlsDonoCustomGui") then
     return
@@ -391,7 +391,7 @@ local emotePresetOrder = {
 local emotePresets = {
     ["tantrum"] = "10714340558",
     ["happy"] = "10714352626",
-    ["korean gretting"] = "9527883498",
+    ["korean greeting"] = "9527883498",
     ["sturdy"] = "102571052202995",
     ["shake that thang"] = "118364690209655",
     ["flowing breeze"] = "10714342957",
