@@ -6,10 +6,6 @@
     - Persistent settings with JSON file
 ]]
 
-repeat
-    wait()
-until game:IsLoaded()
-
 if game.PlaceId ~= 6652551895 then
     return
 end
@@ -45,7 +41,7 @@ pcall(function()
 end)
 
 local function notify(title, text, duration, dedupeKey, cooldown)
-    local now = tick()
+    local now = os.time()
     if dedupeKey and cooldown then
         local last = notificationTimestamps[dedupeKey] or 0
         if now - last < cooldown then
@@ -186,7 +182,7 @@ local function sendChatMessage(message)
             if chatInput then
                 chatInput:CaptureFocus()
                 chatInput.Text = message
-                wait()
+                RunService.Heartbeat:Wait()
                 chatInput:ReleaseFocus(true)
             end
         else
@@ -846,7 +842,6 @@ local function chooseServerId()
 end
 
 local mainTab = createTab("Main")
-local otherTab = createTab("Other")
 local serverTab = createTab("Server")
 
 do
@@ -854,28 +849,6 @@ do
     createToggle(mainSection, "1R$ = +1 Spin Speed", "spinSet")
     createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
     createToggle(mainSection, "Helicopter Idle Mode", "helicopterEnabled")
-end
-
-do
-    local otherSection = createSection(otherTab, "Other Settings")
-    createInfoLabel(otherSection, "Donate Game: teleport to the donate server for testing.")
-    createButton(otherSection, "Go to Donate Game", function()
-        local serverId = chooseServerId()
-        if serverId then
-            pcall(function()
-                TeleportService:TeleportToPlaceInstance(6652551895, serverId, LocalPlayer)
-            end)
-        else
-            notify("Teleport", "No suitable servers found.", 5)
-        end
-    end)
-    createInfoLabel(otherSection, "Create your own booth and sell your gamepasses to start making Robux in Donate Game 💸 or donate to others and spread your wealth! 🤑💰")
-    createInfoLabel(otherSection, "💰Start with no robux and earn more!")
-    createInfoLabel(otherSection, "🔥 Any gamepasses you have on sale will be automatically added to your booth!")
-    createInfoLabel(otherSection, "💎Earn gems by playing and buy cosmetics!")
-    createInfoLabel(otherSection, "✨Unlock new skins, props and emotes!")
-    createInfoLabel(otherSection, "👍 Like and favourite the game for updates!")
-    createInfoLabel(otherSection, "Development team: Royale Games.")
 end
 
 do
@@ -938,55 +911,62 @@ playOpenFade(main)
 
 -- Anti-AFK Logic
 local playerPositions = {}
-local lastCheck = tick()
+local lastCheck = os.time()
 
-spawn(function()
-    while wait(10) do  -- Check every 10 seconds
-        if not settings.antiAfkEnabled then
-            continue
-        end
+-- coroutine.wrap(function()
+--     while true do
+--         local start = os.time()
+--         while os.time() - start < 10 do
+--             RunService.Heartbeat:Wait()
+--         end
+--         if not settings.antiAfkEnabled then
+--             continue
+--         end
 
-        local currentTime = tick()
-        local immobileCount = 0
+--         local currentTime = os.time()
+--         local immobileCount = 0
 
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local char = player.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local currentPos = root.Position
-                    local lastPos = playerPositions[player.UserId]
+--         for _, player in ipairs(Players:GetPlayers()) do
+--             if player ~= LocalPlayer then
+--                 local char = player.Character
+--                 local root = char and char:FindFirstChild("HumanoidRootPart")
+--                 if root then
+--                     local currentPos = root.Position
+--                     local lastPos = playerPositions[player.UserId]
 
-                    if lastPos then
-                        local distance = (currentPos - lastPos).Magnitude
-                        if distance < 1 then  -- Consider immobile if moved less than 1 stud
-                            immobileCount = immobileCount + 1
-                        end
-                    end
+--                     if lastPos then
+--                         local distance = (currentPos - lastPos).Magnitude
+--                         if distance < 1 then  -- Consider immobile if moved less than 1 stud
+--                             immobileCount = immobileCount + 1
+--                         end
+--                     end
 
-                    playerPositions[player.UserId] = currentPos
-                end
-            end
-        end
+--                     playerPositions[player.UserId] = currentPos
+--                 end
+--             end
+--         end
 
-        if immobileCount > 16 then
-            notify("Anti AFK", ("Detected %d immobile players. Server hopping..."):format(immobileCount), 5, "anti-afk-hop", 10)
-            local serverId = chooseServerId()
-            if serverId then
-                pcall(function()
-                    TeleportService:TeleportToPlaceInstance(6652551895, serverId, LocalPlayer)
-                end)
-            else
-                notify("Anti AFK", "No suitable servers found for hopping.", 5)
-            end
-        end
+--         if immobileCount > 16 then
+--             notify("Anti AFK", ("Detected %d immobile players. Server hopping..."):format(immobileCount), 5, "anti-afk-hop", 10)
+--             local serverId = chooseServerId()
+--             if serverId then
+--                 pcall(function()
+--                     TeleportService:TeleportToPlaceInstance(6652551895, serverId, LocalPlayer)
+--                 end)
+--             else
+--                 notify("Anti AFK", "No suitable servers found for hopping.", 5)
+--             end
+--         end
 
-        lastCheck = currentTime
-    end
-end)
+--         lastCheck = currentTime
+--     end
+-- end)()
 
 LocalPlayer.CharacterAdded:Connect(function()
-    wait(1)
+    local start = os.time()
+    while os.time() - start < 1 do
+        RunService.Heartbeat:Wait()
+    end
     applySpinState()
     if settings.helicopterEnabled then
         startHelicopterIdleMode()
