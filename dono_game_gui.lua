@@ -1,11 +1,10 @@
--- if game.PlaceId ~= 6652551895 then return end
+-- Simple Donate Game GUI: Spin and Helicopter configs only
 
 if not game then game = workspace and workspace.Parent end
 if not game then return end
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
@@ -43,7 +42,6 @@ local settings = {
     spinSet = false,
     spinSpeed = 1,
     helicopterEnabled = false,
-    antiAfkEnabled = false,
 }
 
 local function saveSettings()
@@ -125,32 +123,6 @@ local function stopHelicopterIdle()
     end
 end
 
-local function chooseServerId()
-    local ok, serverList = pcall(function()
-        return TeleportService:GetServerList(6652551895)
-    end)
-    if not ok or not serverList then return nil end
-    local candidates = {}
-    local maxPlayers = 0
-    local maxServer = nil
-    for _, server in ipairs(serverList) do
-        local playerCount = server.playing or 0
-        if playerCount >= 27 and playerCount <= 30 then
-            table.insert(candidates, server.id)
-        end
-        if playerCount > maxPlayers then
-            maxPlayers = playerCount
-            maxServer = server.id
-        end
-    end
-    if #candidates > 0 then
-        return candidates[math.random(1, #candidates)]
-    elseif maxServer then
-        return maxServer
-    end
-    return nil
-end
-
 -- Sunset Theme UI
 local THEME = {
     bg = Color3.fromRGB(139, 69, 19), -- Saddle brown
@@ -168,7 +140,7 @@ gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 400, 0, 300)
+main.Size = UDim2.new(0, 300, 0, 200)
 main.Position = UDim2.fromOffset(200, 150)
 main.BackgroundColor3 = THEME.bg
 main.BorderSizePixel = 2
@@ -184,65 +156,18 @@ title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
 title.Parent = main
 
-local tabContainer = Instance.new("Frame")
-tabContainer.Size = UDim2.new(1, 0, 0, 40)
-tabContainer.Position = UDim2.new(0, 0, 0, 40)
-tabContainer.BackgroundTransparency = 1
-tabContainer.Parent = main
-
-local tabLayout = Instance.new("UIListLayout")
-tabLayout.FillDirection = Enum.FillDirection.Horizontal
-tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-tabLayout.Parent = tabContainer
-
 local content = Instance.new("Frame")
-content.Size = UDim2.new(1, 0, 1, -80)
-content.Position = UDim2.new(0, 0, 0, 80)
+content.Size = UDim2.new(1, 0, 1, -40)
+content.Position = UDim2.new(0, 0, 0, 40)
 content.BackgroundTransparency = 1
 content.Parent = main
 
-local pages = {}
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 10)
+layout.Parent = content
 
-local function createTab(name)
-    local tabBtn = Instance.new("TextButton")
-    tabBtn.Size = UDim2.new(0.5, 0, 1, 0)
-    tabBtn.BackgroundColor3 = THEME.tabBg
-    tabBtn.Text = name
-    tabBtn.TextColor3 = THEME.text
-    tabBtn.Font = Enum.Font.SourceSansBold
-    tabBtn.TextSize = 16
-    tabBtn.Parent = tabContainer
-
-    local page = Instance.new("Frame")
-    page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundTransparency = 1
-    page.Visible = false
-    page.Parent = content
-
-    local pageLayout = Instance.new("UIListLayout")
-    pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    pageLayout.Padding = UDim.new(0, 10)
-    pageLayout.Parent = page
-
-    pages[name] = page
-
-    tabBtn.MouseButton1Click:Connect(function()
-        for n, p in pairs(pages) do
-            p.Visible = (n == name)
-            local btn = tabContainer:FindFirstChild(n)
-            if btn then
-                btn.BackgroundColor3 = (n == name) and THEME.tabActive or THEME.tabBg
-            end
-        end
-    end)
-
-    return page
-end
-
-local mainTab = createTab("Main")
-local serverTab = createTab("Server")
-
--- Main Tab
+-- Spin Toggle
 local spinToggle = Instance.new("TextButton")
 spinToggle.Size = UDim2.new(1, -20, 0, 40)
 spinToggle.Position = UDim2.new(0, 10, 0, 10)
@@ -251,7 +176,7 @@ spinToggle.Text = "Spin: " .. (settings.spinSet and "ON" or "OFF")
 spinToggle.TextColor3 = THEME.text
 spinToggle.Font = Enum.Font.SourceSansBold
 spinToggle.TextSize = 16
-spinToggle.Parent = mainTab
+spinToggle.Parent = content
 
 spinToggle.MouseButton1Click:Connect(function()
     settings.spinSet = not settings.spinSet
@@ -261,6 +186,7 @@ spinToggle.MouseButton1Click:Connect(function()
     applySpinState()
 end)
 
+-- Spin Speed Slider
 local spinSlider = Instance.new("TextBox")
 spinSlider.Size = UDim2.new(1, -20, 0, 30)
 spinSlider.Position = UDim2.new(0, 10, 0, 60)
@@ -269,7 +195,7 @@ spinSlider.Text = "Speed: " .. settings.spinSpeed
 spinSlider.TextColor3 = THEME.text
 spinSlider.Font = Enum.Font.SourceSans
 spinSlider.TextSize = 14
-spinSlider.Parent = mainTab
+spinSlider.Parent = content
 
 spinSlider.FocusLost:Connect(function()
     local num = tonumber(spinSlider.Text:match("%d+"))
@@ -283,6 +209,7 @@ spinSlider.FocusLost:Connect(function()
     end
 end)
 
+-- Helicopter Toggle
 local heliToggle = Instance.new("TextButton")
 heliToggle.Size = UDim2.new(1, -20, 0, 40)
 heliToggle.Position = UDim2.new(0, 10, 0, 100)
@@ -291,7 +218,7 @@ heliToggle.Text = "Helicopter: " .. (settings.helicopterEnabled and "ON" or "OFF
 heliToggle.TextColor3 = THEME.text
 heliToggle.Font = Enum.Font.SourceSansBold
 heliToggle.TextSize = 16
-heliToggle.Parent = mainTab
+heliToggle.Parent = content
 
 heliToggle.MouseButton1Click:Connect(function()
     settings.helicopterEnabled = not settings.helicopterEnabled
@@ -302,46 +229,6 @@ heliToggle.MouseButton1Click:Connect(function()
         startHelicopterIdleMode()
     else
         stopHelicopterIdle()
-    end
-end)
-
--- Server Tab
-local afkToggle = Instance.new("TextButton")
-afkToggle.Size = UDim2.new(1, -20, 0, 40)
-afkToggle.Position = UDim2.new(0, 10, 0, 10)
-afkToggle.BackgroundColor3 = settings.antiAfkEnabled and THEME.buttonOn or THEME.button
-afkToggle.Text = "Anti AFK: " .. (settings.antiAfkEnabled and "ON" or "OFF")
-afkToggle.TextColor3 = THEME.text
-afkToggle.Font = Enum.Font.SourceSansBold
-afkToggle.TextSize = 16
-afkToggle.Parent = serverTab
-
-afkToggle.MouseButton1Click:Connect(function()
-    settings.antiAfkEnabled = not settings.antiAfkEnabled
-    afkToggle.Text = "Anti AFK: " .. (settings.antiAfkEnabled and "ON" or "OFF")
-    afkToggle.BackgroundColor3 = settings.antiAfkEnabled and THEME.buttonOn or THEME.button
-    saveSettings()
-end)
-
-local hopButton = Instance.new("TextButton")
-hopButton.Size = UDim2.new(1, -20, 0, 40)
-hopButton.Position = UDim2.new(0, 10, 0, 60)
-hopButton.BackgroundColor3 = THEME.button
-hopButton.Text = "Server Hop"
-hopButton.TextColor3 = THEME.text
-hopButton.Font = Enum.Font.SourceSansBold
-hopButton.TextSize = 16
-hopButton.Parent = serverTab
-
-hopButton.MouseButton1Click:Connect(function()
-    local serverId = chooseServerId()
-    if serverId then
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(6652551895, serverId, LocalPlayer)
-        end)
-        notify("Server Hop", "Hopping...", 3)
-    else
-        notify("Server Hop", "No servers found", 3)
     end
 end)
 
@@ -372,9 +259,6 @@ title.InputEnded:Connect(function(input)
 end)
 
 -- Initialize
-pages["Main"].Visible = true
-tabContainer:FindFirstChild("Main").BackgroundColor3 = THEME.tabActive
-
 LocalPlayer.CharacterAdded:Connect(function()
     RunService.Heartbeat:Wait()
     applySpinState()
