@@ -3082,11 +3082,24 @@ local function applySpinState()
         end
         existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
         setSpinImmobility(true)
+        local gyro = root:FindFirstChild("SpinGyro")
+        if not gyro then
+            gyro = Instance.new("BodyGyro")
+            gyro.Name = "SpinGyro"
+            gyro.MaxTorque = Vector3.new(math.huge, 0, math.huge)
+            gyro.P = 10000
+            gyro.Parent = root
+        end
+        gyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.atan2(root.CFrame.LookVector.X, root.CFrame.LookVector.Z), 0)
     else
         if existing and existing:IsA("BodyAngularVelocity") then
             existing:Destroy()
         end
         setSpinImmobility(false)
+        local gyro = root:FindFirstChild("SpinGyro")
+        if gyro then
+            gyro:Destroy()
+        end
     end
 end
 
@@ -4324,3 +4337,14 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
+-- Queue on teleport
+local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
+if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
+    getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
+end
+if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_SOURCE == "" then
+    getgenv().PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
+end
+local queue_on_teleport = queue_on_teleport or function() end
+queue_on_teleport(getgenv().PLS_DONO_AUTOEXEC_SOURCE)
