@@ -2481,47 +2481,11 @@ local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
+local currentHelicopterAnimateScript = nil
+local currentHelicopterAnimateScriptEnabled = nil
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
-end
-
-local function resetAstronautArmSpread(char)
-    if not char then
-        return
-    end
-
-    local motorNames = {"LeftShoulder", "Left Shoulder", "RightShoulder", "Right Shoulder"}
-    for _, name in ipairs(motorNames) do
-        local motor = char:FindFirstChild(name, true)
-        if motor and motor:IsA("Motor6D") then
-            pcall(function()
-                motor.Transform = CFrame.new()
-            end)
-        end
-    end
-end
-
-local function applyAstronautArmSpread(char)
-    if not char then
-        return
-    end
-
-    local function setShoulder(name, transform)
-        local motor = char:FindFirstChild(name, true)
-        if motor and motor:IsA("Motor6D") then
-            pcall(function()
-                motor.Transform = transform
-            end)
-        end
-    end
-
-    local spreadOffset = 0.35
-    local angle = math.rad(50)
-    setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
-    setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
-    setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
-    setShoulder("Right Shoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
 end
 
 local function stopAstronautIdle()
@@ -2534,50 +2498,16 @@ local function stopAstronautIdle()
         end)
         currentAstronautIdleTrack = nil
     end
-    resetAstronautArmSpread(Players.LocalPlayer and Players.LocalPlayer.Character)
 end
 
-local function loadAstronautIdle()
-    stopAstronautIdle()
-    local pl = Players.LocalPlayer
-    if not pl then
-        return
-    end
-    local char = pl.Character
-    if not char then
-        return
-    end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then
-        return
-    end
-    local animator = hum:FindFirstChildOfClass("Animator")
-    if not animator then
-        animator = Instance.new("Animator")
-        animator.Parent = hum
-    end
-    pcall(function()
-        for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-            if track ~= currentAstronautIdleTrack then
-                track:Stop()
-            end
-        end
-    end)
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://10921034824"
-    local ok, track = pcall(function()
-        return animator:LoadAnimation(animation)
-    end)
-    animation:Destroy()
-    if ok and track then
-        currentAstronautIdleTrack = track
-        track.Priority = Enum.AnimationPriority.Action
-        track.Looped = true
+local function restoreHelicopterAnimateScript()
+    if currentHelicopterAnimateScript and currentHelicopterAnimateScript:IsA("LocalScript") then
         pcall(function()
-            track:Play()
+            currentHelicopterAnimateScript.Enabled = (currentHelicopterAnimateScriptEnabled ~= nil) and currentHelicopterAnimateScriptEnabled or true
         end)
-        applyAstronautArmSpread(char)
     end
+    currentHelicopterAnimateScript = nil
+    currentHelicopterAnimateScriptEnabled = nil
 end
 
 local function stopHelicopterSpin()
@@ -2588,6 +2518,7 @@ local function stopHelicopterSpin()
         currentHelicopterSpinTask = nil
     end
     stopAstronautIdle()
+    restoreHelicopterAnimateScript()
     local char = LocalPlayer.Character
     if char then
         local root = char:FindFirstChildOfClass("Humanoid") and char:FindFirstChildOfClass("Humanoid").RootPart
@@ -2643,20 +2574,67 @@ local function startHelicopterIdleMode()
     local root = hum and hum.RootPart
     if not root then return end
 
-    -- Trigger dance2 emote
-    sendChatMessage("/e dance2")
-    task.wait(0.5)  -- Wait for emote to start
-
-    -- Freeze animations
     local animateScript = char:FindFirstChild("Animate")
     if animateScript and animateScript:IsA("LocalScript") then
+        currentHelicopterAnimateScript = animateScript
+        currentHelicopterAnimateScriptEnabled = animateScript.Enabled
         animateScript.Enabled = false
     end
+
     pcall(function()
         for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
             track:Stop()
         end
     end)
+
+    -- Trigger dance2 emote and make it behave like a stiff heli animation
+    sendChatMessage("/e dance2")
+
+    local danceTrack = nil
+    for _ = 1, 10 do
+        pcall(function()
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                if track.IsPlaying and track:IsPlaying() then
+                    danceTrack = track
+                    break
+                end
+            end
+        end)
+
+        if danceTrack then
+            break
+        end
+        task.wait(0.03)
+    end
+
+    if danceTrack then
+        currentAstronautIdleTrack = danceTrack
+        danceTrack.Priority = Enum.AnimationPriority.Action
+        danceTrack.Looped = true
+        if not danceTrack.IsPlaying or not danceTrack:IsPlaying() then
+            pcall(function()
+                danceTrack:Play()
+            end)
+        end
+    else
+        -- If the first trigger doesn't take, send it once more quickly
+        sendChatMessage("/e dance2")
+        task.wait(0.03)
+        pcall(function()
+            for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                if track.IsPlaying and track:IsPlaying() then
+                    danceTrack = track
+                    break
+                end
+            end
+            if danceTrack then
+                currentAstronautIdleTrack = danceTrack
+                danceTrack.Priority = Enum.AnimationPriority.Action
+                danceTrack.Looped = true
+                danceTrack:Play()
+            end
+        end)
+    end
 
     local heliBody = root:FindFirstChild("HL1__HELI")
     if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
@@ -2669,15 +2647,13 @@ local function startHelicopterIdleMode()
     local idleSpeed = getHelicopterIdleAngularVelocity()
     stopHelicopterIdleTask()
 
-    -- Ramp BodyAngularVelocity from 0 up to idleSpeed faster than old.lua (2s vs 6s)
     heliBody.AngularVelocity = Vector3.new(0, 0, 0)
     currentIdleTask = task.spawn(function()
-        -- Ramp up phase
         local rampDuration = 2
         local rampStart = tick()
         while tick() - rampStart < rampDuration and settings.helicopterEnabled and root.Parent do
             local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
-            local ramped = idleSpeed * (t * t) -- quad-in ramp
+            local ramped = idleSpeed * (t * t)
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, ramped, 0)
             end
@@ -2687,12 +2663,11 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        -- Continuous idle spin with no pause
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
             end
-            task.wait(0.1)
+            task.wait(0.03)
         end
     end)
 
@@ -2708,7 +2683,9 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
     if not hum then return end
     local root = hum.RootPart
     if not root then return end
-    if currentHelicopterSpinTask then return end
+    if currentHelicopterSpinTask then
+        stopHelicopterSpin()
+    end
 
     currentHelicopterSpinTask = task.spawn(function()
         local ok, err = pcall(function()
@@ -2754,7 +2731,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
                 while tick() - rampStart < rampDuration and heliBody and heliBody.Parent do
                     local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
                     heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * t, 0)
-                    task.wait()
+                    task.wait(0.03)
                 end
                 if heliBody and heliBody.Parent then
                     heliBody.AngularVelocity = Vector3.new(0, toSpeed, 0)
@@ -2814,7 +2791,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
 
                 if elapsed >= riseDuration and yOffset <= 2.5 then
                     forcedRespawnNearGround = true
-                    triggerLandingExplosion(hum, root)
                     break
                 end
 
@@ -2830,7 +2806,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
                 if platformPart and platformPart.Parent then
                     platformPart.CFrame = CFrame.new(targetPos - Vector3.new(0, 3, 0))
                 end
-                task.wait()
+                task.wait(0.03)
             end
 
             if not forcedRespawnNearGround and char.Parent and root.Parent then
@@ -3105,6 +3081,7 @@ settingHandlers = {
             stopHelicopterIdleTask()
             stopHelicopterSpin()
             stopAstronautIdle()
+            restoreHelicopterAnimateScript()
         end
     end,
     helicopterSpeed = function(value)
