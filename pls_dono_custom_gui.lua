@@ -2516,8 +2516,8 @@ local function applyAstronautArmSpread(char)
         end
     end
 
-    local spreadOffset = 0.25
-    local angle = math.rad(35)
+    local spreadOffset = 0.35
+    local angle = math.rad(50)
     setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
@@ -2643,7 +2643,20 @@ local function startHelicopterIdleMode()
     local root = hum and hum.RootPart
     if not root then return end
 
-    loadAstronautIdle()
+    -- Trigger dance2 emote
+    sendChatMessage("/e dance2")
+    task.wait(0.5)  -- Wait for emote to start
+
+    -- Freeze animations
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript and animateScript:IsA("LocalScript") then
+        animateScript.Enabled = false
+    end
+    pcall(function()
+        for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+            track:Stop()
+        end
+    end)
 
     local heliBody = root:FindFirstChild("HL1__HELI")
     if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
@@ -2699,20 +2712,16 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
 
     currentHelicopterSpinTask = task.spawn(function()
         local ok, err = pcall(function()
-            loadAstronautIdle()
+            -- Removed: loadAstronautIdle()
 
             local animateScript = char:FindFirstChild("Animate")
             local animatePrevEnabled = nil
             if animateScript and animateScript:IsA("LocalScript") then
                 animatePrevEnabled = animateScript.Enabled
-                animateScript.Enabled = false
+                -- Removed: animateScript.Enabled = false
             end
 
-            pcall(function()
-                for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                    track:Stop()
-                end
-            end)
+            -- Removed: stopping tracks
 
             local targetSpinSpeed = math.max(0.2, tonumber(spinSpeed) or 0.55)
             local amount = math.max(1, tonumber(raisedAmount) or 1)
@@ -4211,7 +4220,6 @@ LocalPlayer.CharacterAdded:Connect(function()
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
         end
-        stopAstronautIdle()
         stopHelicopterIdleTask()
         stopHelicopterSpin()
         if settings.helicopterEnabled then
