@@ -7,7 +7,7 @@
 ]]
 
 repeat
-    task.wait()
+    wait()
 until game:IsLoaded()
 
 if game.PlaceId ~= 6652551895 then
@@ -947,8 +947,8 @@ playOpenFade(main)
 local playerPositions = {}
 local lastCheck = tick()
 
-task.spawn(function()
-    while task.wait(10) do  -- Check every 10 seconds
+spawn(function()
+    while wait(10) do  -- Check every 10 seconds
         if not settings.antiAfkEnabled then
             continue
         end
@@ -993,7 +993,7 @@ task.spawn(function()
 end)
 
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
+    wait(1)
     applySpinState()
     if settings.helicopterEnabled then
         startHelicopterIdleMode()
