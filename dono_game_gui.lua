@@ -186,7 +186,7 @@ local function sendChatMessage(message)
             if chatInput then
                 chatInput:CaptureFocus()
                 chatInput.Text = message
-                task.wait()
+                wait()
                 chatInput:ReleaseFocus(true)
             end
         else
@@ -395,18 +395,11 @@ local function startHelicopterIdleMode()
     end
 
     local idleSpeed = getHelicopterIdleAngularVelocity()
-    if currentIdleTask then
-        task.cancel(currentIdleTask)
-    end
 
     heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
 end
 
 local function stopHelicopterIdle()
-    if currentIdleTask then
-        task.cancel(currentIdleTask)
-        currentIdleTask = nil
-    end
     stopAstronautIdle()
     local char = LocalPlayer.Character
     if char then
