@@ -79,7 +79,7 @@ local function startHelicopterIdleMode()
     -- Play astronaut animation
     if hum then
         local anim = Instance.new("Animation")
-        anim.AnimationId = "rbxassetid://891621366" -- Astronaut animation
+        anim.AnimationId = "rbxassetid://10921034824" -- Astronaut animation
         local track = hum:LoadAnimation(anim)
         track:Play()
     end
@@ -89,7 +89,7 @@ local function startHelicopterIdleMode()
         local animator = hum:FindFirstChildOfClass("Animator")
         if animator then
             for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
-                if track.Animation.AnimationId ~= "rbxassetid://891621366" then
+                if track.Animation.AnimationId ~= "rbxassetid://10921034824" then
                     track:Stop()
                 end
             end
@@ -169,14 +169,53 @@ main.BorderSizePixel = 2
 main.BorderColor3 = THEME.border
 main.Parent = gui
 
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = THEME.tabBg
+titleBar.Parent = main
+
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundColor3 = THEME.tabBg
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
 title.Text = "DONATE GAME"
 title.TextColor3 = THEME.text
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
-title.Parent = main
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 40, 1, -4)
+closeBtn.Position = UDim2.new(1, -45, 0, 2)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = THEME.text
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 18
+closeBtn.Parent = titleBar
+
+local openBtn = Instance.new("TextButton")
+openBtn.Size = UDim2.new(0, 100, 0, 30)
+openBtn.Position = UDim2.new(0, 20, 0, 20)
+openBtn.BackgroundColor3 = THEME.tabBg
+openBtn.Text = "Open Donate"
+openBtn.TextColor3 = THEME.text
+openBtn.Font = Enum.Font.SourceSansBold
+openBtn.TextSize = 16
+openBtn.Visible = false
+openBtn.Parent = gui
+
+closeBtn.MouseButton1Click:Connect(function()
+    main.Visible = false
+    openBtn.Visible = true
+end)
+
+openBtn.MouseButton1Click:Connect(function()
+    main.Visible = true
+    openBtn.Visible = false
+end)
 
 local tabContainer = Instance.new("Frame")
 tabContainer.Size = UDim2.new(1, 0, 0, 40)
