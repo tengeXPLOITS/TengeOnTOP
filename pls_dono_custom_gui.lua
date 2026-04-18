@@ -347,8 +347,6 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    vcServer = false,
-    AlternativeHop = false,
     minimumDonated = 0,
     antiBotServers = false,
     antiBotThreshold = 17,
@@ -1578,11 +1576,6 @@ end
 
 serverHopNow = function()
     local function choosePlaceId()
-        if voiceEnabled and settings.vcServer then
-            return 8943844393
-        elseif settings.AlternativeHop then
-            return (math.random() < 0.5) and 8943844393 or 8737602449
-        end
         return 8737602449
     end
 
@@ -2047,17 +2040,17 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = CoreGui
 
 local THEME = {
-    topBar = Color3.fromRGB(150, 95, 45),
+    topBar = Color3.fromRGB(20, 20, 60),
     topBarText = Color3.fromRGB(238, 238, 238),
-    panel = Color3.fromRGB(8, 8, 8),
-    tabIdle = Color3.fromRGB(20, 20, 20),
-    tabActive = Color3.fromRGB(46, 46, 46),
-    section = Color3.fromRGB(12, 12, 12),
-    control = Color3.fromRGB(34, 34, 34),
+    panel = Color3.fromRGB(10, 10, 30),
+    tabIdle = Color3.fromRGB(15, 15, 45),
+    tabActive = Color3.fromRGB(30, 30, 80),
+    section = Color3.fromRGB(12, 12, 35),
+    control = Color3.fromRGB(20, 20, 50),
     controlText = Color3.fromRGB(228, 228, 228),
-    subtleText = Color3.fromRGB(156, 156, 156),
-    accent = Color3.fromRGB(104, 104, 104),
-    stroke = Color3.fromRGB(58, 58, 58),
+    subtleText = Color3.fromRGB(156, 156, 200),
+    accent = Color3.fromRGB(100, 100, 200),
+    stroke = Color3.fromRGB(40, 40, 80),
 }
 
 local main = Instance.new("Frame")
@@ -2523,8 +2516,8 @@ local function applyAstronautArmSpread(char)
         end
     end
 
-    local spreadOffset = 0.12
-    local angle = math.rad(14)
+    local spreadOffset = 0.25
+    local angle = math.rad(35)
     setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
@@ -2715,6 +2708,12 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
                 animateScript.Enabled = false
             end
 
+            pcall(function()
+                for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+                    track:Stop()
+                end
+            end)
+
             local targetSpinSpeed = math.max(0.2, tonumber(spinSpeed) or 0.55)
             local amount = math.max(1, tonumber(raisedAmount) or 1)
 
@@ -2737,7 +2736,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end
 
             -- Rapidly ramp spin up to 25 over 6s (while chat messages fire)
-            sendChatMessage("Enabling engines...")
+            sendChatMessage("bro funded the helicopter LOL")
             task.spawn(function()
                 local rampStart = tick()
                 local rampDuration = 6
@@ -2754,7 +2753,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end)
 
             task.wait(3)
-            sendChatMessage("TAKE OFF IN 3")
+            sendChatMessage("LIFTOFF IN 3")
             task.wait(1)
             sendChatMessage("2")
             task.wait(1)
@@ -3043,29 +3042,6 @@ local function getSpinMover()
     return nil
 end
 
-local function setSpinImmobility(enabled)
-    local char, humanoid, _ = getCharacterHumanoidRoot()
-    if not char or not humanoid then
-        return
-    end
-
-    local animateScript = char:FindFirstChild("Animate")
-    if animateScript and animateScript:IsA("LocalScript") then
-        animateScript.Enabled = not enabled
-    end
-
-    humanoid.PlatformStand = enabled
-    if enabled then
-        pcall(function()
-            for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-                track:Stop()
-            end
-        end)
-    else
-        applySelectedAnimation()
-    end
-end
-
 local function applySpinState()
     local char, humanoid, root = getCharacterHumanoidRoot()
     if not root or not humanoid then
@@ -3081,24 +3057,9 @@ local function applySpinState()
             existing.Parent = root
         end
         existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
-        setSpinImmobility(true)
-        local gyro = root:FindFirstChild("SpinGyro")
-        if not gyro then
-            gyro = Instance.new("BodyGyro")
-            gyro.Name = "SpinGyro"
-            gyro.MaxTorque = Vector3.new(math.huge, 0, math.huge)
-            gyro.P = 10000
-            gyro.Parent = root
-        end
-        gyro.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.atan2(root.CFrame.LookVector.X, root.CFrame.LookVector.Z), 0)
     else
         if existing and existing:IsA("BodyAngularVelocity") then
             existing:Destroy()
-        end
-        setSpinImmobility(false)
-        local gyro = root:FindFirstChild("SpinGyro")
-        if gyro then
-            gyro:Destroy()
         end
     end
 end
@@ -3930,25 +3891,25 @@ end
 
 do
     local otherSection = createSection(otherTab, "Other Settings")
-    createInfoLabel(otherSection, "Donate Game: teleport to the donate server for testing.")
+    createInfoLabel(otherSection, "Donate Game: teleport to the donate game. (similar to pls donate), YOU WILL BE DIRECTED TO THIS GAME IF YOU GET BANNED FROM PLS DONATE! I HAVE MADE A GUI FOR THIS GAME LOL")
     createButton(otherSection, "Go to Donate Game", function()
         pcall(function()
-            TeleportService:Teleport(8737602449, LocalPlayer)
+            TeleportService:Teleport(6652551895, LocalPlayer)
         end)
     end)
+    createInfoLabel(otherSection, "Create your own booth and sell your gamepasses to start making Robux in Donate Game 💸 or donate to others and spread your wealth! 🤑💰")
+    createInfoLabel(otherSection, "💰Start with no robux and earn more!")
+    createInfoLabel(otherSection, "🔥 Any gamepasses you have on sale will be automatically added to your booth!")
+    createInfoLabel(otherSection, "💎Earn gems by playing and buy cosmetics!")
+    createInfoLabel(otherSection, "✨Unlock new skins, props and emotes!")
+    createInfoLabel(otherSection, "👍 Like and favourite the game for updates!")
+    createInfoLabel(otherSection, "Development team: Royale Games.")
 end
 
 do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
-    if voiceEnabled then
-        createToggle(serverSection, "Voice Chat Servers", "vcServer")
-        createToggle(serverSection, "Random Normal/Voice", "AlternativeHop")
-    else
-        settings.vcServer = false
-        settings.AlternativeHop = false
-    end
     createTextBox(serverSection, "Minimum Donated Amount", "minimumDonated", true)
     createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
     createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
