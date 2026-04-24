@@ -96,11 +96,6 @@ local function normalizePlayerText(value)
     return trimText(value):gsub("^@", ""):lower()
 end
 
-local hopTimerTask = nil
-local hopTimerDisplay = nil
-local hopFloatingNotif = nil
-local hopFloatingNotif = nil
-
 local function textMatchesLocalPlayer(value)
     local normalized = normalizePlayerText(value)
     if normalized == "" then
@@ -312,7 +307,7 @@ local function cloneRef(v)
     return v
 end
 
-local CoreGui = game:GetService("Players").LocalPlayer.PlayerGui
+local CoreGui = cloneRef(game:GetService("CoreGui"))
 
 if getgenv().PLS_DONO_CUSTOM_GUI_LOADED and CoreGui:FindFirstChild("PlsDonoCustomGui") then
     return
@@ -321,18 +316,6 @@ end
 -- Recover gracefully if a previous run crashed before creating the UI.
 getgenv().PLS_DONO_CUSTOM_GUI_LOADED = nil
 getgenv().PLS_DONO_CUSTOM_GUI_LOADED = true
-getgenv().PLS_DONO_CURRENT_CHARACTER = game:GetService("Players").LocalPlayer.Character
-
--- Anti-AFK for UGphone and other exploits (always enabled)
-task.spawn(function()
-    local VirtualUser = game:GetService("VirtualUser")
-    Players.LocalPlayer.Idled:Connect(function()
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
-        end)
-    end)
-end)
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
@@ -364,7 +347,8 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    serverHopTimerVisible = true,
+    vcServer = false,
+    AlternativeHop = false,
     minimumDonated = 0,
     antiBotServers = false,
     antiBotThreshold = 17,
@@ -409,7 +393,7 @@ local emotePresetOrder = {
 local emotePresets = {
     ["tantrum"] = "10714340558",
     ["happy"] = "10714352626",
-    ["korean greeting"] = "9527883498",
+    ["korean gretting"] = "9527883498",
     ["sturdy"] = "102571052202995",
     ["shake that thang"] = "118364690209655",
     ["flowing breeze"] = "10714342957",
@@ -1392,50 +1376,6 @@ local function resetHopTimer()
     donatedSinceHopTimerReset = 0
 end
 
-local function startServerHopTimer()
-    if hopTimerTask then
-        task.cancel(hopTimerTask)
-        hopTimerTask = nil
-    end
-    
-    if not settings.serverHopToggle then
-        return
-    end
-    
-    hopTimerTask = task.spawn(function()
-        local delaySeconds = math.max(1, tonumber(settings.serverHopDelay) or 15) * 60
-        local startTime = tick()
-        
-        while task.wait(0.5) do
-            if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then 
-                break 
-            end
-            
-            if not settings.serverHopToggle then
-                break
-            end
-            
-            local elapsed = tick() - startTime
-            local remaining = math.max(0, delaySeconds - elapsed)
-            
-            if hopTimerDisplay and hopTimerDisplay.Parent then
-                local minutes = math.floor(remaining / 60)
-                local seconds = math.floor(remaining % 60)
-                hopTimerDisplay.Text = string.format("Hop: %d:%02d", minutes, seconds)
-            end
-            
-            if remaining <= 0 then
-                if requestServerHop("auto-timer") then
-                    resetHopTimer()
-                    startServerHopTimer()
-                end
-                break
-            end
-        end
-        hopTimerTask = nil
-    end)
-end
-
 local function markDonationForHopTimer(delta)
     hopTimerResetTick = tick()
     donatedSinceHopTimerReset += math.max(0, tonumber(delta) or 0)
@@ -1638,6 +1578,11 @@ end
 
 serverHopNow = function()
     local function choosePlaceId()
+        if voiceEnabled and settings.vcServer then
+            return 8943844393
+        elseif settings.AlternativeHop then
+            return (math.random() < 0.5) and 8943844393 or 8737602449
+        end
         return 8737602449
     end
 
@@ -1842,32 +1787,8 @@ requestServerHop = function(reason)
         return false
     end
     lastHopTick = now
-    
-    -- Show floating notification animation
-    if hopTimerDisplay and hopTimerDisplay.Parent then
-        local notif = Instance.new("TextLabel")
-        notif.Name = "HopFloatingNotif"
-        notif.BackgroundColor3 = THEME.topBar
-        notif.TextColor3 = THEME.topBarText
-        notif.Font = Enum.Font.GothamSemibold
-        notif.TextSize = 14
-        notif.Text = "Server hopping in " .. math.ceil((tonumber(settings.serverHopDelay) or 15)) .. " minutes..."
-        notif.Size = UDim2.new(0, 250, 0, 30)
-        notif.Position = UDim2.new(0.5, -125, 0, 50)
-        notif.Parent = CoreGui
-        
-        local notifCorner = Instance.new("UICorner")
-        notifCorner.CornerRadius = UDim.new(0, 8)
-        notifCorner.Parent = notif
-        
-        local notifStroke = Instance.new("UIStroke")
-        notifStroke.Color = THEME.accent
-        notifStroke.Thickness = 2
-        notifStroke.Parent = notif
-        
-        -- Float animation to bottom right
-        task.spawn(function()
-            local startTime = tick()\n            local duration = 4\n            local startPos = notif.Position\n            local targetPos = UDim2.new(1, -260, 1, -55)\n            \n            while task.wait(0.05) and notif and notif.Parent do\n                local elapsed = tick() - startTime\n                local progress = math.min(elapsed / duration, 1)\n                local eased = progress * progress * (3 - 2 * progress)\n                \n                notif.Position = startPos:Lerp(targetPos, eased)\n                notif.BackgroundTransparency = math.max(0, 1 - (1 - progress) * 0.3)\n                \n                if progress >= 1 then\n                    game:GetService(\"Debris\"):AddItem(notif, 0.5)\n                    break\n                end\n            end\n        end)\n    end\n    \n    return serverHopNow(reason)\nend
+    return serverHopNow(reason)
+end
 
 findOwnedBoothSlot = function(boothUiFolder)
     if not boothUiFolder then
@@ -2126,17 +2047,17 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = CoreGui
 
 local THEME = {
-    topBar = Color3.fromRGB(20, 20, 60),
+    topBar = Color3.fromRGB(150, 95, 45),
     topBarText = Color3.fromRGB(238, 238, 238),
-    panel = Color3.fromRGB(10, 10, 30),
-    tabIdle = Color3.fromRGB(15, 15, 45),
-    tabActive = Color3.fromRGB(30, 30, 80),
-    section = Color3.fromRGB(12, 12, 35),
-    control = Color3.fromRGB(20, 20, 50),
+    panel = Color3.fromRGB(8, 8, 8),
+    tabIdle = Color3.fromRGB(20, 20, 20),
+    tabActive = Color3.fromRGB(46, 46, 46),
+    section = Color3.fromRGB(12, 12, 12),
+    control = Color3.fromRGB(34, 34, 34),
     controlText = Color3.fromRGB(228, 228, 228),
-    subtleText = Color3.fromRGB(156, 156, 200),
-    accent = Color3.fromRGB(100, 100, 200),
-    stroke = Color3.fromRGB(40, 40, 80),
+    subtleText = Color3.fromRGB(156, 156, 156),
+    accent = Color3.fromRGB(104, 104, 104),
+    stroke = Color3.fromRGB(58, 58, 58),
 }
 
 local main = Instance.new("Frame")
@@ -2276,30 +2197,6 @@ pages.Size = UDim2.new(1, -10, 1, -39)
 pages.Position = UDim2.new(0, 5, 0, 35)
 pages.BackgroundTransparency = 1
 pages.Parent = body
-
--- Server Hop Timer Display (bottom right)
-do
-    hopTimerDisplay = Instance.new("TextLabel")
-    hopTimerDisplay.Name = "HopTimerDisplay"
-    hopTimerDisplay.BackgroundColor3 = THEME.panel
-    hopTimerDisplay.TextColor3 = THEME.subtleText
-    hopTimerDisplay.Font = Enum.Font.GothamSemibold
-    hopTimerDisplay.TextSize = 11
-    hopTimerDisplay.Text = "Hop: --:--"
-    hopTimerDisplay.Size = UDim2.new(0, 70, 0, 20)
-    hopTimerDisplay.Position = UDim2.new(1, -75, 1, -25)
-    hopTimerDisplay.Parent = CoreGui
-    hopTimerDisplay.Visible = false
-    
-    local timerCorner = Instance.new("UICorner")
-    timerCorner.CornerRadius = UDim.new(0, 5)
-    timerCorner.Parent = hopTimerDisplay
-    
-    local timerStroke = Instance.new("UIStroke")
-    timerStroke.Color = THEME.stroke
-    timerStroke.Thickness = 1
-    timerStroke.Parent = hopTimerDisplay
-end
 
 local function makeDraggable(frame, handle)
     local DRAG_SMOOTH_TIME = 0.06
@@ -2591,62 +2488,9 @@ local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
-local currentHelicopterAnimateScript = nil
-local currentHelicopterAnimateScriptEnabled = nil
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
-end
-
-local function stopAstronautIdle()
-    if currentAstronautIdleTrack then
-        pcall(function()
-            currentAstronautIdleTrack:Stop()
-        end)
-        pcall(function()
-            currentAstronautIdleTrack:Destroy()
-        end)
-        currentAstronautIdleTrack = nil
-    end
-end
-
-local function restoreHelicopterAnimateScript()
-    if currentHelicopterAnimateScript and currentHelicopterAnimateScript:IsA("LocalScript") then
-        pcall(function()
-            currentHelicopterAnimateScript.Enabled = (currentHelicopterAnimateScriptEnabled ~= nil) and currentHelicopterAnimateScriptEnabled or true
-        end)
-    end
-    currentHelicopterAnimateScript = nil
-    currentHelicopterAnimateScriptEnabled = nil
-end
-
-local function stopHelicopterSpin()
-    if currentHelicopterSpinTask then
-        pcall(function()
-            task.cancel(currentHelicopterSpinTask)
-        end)
-        currentHelicopterSpinTask = nil
-    end
-    stopAstronautIdle()
-    restoreHelicopterAnimateScript()
-    local char = LocalPlayer.Character
-    if char then
-        local root = char:FindFirstChildOfClass("Humanoid") and char:FindFirstChildOfClass("Humanoid").RootPart
-        if root then
-            local heliBody = root:FindFirstChild("HL1__HELI")
-            if heliBody then
-                pcall(function()
-                    heliBody:Destroy()
-                end)
-            end
-        end
-        local platform = Workspace:FindFirstChild("_HELICOPTER_PLATFORM") or Workspace:FindFirstChild("_HIGHLIGHT.CF")
-        if platform then
-            pcall(function()
-                platform:Destroy()
-            end)
-        end
-    end
 end
 
 local function resetAstronautArmSpread(char)
@@ -2680,11 +2524,24 @@ local function applyAstronautArmSpread(char)
     end
 
     local spreadOffset = 0.12
-    local angle = math.rad(12)
+    local angle = math.rad(14)
     setShoulder("LeftShoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("Left Shoulder", CFrame.new(-spreadOffset, 0, 0) * CFrame.Angles(0, 0, angle))
     setShoulder("RightShoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
     setShoulder("Right Shoulder", CFrame.new(spreadOffset, 0, 0) * CFrame.Angles(0, 0, -angle))
+end
+
+local function stopAstronautIdle()
+    if currentAstronautIdleTrack then
+        pcall(function()
+            currentAstronautIdleTrack:Stop()
+        end)
+        pcall(function()
+            currentAstronautIdleTrack:Destroy()
+        end)
+        currentAstronautIdleTrack = nil
+    end
+    resetAstronautArmSpread(Players.LocalPlayer and Players.LocalPlayer.Character)
 end
 
 local function loadAstronautIdle()
@@ -2727,6 +2584,34 @@ local function loadAstronautIdle()
             track:Play()
         end)
         applyAstronautArmSpread(char)
+    end
+end
+
+local function stopHelicopterSpin()
+    if currentHelicopterSpinTask then
+        pcall(function()
+            task.cancel(currentHelicopterSpinTask)
+        end)
+        currentHelicopterSpinTask = nil
+    end
+    stopAstronautIdle()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChildOfClass("Humanoid") and char:FindFirstChildOfClass("Humanoid").RootPart
+        if root then
+            local heliBody = root:FindFirstChild("HL1__HELI")
+            if heliBody then
+                pcall(function()
+                    heliBody:Destroy()
+                end)
+            end
+        end
+        local platform = Workspace:FindFirstChild("_HELICOPTER_PLATFORM") or Workspace:FindFirstChild("_HIGHLIGHT.CF")
+        if platform then
+            pcall(function()
+                platform:Destroy()
+            end)
+        end
     end
 end
 
@@ -2796,7 +2681,7 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        -- Continuous idle spin mode with no pause
+        -- Continuous idle spin with no pause
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
@@ -2852,7 +2737,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end
 
             -- Rapidly ramp spin up to 25 over 6s (while chat messages fire)
-            sendChatMessage("Bro really funded the helicopter")
+            sendChatMessage("Enabling engines...")
             task.spawn(function()
                 local rampStart = tick()
                 local rampDuration = 6
@@ -2869,7 +2754,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, pau
             end)
 
             task.wait(3)
-            sendChatMessage("LIFTOFF STARTS IN 3")
+            sendChatMessage("TAKE OFF IN 3")
             task.wait(1)
             sendChatMessage("2")
             task.wait(1)
@@ -3158,6 +3043,29 @@ local function getSpinMover()
     return nil
 end
 
+local function setSpinImmobility(enabled)
+    local char, humanoid, _ = getCharacterHumanoidRoot()
+    if not char or not humanoid then
+        return
+    end
+
+    local animateScript = char:FindFirstChild("Animate")
+    if animateScript and animateScript:IsA("LocalScript") then
+        animateScript.Enabled = not enabled
+    end
+
+    humanoid.PlatformStand = enabled
+    if enabled then
+        pcall(function()
+            for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+                track:Stop()
+            end
+        end)
+    else
+        applySelectedAnimation()
+    end
+end
+
 local function applySpinState()
     local char, humanoid, root = getCharacterHumanoidRoot()
     if not root or not humanoid then
@@ -3173,10 +3081,12 @@ local function applySpinState()
             existing.Parent = root
         end
         existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+        setSpinImmobility(true)
     else
         if existing and existing:IsA("BodyAngularVelocity") then
             existing:Destroy()
         end
+        setSpinImmobility(false)
     end
 end
 
@@ -3212,7 +3122,6 @@ settingHandlers = {
             stopHelicopterIdleTask()
             stopHelicopterSpin()
             stopAstronautIdle()
-            restoreHelicopterAnimateScript()
         end
     end,
     helicopterSpeed = function(value)
@@ -3282,38 +3191,6 @@ settingHandlers = {
         local spin = getSpinMover()
         if spin then
             spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
-        end
-    end,
-    serverHopToggle = function(enabled)
-        if enabled then
-            resetHopTimer()
-            startServerHopTimer()
-            if hopTimerDisplay then
-                hopTimerDisplay.Visible = settings.serverHopTimerVisible
-            end
-            notify("Server Hop", "Timer started!", 3, "hop-toggle", 5)
-        else
-            if hopTimerTask then
-                task.cancel(hopTimerTask)
-                hopTimerTask = nil
-            end
-            if hopTimerDisplay then
-                hopTimerDisplay.Visible = false
-                hopTimerDisplay.Text = "Hop: --:--"
-            end
-            notify("Server Hop", "Timer stopped!", 3, "hop-toggle", 5)
-        end
-    end,
-    serverHopDelay = function()
-        resetHopTimer()
-        if settings.serverHopToggle then
-            startServerHopTimer()
-            notify("Server Hop", "Timer reset!", 3, "hop-delay-change", 5)
-        end
-    end,
-    serverHopTimerVisible = function(enabled)
-        if hopTimerDisplay then
-            hopTimerDisplay.Visible = enabled and settings.serverHopToggle
         end
     end,
 }
@@ -4040,25 +3917,25 @@ end
 
 do
     local otherSection = createSection(otherTab, "Other Settings")
-    createInfoLabel(otherSection, "Donate Game: teleport to the donate game. (similar to pls donate), YOU WILL BE DIRECTED TO THIS GAME IF YOU GET BANNED FROM PLS DONATE! I HAVE MADE A GUI FOR THIS GAME LOL")
+    createInfoLabel(otherSection, "Donate Game: teleport to the donate server for testing.")
     createButton(otherSection, "Go to Donate Game", function()
         pcall(function()
-            TeleportService:Teleport(6652551895, LocalPlayer)
+            TeleportService:Teleport(8737602449, LocalPlayer)
         end)
     end)
-    createInfoLabel(otherSection, "Create your own booth and sell your gamepasses to start making Robux in Donate Game 💸 or donate to others and spread your wealth! 🤑💰")
-    createInfoLabel(otherSection, "💰Start with no robux and earn more!")
-    createInfoLabel(otherSection, "🔥 Any gamepasses you have on sale will be automatically added to your booth!")
-    createInfoLabel(otherSection, "💎Earn gems by playing and buy cosmetics!")
-    createInfoLabel(otherSection, "✨Unlock new skins, props and emotes!")
-    createInfoLabel(otherSection, "👍 Like and favourite the game for updates!")
-    createInfoLabel(otherSection, "Development team: Royale Games.")
 end
 
 do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+    if voiceEnabled then
+        createToggle(serverSection, "Voice Chat Servers", "vcServer")
+        createToggle(serverSection, "Random Normal/Voice", "AlternativeHop")
+    else
+        settings.vcServer = false
+        settings.AlternativeHop = false
+    end
     createTextBox(serverSection, "Minimum Donated Amount", "minimumDonated", true)
     createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
     createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
@@ -4154,7 +4031,6 @@ end)
 
 task.spawn(function()
     while task.wait(0.8) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         local boothLocation = getBoothLocation()
         local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
         local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
@@ -4167,7 +4043,6 @@ end)
 task.spawn(function()
     local lastHopTick = 0
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.antiBotServers then
             local interval = math.max(2, tonumber(settings.antiBotInterval) or 8)
             task.wait(interval)
@@ -4191,7 +4066,6 @@ end)
 task.spawn(function()
     local lastPopulationHopTick = 0
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.populationHopEnabled then
             local interval = math.max(3, tonumber(settings.populationCheckInterval) or 10)
             task.wait(interval)
@@ -4209,7 +4083,6 @@ end)
 task.spawn(function()
     local lastModHopTick = 0
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.modEvader then
             task.wait(3)
             local detectedPlayer = findDetectedModPlayer()
@@ -4228,7 +4101,6 @@ end)
 task.spawn(function()
     local lastTextUpdate = 0
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.textUpdateToggle then
             local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
             if tick() - lastTextUpdate >= delaySeconds then
@@ -4365,6 +4237,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
         end
+        stopAstronautIdle()
         stopHelicopterIdleTask()
         stopHelicopterSpin()
         if settings.helicopterEnabled then
@@ -4380,24 +4253,15 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.serverHopToggle then
-            if not hopTimerTask or coroutine.status(hopTimerTask) == "dead" then
-                startServerHopTimer()
-            end
-            if hopTimerDisplay then
-                hopTimerDisplay.Visible = settings.serverHopTimerVisible
+            local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
+            if tick() - hopTimerResetTick >= (delayMinutes * 60) then
+                if requestServerHop("auto-timer") then
+                    resetHopTimer()
+                end
             end
         else
-            if hopTimerTask then
-                task.cancel(hopTimerTask)
-                hopTimerTask = nil
-            end
             hopTimerResetTick = tick()
-            if hopTimerDisplay then
-                hopTimerDisplay.Visible = false
-                hopTimerDisplay.Text = "Hop: --:--"
-            end
         end
     end
 end)
@@ -4405,7 +4269,6 @@ end)
 task.spawn(function()
     local lastBegTick = 0
     while task.wait(1) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.autoBeg then
             local delaySeconds = math.max(3, tonumber(settings.begDelay) or 300)
             if tick() - lastBegTick >= delaySeconds then
@@ -4420,7 +4283,6 @@ end)
 
 task.spawn(function()
     while task.wait(0.4) do
-        if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.spinSet and claimedBoothSlot then
             local _, _, root = getCharacterHumanoidRoot()
             local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
@@ -4462,14 +4324,3 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
--- Queue on teleport
-local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
-if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
-    getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
-end
-if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_SOURCE == "" then
-    getgenv().PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
-end
-local queue_on_teleport = queue_on_teleport or function() end
-queue_on_teleport(getgenv().PLS_DONO_AUTOEXEC_SOURCE)
