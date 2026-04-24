@@ -318,6 +318,28 @@ getgenv().PLS_DONO_CUSTOM_GUI_LOADED = nil
 getgenv().PLS_DONO_CUSTOM_GUI_LOADED = true
 getgenv().PLS_DONO_CURRENT_CHARACTER = game:GetService("Players").LocalPlayer.Character
 
+-- Anti-AFK for UGphone and other exploits (always enabled)
+task.spawn(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    Players.LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end)
+end)
+
+-- Anti-AFK for UGphone and other exploits (always enabled)
+task.spawn(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    Players.LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end)
+end)
+
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 
@@ -639,6 +661,8 @@ local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
+local hopTimerTask = nil
+local hopTimerDisplay = nil
 local hopFileName = "PlsDonateServerHop-Temp"
 local visitedServerIds = {}
 local hopFileHour = os.date("!*t").hour
@@ -1375,6 +1399,50 @@ local function resetHopTimer()
     donatedSinceHopTimerReset = 0
 end
 
+local function startServerHopTimer()
+    if hopTimerTask then
+        task.cancel(hopTimerTask)
+        hopTimerTask = nil
+    end
+    
+    if not settings.serverHopToggle then
+        return
+    end
+    
+    hopTimerTask = task.spawn(function()
+        local delaySeconds = math.max(1, tonumber(settings.serverHopDelay) or 15) * 60
+        local startTime = tick()
+        
+        while task.wait(0.5) do
+            if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then 
+                break 
+            end
+            
+            if not settings.serverHopToggle then
+                break
+            end
+            
+            local elapsed = tick() - startTime
+            local remaining = math.max(0, delaySeconds - elapsed)
+            
+            if hopTimerDisplay and hopTimerDisplay.Parent then
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                hopTimerDisplay.Text = string.format("Hop: %d:%02d", minutes, seconds)
+            end
+            
+            if remaining <= 0 then
+                if requestServerHop("auto-timer") then
+                    resetHopTimer()
+                    startServerHopTimer()
+                end
+                break
+            end
+        end
+        hopTimerTask = nil
+    end)
+end
+
 local function markDonationForHopTimer(delta)
     hopTimerResetTick = tick()
     donatedSinceHopTimerReset += math.max(0, tonumber(delta) or 0)
@@ -2104,6 +2172,29 @@ do
     stroke.Color = THEME.stroke
     stroke.Thickness = 1
     stroke.Parent = main
+end
+
+-- Server Hop Timer Display (bottom right)
+do
+    hopTimerDisplay = Instance.new("TextLabel")
+    hopTimerDisplay.Name = "HopTimerDisplay"
+    hopTimerDisplay.BackgroundColor3 = THEME.panel
+    hopTimerDisplay.TextColor3 = THEME.subtleText
+    hopTimerDisplay.Font = Enum.Font.GothamSemibold
+    hopTimerDisplay.TextSize = 11
+    hopTimerDisplay.Text = "Hop: --:--"
+    hopTimerDisplay.Size = UDim2.new(0, 70, 0, 20)
+    hopTimerDisplay.Position = UDim2.new(1, -75, 1, -25)
+    hopTimerDisplay.Parent = gui
+    
+    local timerCorner = Instance.new("UICorner")
+    timerCorner.CornerRadius = UDim.new(0, 5)
+    timerCorner.Parent = hopTimerDisplay
+    
+    local timerStroke = Instance.new("UIStroke")
+    timerStroke.Color = THEME.stroke
+    timerStroke.Thickness = 1
+    timerStroke.Parent = hopTimerDisplay
 end
 
 local topBar = Instance.new("Frame")
@@ -3175,6 +3266,26 @@ settingHandlers = {
             spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
         end
     end,
+    serverHopToggle = function(enabled)
+        if enabled then
+            resetHopTimer()
+            startServerHopTimer()
+        else
+            if hopTimerTask then
+                task.cancel(hopTimerTask)
+                hopTimerTask = nil
+            end
+            if hopTimerDisplay then
+                hopTimerDisplay.Text = "Hop: --:--"
+            end
+        end
+    end,
+    serverHopDelay = function()
+        resetHopTimer()
+        if settings.serverHopToggle then
+            startServerHopTimer()
+        end
+    end,
 }
 
 local playOpenFade
@@ -4241,13 +4352,14 @@ task.spawn(function()
     while task.wait(1) do
         if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.serverHopToggle then
-            local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
-            if tick() - hopTimerResetTick >= (delayMinutes * 60) then
-                if requestServerHop("auto-timer") then
-                    resetHopTimer()
-                end
+            if not hopTimerTask or coroutine.status(hopTimerTask) == "dead" then
+                startServerHopTimer()
             end
         else
+            if hopTimerTask then
+                task.cancel(hopTimerTask)
+                hopTimerTask = nil
+            end
             hopTimerResetTick = tick()
         end
     end
