@@ -3982,8 +3982,6 @@ do
     end)
 end
 
-end
-
 buildSettingsTabs()
 
 playOpenFade = function(root)
