@@ -6,8 +6,6 @@
     - Persistent settings with JSON file
 ]]
 
-print("bipv's UI reworked - darkmode/antilag")
-
 repeat
     task.wait()
 until game:IsLoaded()
@@ -393,25 +391,17 @@ local defaults = {
 }
 
 local emotePresetOrder = {
-    "sturdy",
     "jumping wave",
     "wake up call-ksi",
     "twice the feels",
-    "louder",
-    "low cortisol",
-    "zesty sturdy",
     "Korean greeting",
     "block party",
 }
 
 local emotePresets = {
-    ["sturdy"] = "102571052202995",
     ["jumping wave"] = "10714378156"
     ["wake up call-ksi"] = "10714168145",
     ["twice the feels"] = "12874447851",
-    ["louder"] = "10714385204",
-    ["low cortisol"] = "77387643699357",
-    ["zesty sturdy"] = "132104757386824",
     ["korean greeting"] = "138591721528570",
     ["block party"] = "10713988674",
 }
@@ -628,10 +618,7 @@ local flaggedBoothTexts = {
     "5x",
     "multiply",
     "multiplying",
-    "improving",
-    "raising",
     "1R$=",
-    "1R",
     "homeless bacon",
     
 }
