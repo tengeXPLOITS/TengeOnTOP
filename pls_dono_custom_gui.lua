@@ -6,6 +6,8 @@
     - Persistent settings with JSON file
 ]]
 
+print("Correct ui loaded")
+
 repeat
     task.wait()
 until game:IsLoaded()
