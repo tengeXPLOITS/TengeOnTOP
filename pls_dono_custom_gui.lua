@@ -1209,6 +1209,16 @@ local function formatBoothNumber(n)
     return tostring(math.floor(value))
 end
 
+local function escapeRichTextText(value)
+    local text = tostring(value or "")
+    text = text:gsub("&", "&amp;")
+    text = text:gsub("<", "&lt;")
+    text = text:gsub(">", "&gt;")
+    text = text:gsub('"', "&quot;")
+    text = text:gsub("'", "&apos;")
+    return text
+end
+
 local function getGoalProgressSnapshot()
     local current = tonumber(getCurrentRaisedAmount()) or 0
     local goal = math.max(0, tonumber(settings.goalBox) or 0)
@@ -1228,7 +1238,7 @@ local function buildGoalProgressBar()
 
     local emptySegments = math.max(0, totalSegments - filledSegments)
     return string.format(
-        "<font color='rgb(30,144,255)'>%s</font><font color='rgb(70,70,70)'>%s</font>",
+        "<font color=\"rgb(30,144,255)\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
         string.rep("|", filledSegments),
         string.rep("|", emptySegments)
     )
@@ -1259,15 +1269,15 @@ local function buildBoothText()
 end
 
 local function buildGoalBarTemplate()
-    local headerText = tostring(settings.goalBarHeaderText or "GOAL $G")
+    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
 
     return table.concat({
-        "<font color='rgb(30,144,255)' face='LuckiestGuy'>",
+        "<font color=\"rgb(30,144,255)\" size=\"22\"><b>",
         headerText,
-        "</font><br />",
-        "<stroke thickness='6' color='rgb(0,0,0)'><font size='17' face='GothamBlack'>",
+        "</b></font><br/>",
+        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
         "$BAR",
-        "</font></stroke>",
+        "</stroke>",
     })
 end
 
