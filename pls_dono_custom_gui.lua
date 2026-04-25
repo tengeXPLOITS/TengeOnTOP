@@ -394,21 +394,26 @@ local defaults = {
 
 local emotePresetOrder = {
     "sturdy",
-    "flowing breeze",
+    "jumping wave",
     "wake up call-ksi",
     "twice the feels",
     "louder",
     "low cortisol",
     "zesty sturdy",
+    "Korean greeting",
+    "block party",
 }
 
 local emotePresets = {
     ["sturdy"] = "102571052202995",
+    ["jumping wave"] = "10714378156"
     ["wake up call-ksi"] = "10714168145",
     ["twice the feels"] = "12874447851",
     ["louder"] = "10714385204",
     ["low cortisol"] = "77387643699357",
     ["zesty sturdy"] = "132104757386824",
+    ["korean greeting"] = "138591721528570",
+    ["block party"] = "10713988674",
 }
 
 local catalogEmoteOptions = {"Disabled"}
@@ -2076,7 +2081,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "God loves you <3| Brought back by Matty"
+    title.Text = ".gg/SYpKSnFetn | PLS DONO ANIMOSITY"
     title.Parent = topBar
 end
 
