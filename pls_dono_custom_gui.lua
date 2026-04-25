@@ -366,6 +366,9 @@ local defaults = {
     populationHopEnabled = false,
     populationThreshold = 14,
     populationCheckInterval = 10,
+    minPlayerCount = 23,
+    maxPlayerCount = 24,
+    serverHopTimerVisible = true,
 
     danceChoice = "Disabled",
     catalogEmote = "Disabled",
@@ -650,6 +653,10 @@ local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
+local serverHopTimerDisplay
+local serverHopTimerLabel
+local lastServerHopDelayValue = nil
+local timerFloatAnimationActive = false
 local hopFileName = "PlsDonateServerHop-Temp"
 local visitedServerIds = {}
 local hopFileHour = os.date("!*t").hour
@@ -1697,7 +1704,9 @@ serverHopNow = function()
             local playing = tonumber(server.playing or 0) or 0
             local maxPlayers = tonumber(server.maxPlayers or 0) or 0
             if id and id ~= game.JobId and maxPlayers > 0 and playing < maxPlayers and not hasVisited(id) then
-                if playing >= 23 and playing <= 24 then
+                local minPlayers = math.max(1, tonumber(settings.minPlayerCount or 23) or 23)
+                local maxPlayersCheck = math.max(minPlayers, tonumber(settings.maxPlayerCount or 24) or 24)
+                if playing >= minPlayers and playing <= maxPlayersCheck then
                     table.insert(candidates, id)
                 end
             end
@@ -3148,6 +3157,31 @@ settingHandlers = {
             spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
         end
     end,
+    serverHopDelay = function(value)
+        hopTimerResetTick = tick()
+        donatedSinceHopTimerReset = 0
+    end,
+    serverHopTimerVisible = function(value)
+        if serverHopTimerDisplay then
+            serverHopTimerDisplay.Visible = value and settings.serverHopToggle
+        end
+    end,
+    minPlayerCount = function(value)
+        local minVal = math.max(1, tonumber(value) or 23)
+        settings.minPlayerCount = minVal
+        if tonumber(settings.maxPlayerCount or 24) < minVal then
+            settings.maxPlayerCount = minVal
+        end
+        saveSettings()
+    end,
+    maxPlayerCount = function(value)
+        local maxVal = math.max(1, tonumber(value) or 24)
+        if maxVal < tonumber(settings.minPlayerCount or 23) then
+            settings.minPlayerCount = maxVal
+        end
+        settings.maxPlayerCount = maxVal
+        saveSettings()
+    end,
 }
 
 local playOpenFade
@@ -3873,6 +3907,9 @@ do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+    createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
+    createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
+    createToggle(serverSection, "Show Server Hop Timer", "serverHopTimerVisible")
     if voiceEnabled then
         createToggle(serverSection, "Voice Chat Servers", "vcServer")
         createToggle(serverSection, "Random Normal/Voice", "AlternativeHop")
@@ -4248,6 +4285,39 @@ end)
 activateTab("Booth")
 setMinimized(true)
 
+-- Create Server Hop Timer Display
+serverHopTimerDisplay = Instance.new("Frame")
+serverHopTimerDisplay.Name = "ServerHopTimer"
+serverHopTimerDisplay.Size = UDim2.new(0, 120, 0, 35)
+serverHopTimerDisplay.Position = UDim2.fromOffset(getViewportSize().X - 145, getViewportSize().Y - 55)
+serverHopTimerDisplay.BackgroundColor3 = THEME.topBar
+serverHopTimerDisplay.BorderSizePixel = 0
+serverHopTimerDisplay.Visible = settings.serverHopTimerVisible
+serverHopTimerDisplay.Parent = gui
+
+local timerCorner = Instance.new("UICorner")
+timerCorner.CornerRadius = UDim.new(0, 8)
+timerCorner.Parent = serverHopTimerDisplay
+
+local timerStroke = Instance.new("UIStroke")
+timerStroke.Color = THEME.stroke
+timerStroke.Thickness = 1
+timerStroke.Parent = serverHopTimerDisplay
+
+serverHopTimerLabel = Instance.new("TextLabel")
+serverHopTimerLabel.BackgroundTransparency = 1
+serverHopTimerLabel.Size = UDim2.new(1, 0, 1, 0)
+serverHopTimerLabel.TextColor3 = THEME.topBarText
+serverHopTimerLabel.Font = Enum.Font.GothamSemibold
+serverHopTimerLabel.TextSize = 12
+serverHopTimerLabel.Text = "Timer: --:--"
+serverHopTimerLabel.Parent = serverHopTimerDisplay
+
+local timerPadding = Instance.new("UIPadding")
+timerPadding.PaddingLeft = UDim.new(0, 6)
+timerPadding.PaddingRight = UDim.new(0, 6)
+timerPadding.Parent = serverHopTimerLabel
+
 RunService.RenderStepped:Connect(function()
     local viewport = getViewportSize()
     local pos = main.Position
@@ -4256,6 +4326,11 @@ RunService.RenderStepped:Connect(function()
     local x = math.clamp(pos.X.Offset, -main.AbsoluteSize.X + 120, viewport.X - rightMargin)
     local y = math.clamp(pos.Y.Offset, 0, viewport.Y - bottomMargin)
     main.Position = UDim2.new(pos.X.Scale, x, pos.Y.Scale, y)
+    
+    -- Update timer display position to bottom right
+    if serverHopTimerDisplay then
+        serverHopTimerDisplay.Position = UDim2.fromOffset(viewport.X - 145, viewport.Y - 55)
+    end
 end)
 
 local lastViewport = getViewportSize()
@@ -4265,6 +4340,48 @@ RunService.Heartbeat:Connect(function()
         lastViewport = viewport
         if not minimized then
             applyResponsiveSize(false)
+        end
+    end
+    
+    -- Update timer display
+    if serverHopTimerDisplay then
+        serverHopTimerDisplay.Visible = settings.serverHopTimerVisible and settings.serverHopToggle
+        
+        if serverHopTimerDisplay.Visible then
+            local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
+            local delaySeconds = delayMinutes * 60
+            local elapsedSeconds = tick() - hopTimerResetTick
+            local remainingSeconds = math.max(0, delaySeconds - elapsedSeconds)
+            
+            local minutes = math.floor(remainingSeconds / 60)
+            local seconds = math.floor(remainingSeconds % 60)
+            serverHopTimerLabel.Text = ("Timer: %02d:%02d"):format(minutes, seconds)
+            
+            -- Check if server hop delay setting changed
+            if lastServerHopDelayValue ~= settings.serverHopDelay then
+                lastServerHopDelayValue = settings.serverHopDelay
+                
+                -- Show effect and message
+                notify("Server Hop Delay", ("User set timer to: %d minutes"):format(tonumber(settings.serverHopDelay) or 15), 3)
+                
+                -- Animate timer floating effect
+                if not timerFloatAnimationActive then
+                    timerFloatAnimationActive = true
+                    local startPos = serverHopTimerDisplay.Position
+                    local floatDistance = 40
+                    
+                    local floatTween = TweenService:Create(
+                        serverHopTimerDisplay,
+                        TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                        {Position = startPos + UDim2.fromOffset(0, floatDistance)}
+                    )
+                    floatTween:Play()
+                    floatTween.Completed:Connect(function()
+                        serverHopTimerDisplay.Position = startPos
+                        timerFloatAnimationActive = false
+                    end)
+                end
+            end
         end
     end
 end)
