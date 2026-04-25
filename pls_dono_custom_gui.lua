@@ -30,12 +30,14 @@ if not LocalPlayer then
     return
 end
 
+local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
-if type(getgenv().PLS_DONO_AUTOEXEC_URL) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_URL == "" then
-    getgenv().PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
+if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
+    SharedEnv.PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
 end
-if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or getgenv().PLS_DONO_AUTOEXEC_SOURCE == "" then
-    getgenv().PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
+if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_SOURCE == "" then
+    SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
 end
 
 local TextChatService = game:GetService("TextChatService")
@@ -315,15 +317,34 @@ local function cloneRef(v)
     return v
 end
 
-local CoreGui = cloneRef(game:GetService("CoreGui"))
+local function resolveGuiParent()
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10)
+    if playerGui then
+        return playerGui
+    end
 
-if getgenv().PLS_DONO_CUSTOM_GUI_LOADED and CoreGui:FindFirstChild("PlsDonoCustomGui") then
+    local ok, coreGui = pcall(function()
+        return cloneRef(game:GetService("CoreGui"))
+    end)
+    if ok and coreGui then
+        return coreGui
+    end
+
+    return nil
+end
+
+local GuiParent = resolveGuiParent()
+if not GuiParent then
+    return
+end
+
+if SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED and GuiParent:FindFirstChild("PlsDonoCustomGui") then
     return
 end
 
 -- Recover gracefully if a previous run crashed before creating the UI.
-getgenv().PLS_DONO_CUSTOM_GUI_LOADED = nil
-getgenv().PLS_DONO_CUSTOM_GUI_LOADED = true
+SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
+SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
@@ -542,7 +563,7 @@ loadSettings()
 settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
 saveSettings()
-getgenv().plsdonoSettings = settings
+SharedEnv.plsdonoSettings = settings
 
 local boothScanAnchor = Vector3.new(165.161, 0, 311.636)
 local claimedBoothSlot
@@ -2042,12 +2063,12 @@ do
         or queueonteleport
         or (fluxus and fluxus.queue_on_teleport)
     if queueOnTeleport then
-        if type(getgenv().PLS_DONO_AUTOEXEC_SOURCE) == "string" and getgenv().PLS_DONO_AUTOEXEC_SOURCE ~= "" then
+        if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
             pcall(function()
-                queueOnTeleport(getgenv().PLS_DONO_AUTOEXEC_SOURCE)
+                queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
             end)
-        elseif type(getgenv().PLS_DONO_AUTOEXEC_URL) == "string" and getgenv().PLS_DONO_AUTOEXEC_URL ~= "" then
-            local source = "loadstring(game:HttpGet('" .. getgenv().PLS_DONO_AUTOEXEC_URL .. "'))()"
+        elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
+            local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
             pcall(function()
                 queueOnTeleport(source)
             end)
@@ -2056,7 +2077,7 @@ do
 end
 
 do
-    local existing = CoreGui:FindFirstChild("PlsDonoCustomGui")
+    local existing = GuiParent:FindFirstChild("PlsDonoCustomGui")
     if existing then
         existing:Destroy()
     end
@@ -2066,7 +2087,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "PlsDonoCustomGui"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-gui.Parent = CoreGui
+gui.Parent = GuiParent
 
 local THEME = {
     topBar = Color3.fromRGB(150, 95, 45),
@@ -3948,7 +3969,7 @@ do
     end)
     createButton(supportSection, "Reset To Defaults", function()
         settings = deepCopy(defaults)
-        getgenv().plsdonoSettings = settings
+        SharedEnv.plsdonoSettings = settings
         saveSettings()
     end)
 end
