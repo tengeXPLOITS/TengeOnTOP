@@ -6,6 +6,8 @@
     - Persistent settings with JSON file
 ]]
 
+print("bipv's UI reworked")
+
 repeat
     task.wait()
 until game:IsLoaded()
@@ -391,19 +393,21 @@ local defaults = {
 }
 
 local emotePresetOrder = {
-    "jumping wave",
+    "sturdy",
     "wake up call-ksi",
     "twice the feels",
-    "Korean greeting",
-    "block party",
+    "louder",
+    "low cortisol",
+    "zesty sturdy",
 }
 
 local emotePresets = {
-    ["jumping wave"] = "10714378156"
+    ["sturdy"] = "102571052202995",
     ["wake up call-ksi"] = "10714168145",
     ["twice the feels"] = "12874447851",
-    ["korean greeting"] = "138591721528570",
-    ["block party"] = "10713988674",
+    ["louder"] = "10714385204",
+    ["low cortisol"] = "77387643699357",
+    ["zesty sturdy"] = "132104757386824",
 }
 
 local catalogEmoteOptions = {"Disabled"}
@@ -618,7 +622,10 @@ local flaggedBoothTexts = {
     "5x",
     "multiply",
     "multiplying",
+    "improving",
+    "raising",
     "1R$=",
+    "1R",
     "homeless bacon",
     
 }
@@ -2068,7 +2075,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = ".gg/SYpKSnFetn | PLS DONO ANIMOSITY"
+    title.Text = "God loves you <3| Brought back by Matty"
     title.Parent = topBar
 end
 
