@@ -400,13 +400,13 @@ local emotePresetOrder = {
     "louder",
     "low cortisol",
     "zesty sturdy",
-    "Korean greeting",
+    "korean greeting",
     "block party",
 }
 
 local emotePresets = {
     ["sturdy"] = "102571052202995",
-    ["jumping wave"] = "10714378156"
+    ["jumping wave"] = "10714378156",
     ["wake up call-ksi"] = "10714168145",
     ["twice the feels"] = "12874447851",
     ["louder"] = "10714385204",
