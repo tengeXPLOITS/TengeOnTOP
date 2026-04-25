@@ -4245,12 +4245,14 @@ end
 -- Explicitly reset server hop timer upon UI execution
 resetHopTimer()
 
--- Initialize timer display
-if settings.serverHopToggle then
-    local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
-    timerLabel.Text = string.format("SH: %d:00", delayMinutes)
-else
-    timerLabel.Text = "SH: OFF"
+-- Initialize timer display (safely handle if timerLabel doesn't exist)
+if timerLabel then
+    if settings.serverHopToggle then
+        local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
+        timerLabel.Text = string.format("SH: %d:00", delayMinutes)
+    else
+        timerLabel.Text = "SH: OFF"
+    end
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -4278,22 +4280,26 @@ end)
 task.spawn(function()
     while task.wait(1) do
         if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
-        if settings.serverHopToggle then
+        if settings.serverHopToggle and timerLabel then
             local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
             local elapsed = tick() - hopTimerResetTick
             local remaining = math.max(0, (delayMinutes * 60) - elapsed)
             local remainingMins = math.floor(remaining / 60)
             local remainingSecs = math.floor(remaining % 60)
-            timerLabel.Text = string.format("SH: %d:%02d", remainingMins, remainingSecs)
+            pcall(function()
+                timerLabel.Text = string.format("SH: %d:%02d", remainingMins, remainingSecs)
+            end)
             
             if elapsed >= (delayMinutes * 60) then
                 if requestServerHop("auto-timer") then
                     resetHopTimer()
                 end
             end
-        else
+        elseif timerLabel then
             hopTimerResetTick = tick()
-            timerLabel.Text = "SH: OFF"
+            pcall(function()
+                timerLabel.Text = "SH: OFF"
+            end)
         end
     end
 end)
