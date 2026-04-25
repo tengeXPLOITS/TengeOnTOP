@@ -6,7 +6,7 @@
     - Persistent settings with JSON file
 ]]
 
-print("mᶻ 𝗓 𐰁's UI reworked")
+print("bipv's UI reworked")
 
 repeat
     task.wait()
@@ -1975,7 +1975,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE 💸 | Brought back by mᶻ 𝗓 𐰁"
+    title.Text = "PLS DONATE 💸 | Brought back by ??"
     title.Parent = topBar
 end
 
