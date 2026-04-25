@@ -2158,6 +2158,34 @@ body.Position = UDim2.new(0, 0, 0, 30)
 body.BackgroundTransparency = 1
 body.Parent = main
 
+-- Server Hop Timer Display
+local timerFrame = Instance.new("Frame")
+timerFrame.Name = "ServerHopTimer"
+timerFrame.Size = UDim2.new(0, 120, 0, 28)
+timerFrame.Position = UDim2.new(1, -128, 1, -36)
+timerFrame.BackgroundColor3 = THEME.section
+timerFrame.BorderSizePixel = 0
+timerFrame.Parent = main
+
+local timerCorner = Instance.new("UICorner")
+timerCorner.CornerRadius = UDim.new(0, 6)
+timerCorner.Parent = timerFrame
+
+local timerStroke = Instance.new("UIStroke")
+timerStroke.Color = THEME.stroke
+timerStroke.Thickness = 1
+timerStroke.Parent = timerFrame
+
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Name = "TimerLabel"
+timerLabel.BackgroundTransparency = 1
+timerLabel.Size = UDim2.new(1, 0, 1, 0)
+timerLabel.TextColor3 = THEME.accent
+timerLabel.Font = Enum.Font.GothamBold
+timerLabel.TextSize = 11
+timerLabel.Text = "SH: --:--"
+timerLabel.Parent = timerFrame
+
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
 tabHolder.Size = UDim2.new(1, -10, 0, 24)
@@ -4208,11 +4236,23 @@ local function enableAntiSit(character)
     end))
 end
 
+-- Initialize anti-AFK and server hop timer upon UI execution
 if LocalPlayer.Character then
     enableAntiSit(LocalPlayer.Character)
     if settings.helicopterEnabled then
         task.delay(1.5, startHelicopterIdleMode)
     end
+end
+
+-- Explicitly reset server hop timer upon UI execution
+resetHopTimer()
+
+-- Initialize timer display
+if settings.serverHopToggle then
+    local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
+    timerLabel.Text = string.format("SH: %d:00", delayMinutes)
+else
+    timerLabel.Text = "SH: OFF"
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
@@ -4242,13 +4282,20 @@ task.spawn(function()
         if getgenv().PLS_DONO_CURRENT_CHARACTER ~= game:GetService("Players").LocalPlayer.Character then break end
         if settings.serverHopToggle then
             local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
-            if tick() - hopTimerResetTick >= (delayMinutes * 60) then
+            local elapsed = tick() - hopTimerResetTick
+            local remaining = math.max(0, (delayMinutes * 60) - elapsed)
+            local remainingMins = math.floor(remaining / 60)
+            local remainingSecs = math.floor(remaining % 60)
+            timerLabel.Text = string.format("SH: %d:%02d", remainingMins, remainingSecs)
+            
+            if elapsed >= (delayMinutes * 60) then
                 if requestServerHop("auto-timer") then
                     resetHopTimer()
                 end
             end
         else
             hopTimerResetTick = tick()
+            timerLabel.Text = "SH: OFF"
         end
     end
 end)
