@@ -1137,17 +1137,33 @@ local function sendDonationWebhook(amount, donorInfo)
     local donorUserId = resolveDonorUserId(donorInfo)
     local donorAvatarUrl = getRobloxAvatarThumbnailUrl(donorUserId, "420x420", false)
     local localAvatarUrl = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", false)
-
-    local eventTimeText = os.date("!%Y-%m-%d %H:%M:%S UTC")
+    local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
+    local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
+    local donorLabel
+    if donorName ~= "Unknown" and donorDisplay ~= donorName then
+        donorLabel = donorDisplay .. " (@" .. donorName .. ")"
+    elseif donorName ~= "Unknown" then
+        donorLabel = "@" .. donorName
+    else
+        donorLabel = donorDisplay
+    end
+    local donorProfileUrl = donorUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(donorUserId) or nil
+    local robuxIconUrl = "https://upload.wikimedia.org/wikipedia/commons/c/c7/Robloxi_valuuta_%22Robux%22_Ikoon.png"
     local embed = {
-        color = 0x6DB7FF,
+        color = 0x1E90FF,
+        title = "Donation Received",
+        description = "You received a donation. Bringing up stats... please wait.",
+        author = {
+            name = donorLabel,
+            url = donorProfileUrl,
+            icon_url = donorAvatarUrl or localAvatarUrl,
+        },
         thumbnail = {
-            url = donorAvatarUrl or localAvatarUrl,
+            url = robuxIconUrl,
         },
         fields = {
-            {name = "Amount", value = string.format("%d R$", tonumber(amount) or 0), inline = true},
-            {name = "After Tax", value = string.format("%d R$", taxed), inline = true},
-            {name = "Time", value = eventTimeText, inline = false},
+            {name = "Received", value = string.format("%d Robux", tonumber(amount) or 0), inline = true},
+            {name = "After Tax", value = string.format("%d Robux", taxed), inline = true},
         },
     }
 
