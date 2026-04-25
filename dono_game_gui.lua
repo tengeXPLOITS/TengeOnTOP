@@ -56,22 +56,26 @@ end
 local function findBoothParts()
     local booths = {}
     
-    -- Search entire workspace for parts named "plot"
-    for _, part in ipairs(Workspace:FindPartBoundsInRadius(HumanoidRootPart.Position, 10000)) do
-        if part.Name == "plot" and part:IsA("BasePart") then
-            local parent = part.Parent
-            if parent then
-                -- Store booth info: worldpivot position and the plot part
-                if not boothCache[part] then
-                    boothCache[part] = {
-                        plotPart = part,
-                        parentBooth = parent,
-                        worldPivot = parent:FindFirstChild("WorldPivot") or part,
-                        position = part.Position,
-                        claimedFor = LocalPlayer.Name,
-                    }
+    -- Search for booth parts in workspace
+    for _, boothFolder in ipairs(Workspace:GetChildren()) do
+        if boothFolder.Name == "booth" and boothFolder:IsA("Folder") then
+            -- Find the booth part within this folder
+            local boothPart = boothFolder:FindFirstChild("booth")
+            if boothPart and boothPart:IsA("BasePart") then
+                -- Check if unclaimed (no specific attribute indicating ownership)
+                local proximityPrompt = boothFolder:FindFirstChild("ProximityPrompt")
+                if proximityPrompt and proximityPrompt:IsA("ProximityPrompt") then
+                    if not boothCache[boothFolder] then
+                        boothCache[boothFolder] = {
+                            boothFolder = boothFolder,
+                            boothPart = boothPart,
+                            proximityPrompt = proximityPrompt,
+                            position = boothPart.Position,
+                            promptPosition = proximityPrompt.Parent and proximityPrompt.Parent:IsA("BasePart") and proximityPrompt.Parent.Position or proximityPrompt.Position,
+                        }
+                    end
+                    table.insert(booths, boothCache[boothFolder])
                 end
-                table.insert(booths, boothCache[part])
             end
         end
     end
@@ -80,13 +84,12 @@ local function findBoothParts()
 end
 
 local function findProximityPrompt(booth)
-    if not booth or not booth.parentBooth then return nil end
+    if not booth or not booth.boothFolder then return nil end
     
-    -- Search booth for ProximityPrompt
-    for _, descendant in ipairs(booth.parentBooth:GetDescendants()) do
-        if descendant:IsA("ProximityPrompt") then
-            return descendant
-        end
+    -- Get the ProximityPrompt from the booth folder
+    local prompt = booth.boothFolder:FindFirstChild("ProximityPrompt")
+    if prompt and prompt:IsA("ProximityPrompt") and prompt.ActionText == "Claim Booth!" then
+        return prompt
     end
     
     return nil
@@ -95,36 +98,23 @@ end
 local function fireProximityPrompt(prompt)
     if not prompt or not prompt.Parent then return false end
     
-    local success = false
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoidRootPart = character:FindFirstChildOfClass("Humanoid") and character:FindFirstChildOfClass("Humanoid").RootPart
     
-    -- Try multiple firing methods for reliability
-    local methods = {
-        function()
-            if prompt.PromptButtonHoldBegins then
-                prompt:Fire()
-            end
-        end,
-        function()
-            if prompt.Triggered then
-                prompt:Fire()
-            end
-        end,
-        function()
-            -- Simulate player interaction
-            local humanoidRootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if humanoidRootPart and (humanoidRootPart.Position - prompt.Parent.Position).Magnitude < 20 then
-                prompt:Fire()
-            end
-        end,
-    }
+    if not humanoidRootPart then return false end
     
-    for _, method in ipairs(methods) do
-        local ok = pcall(method)
-        if ok then
-            success = true
-            break
-        end
+    -- Ensure we're close to the prompt
+    local promptPos = prompt.Parent:IsA("BasePart") and prompt.Parent.Position or prompt.Position
+    local distance = (humanoidRootPart.Position - promptPos).Magnitude
+    
+    if distance > prompt.MaxActivationDistance + 5 then
+        return false
     end
+    
+    -- Fire the proximity prompt
+    local success = pcall(function()
+        prompt:Fire()
+    end)
     
     return success
 end
@@ -154,19 +144,22 @@ local function attemptBoothClaim(booth)
         return false
     end
     
-    -- Step 1: Teleport to booth
-    createNotification("Booth Claimer", "Teleporting to booth...", 2)
-    teleportToPosition(booth.position, 0)
-    task.wait(0.5)
-    
-    -- Step 2: Find and fire proximity prompt
     local prompt = findProximityPrompt(booth)
     if not prompt then
         createNotification("Booth Claimer", "Proximity prompt not found!", 2)
         return false
     end
     
-    createNotification("Booth Claimer", "Firing proximity prompt...", 2)
+    -- Get the prompt's position (from its parent if it's a part, or direct position)
+    local promptPos = prompt.Parent and prompt.Parent:IsA("BasePart") and prompt.Parent.Position or prompt.Position
+    
+    -- Step 1: Teleport to the proximity prompt
+    createNotification("Booth Claimer", "Teleporting to prompt...", 1)
+    teleportToPosition(promptPos, 0)
+    task.wait(0.3)
+    
+    -- Step 2: Fire the proximity prompt
+    createNotification("Booth Claimer", "Firing Claim Booth prompt...", 1)
     local fired = fireProximityPrompt(prompt)
     
     if not fired then
@@ -176,8 +169,8 @@ local function attemptBoothClaim(booth)
     
     task.wait(1)
     
-    -- Step 3: Verify claim was successful by checking booth owner
-    createNotification("Booth Claimer", "Claim successful! Staying at booth.", 3)
+    -- Step 3: Mark as claimed
+    createNotification("Booth Claimer", "✓ Booth claimed successfully!", 2)
     claimStatus[booth] = "claimed"
     
     return true
@@ -195,11 +188,22 @@ local function createUI()
     screenGui.DisplayOrder = 100
     screenGui.Parent = playerGui
     
+    -- Determine if mobile based on viewport size
+    local camera = workspace.CurrentCamera
+    local viewportSize = camera.ViewportSize
+    local isMobile = viewportSize.X < 800 or UserInputService.TouchEnabled
+    
+    -- Responsive sizing
+    local panelWidth = isMobile and math.min(380, viewportSize.X - 10) or 380
+    local panelHeight = isMobile and 500 or 480
+    local startX = isMobile and 5 or 20
+    local startY = isMobile and 5 or 20
+    
     -- Main Panel
     local mainPanel = Instance.new("Frame")
     mainPanel.Name = "MainPanel"
-    mainPanel.Size = UDim2.new(0, 380, 0, 480)
-    mainPanel.Position = UDim2.fromOffset(20, 20)
+    mainPanel.Size = UDim2.new(0, panelWidth, 0, panelHeight)
+    mainPanel.Position = UDim2.fromOffset(startX, startY)
     mainPanel.BackgroundColor3 = THEME.bg
     mainPanel.BorderSizePixel = 0
     mainPanel.Parent = screenGui
@@ -230,7 +234,7 @@ local function createUI()
     titleLabel.Position = UDim2.fromOffset(10, 0)
     titleLabel.BackgroundTransparency = 1
     titleLabel.TextColor3 = THEME.text
-    titleLabel.TextSize = 16
+    titleLabel.TextSize = isMobile and 14 or 16
     titleLabel.Font = Enum.Font.GothamBold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Text = "🎁 Booth Claimer"
@@ -293,20 +297,20 @@ local function createUI()
     
     -- Button Container
     local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(1, -16, 0, 50)
-    buttonContainer.Position = UDim2.fromOffset(8, -58)
+    buttonContainer.Size = UDim2.new(1, -16, 0, isMobile and 70 or 50)
+    buttonContainer.Position = UDim2.fromOffset(8, isMobile and -78 or -58)
     buttonContainer.BackgroundTransparency = 1
     buttonContainer.Parent = mainPanel
     
     local buttonLayout = Instance.new("UIListLayout")
-    buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+    buttonLayout.FillDirection = isMobile and Enum.FillDirection.Vertical or Enum.FillDirection.Horizontal
     buttonLayout.Padding = UDim.new(0, 6)
     buttonLayout.SortOrder = Enum.SortOrder.LayoutOrder
     buttonLayout.Parent = buttonContainer
     
     -- Scan Button
     local scanBtn = Instance.new("TextButton")
-    scanBtn.Size = UDim2.new(0.5, -3, 1, 0)
+    scanBtn.Size = isMobile and UDim2.new(1, 0, 0, 32) or UDim2.new(0.5, -3, 1, 0)
     scanBtn.BackgroundColor3 = THEME.accentGreen
     scanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     scanBtn.TextSize = 12
@@ -320,7 +324,7 @@ local function createUI()
     
     -- Claim All Button
     local claimAllBtn = Instance.new("TextButton")
-    claimAllBtn.Size = UDim2.new(0.5, -3, 1, 0)
+    claimAllBtn.Size = isMobile and UDim2.new(1, 0, 0, 32) or UDim2.new(0.5, -3, 1, 0)
     claimAllBtn.BackgroundColor3 = THEME.accentRed
     claimAllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     claimAllBtn.TextSize = 12
@@ -345,17 +349,17 @@ local function createUI()
         local booths = findBoothParts()
         
         if #booths == 0 then
-            statusLabel.Text = "❌ No booths found"
+            statusLabel.Text = "❌ No unclaimed booths found"
             statusLabel.BackgroundColor3 = THEME.accentRed
             return
         end
         
-        statusLabel.Text = ("✓ Found %d booth(s)"):format(#booths)
+        statusLabel.Text = ("✓ Found %d unclaimed booth(s)"):format(#booths)
         statusLabel.BackgroundColor3 = THEME.accentGreen
         
         for i, booth in ipairs(booths) do
             local boothCard = Instance.new("Frame")
-            boothCard.Size = UDim2.new(1, 0, 0, 50)
+            boothCard.Size = UDim2.new(1, 0, 0, isMobile and 60 or 50)
             boothCard.BackgroundColor3 = THEME.panel
             boothCard.BorderSizePixel = 1
             boothCard.BorderColor3 = THEME.subtle
@@ -367,26 +371,26 @@ local function createUI()
             
             -- Booth info
             local infoLabel = Instance.new("TextLabel")
-            infoLabel.Size = UDim2.new(1, -70, 0, 20)
-            infoLabel.Position = UDim2.fromOffset(8, 4)
+            infoLabel.Size = UDim2.new(1, -70, 0, isMobile and 22 or 20)
+            infoLabel.Position = UDim2.fromOffset(8, isMobile and 6 or 4)
             infoLabel.BackgroundTransparency = 1
             infoLabel.TextColor3 = THEME.text
-            infoLabel.TextSize = 11
+            infoLabel.TextSize = isMobile and 12 or 11
             infoLabel.Font = Enum.Font.GothamSemibold
             infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-            infoLabel.Text = ("Booth #%d"):format(i)
+            infoLabel.Text = ("Booth #%d - %s"):format(i, booth.boothFolder.Name)
             infoLabel.Parent = boothCard
             
             -- Position info
             local posLabel = Instance.new("TextLabel")
-            posLabel.Size = UDim2.new(1, -70, 0, 16)
-            posLabel.Position = UDim2.fromOffset(8, 24)
+            posLabel.Size = UDim2.new(1, -70, 0, isMobile and 20 or 16)
+            posLabel.Position = UDim2.fromOffset(8, isMobile and 28 or 24)
             posLabel.BackgroundTransparency = 1
             posLabel.TextColor3 = THEME.subtle
-            posLabel.TextSize = 9
+            posLabel.TextSize = isMobile and 10 or 9
             posLabel.Font = Enum.Font.Gotham
             posLabel.TextXAlignment = Enum.TextXAlignment.Left
-            posLabel.Text = ("Pos: %.1f, %.1f, %.1f"):format(booth.position.X, booth.position.Y, booth.position.Z)
+            posLabel.Text = ("Part: %.0f, %.0f, %.0f"):format(booth.position.X, booth.position.Y, booth.position.Z)
             posLabel.Parent = boothCard
             
             -- Status indicator
@@ -395,7 +399,7 @@ local function createUI()
             statusDot.Position = UDim2.new(1, -68, 0, 0)
             statusDot.BackgroundTransparency = 1
             statusDot.TextColor3 = claimStatus[booth] == "claimed" and THEME.accentGreen or THEME.subtle
-            statusDot.TextSize = 11
+            statusDot.TextSize = isMobile and 10 or 11
             statusDot.Font = Enum.Font.GothamSemibold
             statusDot.TextXAlignment = Enum.TextXAlignment.Right
             statusDot.Text = claimStatus[booth] == "claimed" and "✓ CLAIMED" or "○ UNCLAIMED"
@@ -407,6 +411,21 @@ local function createUI()
         refreshBoothList()
         createNotification("Booth Claimer", "Booth list refreshed!", 2)
     end)
+    
+    -- Add mobile feedback to buttons
+    if isMobile then
+        local function addButtonFeedback(btn)
+            local originalColor = btn.BackgroundColor3
+            btn.MouseEnter:Connect(function()
+                btn.BackgroundTransparency = 0.1
+            end)
+            btn.MouseLeave:Connect(function()
+                btn.BackgroundTransparency = 0
+            end)
+        end
+        addButtonFeedback(scanBtn)
+        addButtonFeedback(claimAllBtn)
+    end
     
     claimAllBtn.MouseButton1Click:Connect(function()
         local booths = findBoothParts()
@@ -440,29 +459,80 @@ local function createUI()
         end
     end)
     
-    -- Make UI draggable
+    -- Handle viewport changes (rotation, resize)
+    RunService.RenderStepped:Connect(function()
+        local currentViewportSize = workspace.CurrentCamera.ViewportSize
+        
+        -- Clamp position to stay within bounds
+        local maxX = currentViewportSize.X - 50
+        local maxY = currentViewportSize.Y - 30
+        
+        local pos = mainPanel.Position
+        local clampedX = math.clamp(pos.X.Offset, -mainPanel.AbsoluteSize.X + 50, maxX)
+        local clampedY = math.clamp(pos.Y.Offset, 0, maxY)
+        
+        if math.abs(clampedX - pos.X.Offset) > 1 or math.abs(clampedY - pos.Y.Offset) > 1 then
+            mainPanel.Position = UDim2.new(pos.X.Scale, clampedX, pos.Y.Scale, clampedY)
+        end
+    end)
+    
+    -- Make UI draggable (both mouse and touch)
     local dragging = false
     local dragStart
     local startPos
+    local touchConnection
     
+    local function startDrag(inputPos)
+        dragging = true
+        dragStart = inputPos
+        startPos = mainPanel.Position
+    end
+    
+    local function updateDrag(inputPos)
+        if not dragging or not dragStart or not startPos then return end
+        
+        local delta = inputPos - dragStart
+        local newX = math.clamp(startPos.X.Offset + delta.X, -mainPanel.AbsoluteSize.X + 50, viewportSize.X - 50)
+        local newY = math.clamp(startPos.Y.Offset + delta.Y, 0, viewportSize.Y - 30)
+        mainPanel.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+    end
+    
+    local function endDrag()
+        dragging = false
+        dragStart = nil
+    end
+    
+    -- Mouse input
     topBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainPanel.Position
+            startDrag(input.Position)
         end
     end)
     
     topBar.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
+            endDrag()
         end
     end)
     
+    -- Touch input
+    topBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            startDrag(input.Position)
+        end
+    end)
+    
+    topBar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            endDrag()
+        end
+    end)
+    
+    -- Input changed (mouse movement and touch movement)
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainPanel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            updateDrag(input.Position)
         end
     end)
     
@@ -475,3 +545,4 @@ createUI()
 createNotification("Booth Claimer", "UI loaded! Click 'Scan Booths' to start.", 3)
 
 print("Dono Booth Claimer - Ready!")
+)
