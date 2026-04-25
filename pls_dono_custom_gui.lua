@@ -1123,6 +1123,47 @@ local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
     return nil
 end
 
+local function getRobloxAvatarOutfitThumbnailUrl(userId, size)
+    userId = tonumber(userId) or 0
+    if userId <= 0 then
+        return nil
+    end
+
+    local cacheKey = table.concat({"outfit", tostring(userId), tostring(size or "420x420")}, ":")
+    if avatarThumbnailCache[cacheKey] then
+        return avatarThumbnailCache[cacheKey]
+    end
+
+    local thumbSize = tostring(size or "420x420")
+    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar?userIds=%d&size=%s&format=Png&isCircular=false"):format(
+        userId,
+        HttpService:UrlEncode(thumbSize)
+    )
+
+    local ok, imageUrl = pcall(function()
+        local body = httpGetBody(endpoint)
+        if type(body) ~= "string" or body == "" then
+            return nil
+        end
+
+        local decoded = HttpService:JSONDecode(body)
+        local items = decoded and decoded.data
+        local firstItem = type(items) == "table" and items[1] or nil
+        local resolved = firstItem and firstItem.imageUrl
+        if type(resolved) == "string" and resolved ~= "" then
+            return resolved
+        end
+        return nil
+    end)
+
+    if ok and imageUrl then
+        avatarThumbnailCache[cacheKey] = imageUrl
+        return imageUrl
+    end
+
+    return nil
+end
+
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
         return
@@ -1135,7 +1176,8 @@ local function sendDonationWebhook(amount, donorInfo)
 
     local taxed = math.floor((tonumber(amount) or 0) * 0.6)
     local donorUserId = resolveDonorUserId(donorInfo)
-    local donorAvatarUrl = getRobloxAvatarThumbnailUrl(donorUserId, "420x420", false)
+    local donorAvatarUrl = getRobloxAvatarThumbnailUrl(donorUserId, "150x150", false)
+    local donorOutfitUrl = getRobloxAvatarOutfitThumbnailUrl(donorUserId, "420x420")
     local localAvatarUrl = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", false)
     local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
     local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
@@ -1148,30 +1190,59 @@ local function sendDonationWebhook(amount, donorInfo)
         donorLabel = donorDisplay
     end
     local donorProfileUrl = donorUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(donorUserId) or nil
-    local robuxIconUrl = "https://upload.wikimedia.org/wikipedia/commons/c/c7/Robloxi_valuuta_%22Robux%22_Ikoon.png"
-    local embed = {
-        color = 0x1E90FF,
-        title = "Donation Received",
-        description = "You received a donation. Bringing up stats... please wait.",
-        author = {
-            name = donorLabel,
-            url = donorProfileUrl,
-            icon_url = donorAvatarUrl or localAvatarUrl,
-        },
-        thumbnail = {
-            url = robuxIconUrl,
-        },
-        fields = {
-            {name = "Received", value = string.format("%d Robux", tonumber(amount) or 0), inline = true},
-            {name = "After Tax", value = string.format("%d Robux", taxed), inline = true},
-        },
-    }
+    local initialMessage = donorName ~= "Unknown"
+        and ("Donation received from %s. Gathering info to show stats..."):format(donorLabel)
+        or "Donation received. Gathering info to show stats..."
 
     postWebhookJson(url, {
         username = "PLS DONATE",
         avatar_url = donorAvatarUrl or localAvatarUrl,
-        embeds = {embed},
+        content = initialMessage,
     })
+
+    task.spawn(function()
+        local latestUserId = donorUserId
+        local latestAvatarUrl = donorAvatarUrl
+        local latestOutfitUrl = donorOutfitUrl
+
+        if latestUserId <= 0 then
+            for _ = 1, 4 do
+                task.wait(1)
+                latestUserId = resolveDonorUserId(donorInfo)
+                if latestUserId > 0 then
+                    break
+                end
+            end
+        end
+
+        if latestUserId > 0 then
+            latestAvatarUrl = latestAvatarUrl or getRobloxAvatarThumbnailUrl(latestUserId, "150x150", false)
+            latestOutfitUrl = latestOutfitUrl or getRobloxAvatarOutfitThumbnailUrl(latestUserId, "420x420")
+        end
+
+        local embed = {
+            color = 0x1E90FF,
+            title = "Donation Stats",
+            author = {
+                name = donorLabel,
+                url = latestUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(latestUserId) or donorProfileUrl,
+                icon_url = latestAvatarUrl or localAvatarUrl,
+            },
+            thumbnail = {
+                url = latestOutfitUrl or latestAvatarUrl or localAvatarUrl,
+            },
+            fields = {
+                {name = "Robux Received", value = string.format("%d", tonumber(amount) or 0), inline = true},
+                {name = "After Tax", value = string.format("%d", taxed), inline = true},
+            },
+        }
+
+        postWebhookJson(url, {
+            username = "PLS DONATE",
+            avatar_url = latestAvatarUrl or localAvatarUrl,
+            embeds = {embed},
+        })
+    end)
 
     if settings.pingEveryone and (tonumber(amount) or 0) >= math.max(0, tonumber(settings.pingAboveDono) or 1000) then
         postWebhookJson(url, {content = "@everyone"})
@@ -1899,17 +1970,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(14, 18, 26),
-    topBarText = Color3.fromRGB(240, 245, 255),
-    panel = Color3.fromRGB(9, 12, 18),
-    tabIdle = Color3.fromRGB(20, 25, 35),
-    tabActive = Color3.fromRGB(34, 87, 173),
-    section = Color3.fromRGB(15, 20, 30),
-    control = Color3.fromRGB(24, 30, 43),
-    controlText = Color3.fromRGB(229, 235, 247),
-    subtleText = Color3.fromRGB(142, 152, 176),
-    accent = Color3.fromRGB(60, 130, 246),
-    stroke = Color3.fromRGB(43, 51, 68),
+    topBar = Color3.fromRGB(18, 20, 28),
+    topBarText = Color3.fromRGB(232, 236, 245),
+    panel = Color3.fromRGB(12, 14, 20),
+    tabIdle = Color3.fromRGB(25, 28, 38),
+    tabActive = Color3.fromRGB(76, 94, 128),
+    section = Color3.fromRGB(19, 22, 31),
+    control = Color3.fromRGB(28, 32, 44),
+    controlText = Color3.fromRGB(222, 227, 238),
+    subtleText = Color3.fromRGB(150, 157, 176),
+    accent = Color3.fromRGB(136, 154, 194),
+    stroke = Color3.fromRGB(52, 58, 74),
 }
 
 local main = Instance.new("Frame")
@@ -1966,9 +2037,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 20, 30)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(10, 14, 22)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 9, 14)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 27, 36)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(16, 19, 27)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 18)),
     })
     gradient.Parent = main
 end
@@ -1988,9 +2059,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 35, 50)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(18, 24, 35)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 16, 24)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 48, 62)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(28, 31, 42)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 20, 29)),
     })
     topGradient.Parent = topBar
 end
@@ -2005,7 +2076,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE 💸 | Brought back by ??"
+    title.Text = "God loves you <3| Brought back by Matty"
     title.Parent = topBar
 end
 
