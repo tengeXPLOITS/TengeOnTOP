@@ -348,6 +348,7 @@ local defaults = {
     hexBox = "#32CD32",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
+    goalBarHeaderText = "GOAL $G",
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
@@ -1195,6 +1196,44 @@ local function getRaisedStatObject()
     return leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("Donated") or leaderstats:WaitForChild("Raised", 8)
 end
 
+local function formatBoothNumber(n)
+    local value = tonumber(n) or 0
+    if value == 420 or value == 425 then
+        value += 10
+    end
+    if value >= 10000 then
+        return string.format("%.1fk", value / 1000)
+    elseif value >= 1000 then
+        return string.format("%.2fk", value / 1000)
+    end
+    return tostring(math.floor(value))
+end
+
+local function getGoalProgressSnapshot()
+    local current = tonumber(getCurrentRaisedAmount()) or 0
+    local goal = math.max(0, tonumber(settings.goalBox) or 0)
+    local safeGoal = math.max(goal, 1)
+    local ratio = math.clamp(current / safeGoal, 0, 1)
+    return current, goal, ratio
+end
+
+local function buildGoalProgressBar()
+    local current, goal, ratio = getGoalProgressSnapshot()
+    local totalSegments = 21
+    local filledSegments = math.clamp(math.floor((ratio * totalSegments) + 0.5), 0, totalSegments)
+
+    if current > 0 and goal > 0 and filledSegments == 0 then
+        filledSegments = 1
+    end
+
+    local emptySegments = math.max(0, totalSegments - filledSegments)
+    return string.format(
+        "<font color='rgb(30,144,255)'>%s</font><font color='rgb(70,70,70)'>%s</font>",
+        string.rep("|", filledSegments),
+        string.rep("|", emptySegments)
+    )
+end
+
 countZeroDonatedPlayers = function()
     local count = 0
     for _, pl in ipairs(Players:GetPlayers()) do
@@ -1209,26 +1248,27 @@ countZeroDonatedPlayers = function()
 end
 
 local function buildBoothText()
-    local function formatNumber(n)
-        local value = tonumber(n) or 0
-        if value == 420 or value == 425 then
-            value += 10
-        end
-        if value >= 10000 then
-            return string.format("%.1fk", value / 1000)
-        elseif value >= 1000 then
-            return string.format("%.2fk", value / 1000)
-        end
-        return tostring(math.floor(value))
-    end
-
-    local current = tonumber(getCurrentRaisedAmount()) or 0
-    local goal = current + (tonumber(settings.goalBox) or 0)
     local text = tostring(settings.customBoothText or "")
-    text = text:gsub("%$C", formatNumber(current))
-    text = text:gsub("%$G", formatNumber(goal))
+    local current, goal = getGoalProgressSnapshot()
+
+    text = text:gsub("%$C", formatBoothNumber(current))
+    text = text:gsub("%$G", formatBoothNumber(goal))
+    text = text:gsub("%$BAR", buildGoalProgressBar())
     text = text:gsub("%$JPR", "1")
     return text
+end
+
+local function buildGoalBarTemplate()
+    local headerText = tostring(settings.goalBarHeaderText or "GOAL $G")
+
+    return table.concat({
+        "<font color='rgb(30,144,255)' face='LuckiestGuy'>",
+        headerText,
+        "</font><br />",
+        "<stroke thickness='6' color='rgb(0,0,0)'><font size='17' face='GothamBlack'>",
+        "$BAR",
+        "</font></stroke>",
+    })
 end
 
 local function hexToColor3(hex)
@@ -2853,6 +2893,12 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
+    goalBarHeaderText = function()
+        saveSettings()
+        if updateBoothTextNow then
+            updateBoothTextNow()
+        end
+    end,
     fontFace = function(value)
         local fontName = tostring(value or defaults.fontFace)
         if not Enum.Font[fontName] then
@@ -3552,9 +3598,33 @@ local function buildSettingsTabs()
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
     createTextBox(boothSection, "Text Color Hex", "hexBox", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
+    local boothTextBox
+    createInfoLabel(boothSection, "Goal Bar Header:")
+    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
+    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
+    createButton(boothSection, "Paste Blue Goal Bar", function()
+        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+        local nextText = buildGoalBarTemplate()
+        if #nextText > 221 then
+            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
+            return
+        end
+        settings.customBoothText = nextText
+        saveSettings()
+        local ok, mode = updateBoothTextNow()
+        if ok then
+            boothTextBox.Text = nextText
+            notify("Goal Bar", "Blue goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
+        elseif mode == "local-preview-only" then
+            boothTextBox.Text = nextText
+            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
+        else
+            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
+        end
+    end)
     createInfoLabel(boothSection, "Custom Booth Text:")
-    local boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-    createInfoLabel(boothSection, "$C = current | $G = goal | removed JPR")
+    boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
+    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
@@ -3999,4 +4069,3 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
