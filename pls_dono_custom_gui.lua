@@ -1378,7 +1378,7 @@ local function buildGoalProgressBar()
     local namedColors = getNamedTextColorMap()
     local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
     return string.format(
-        "<font color=\"%s\" size=\"17\">%s</font><font color=\"%s\" size=\"17\">%s</font>",
+        "<font color=\"%s\" size=\"19\">%s</font><font color=\"%s\" size=\"19\">%s</font>",
         color3ToRgbText(filledColor),
         string.rep("|", filledSegments),
         "rgb(120,120,126)",
@@ -1431,9 +1431,27 @@ local function sanitizeGoalBarHeaderText(value)
     return table.concat(lines, "\n")
 end
 
+local function buildGoalBarHeaderText(textAbove)
+    local wrappedLines = {}
+    local headerText = sanitizeGoalBarHeaderText(textAbove)
+
+    for rawLine in headerText:gmatch("[^\n]+") do
+        local line = trimText(rawLine)
+        if line ~= "" then
+            table.insert(wrappedLines, string.format("<font size=\"22\">%s</font>", line))
+        end
+    end
+
+    if #wrappedLines == 0 then
+        return "<font size=\"22\">Goal: $C / $G</font>"
+    end
+
+    return table.concat(wrappedLines, "\n")
+end
+
 local function buildGoalBarTemplate(textAbove)
     return table.concat({
-        sanitizeGoalBarHeaderText(textAbove),
+        buildGoalBarHeaderText(textAbove),
         "<stroke thickness=\"3\" color=\"rgb(110,110,116)\">",
         "$BAR",
         "</stroke>",
@@ -1466,9 +1484,9 @@ updateBoothTextNow = function()
         strokeOpacity = 0,
         textColor = hexToColor3(settings.hexBox),
         buttonStrokeColor = Color3.fromRGB(110, 110, 116),
-        buttonTextColor = Color3.new(1, 1, 1),
-        buttonColor = Color3.new(98 / 255, 1, 0),
-        buttonHoverColor = Color3.new(98 / 255, 1, 0),
+        buttonTextColor = Color3.fromRGB(242, 242, 244),
+        buttonColor = Color3.fromRGB(116, 116, 122),
+        buttonHoverColor = Color3.fromRGB(138, 138, 144),
         buttonLayout = "",
     }
 
@@ -2108,17 +2126,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(62, 62, 66),
-    topBarText = Color3.fromRGB(245, 245, 247),
-    panel = Color3.fromRGB(32, 32, 36),
-    tabIdle = Color3.fromRGB(54, 54, 58),
-    tabActive = Color3.fromRGB(92, 92, 98),
-    section = Color3.fromRGB(42, 42, 46),
-    control = Color3.fromRGB(52, 52, 57),
-    controlText = Color3.fromRGB(238, 238, 240),
-    subtleText = Color3.fromRGB(168, 168, 174),
-    accent = Color3.fromRGB(188, 188, 192),
-    stroke = Color3.fromRGB(104, 104, 110),
+    topBar = Color3.fromRGB(102, 102, 108),
+    topBarText = Color3.fromRGB(244, 244, 246),
+    panel = Color3.fromRGB(76, 76, 82),
+    tabIdle = Color3.fromRGB(110, 110, 116),
+    tabActive = Color3.fromRGB(146, 146, 152),
+    section = Color3.fromRGB(92, 92, 98),
+    control = Color3.fromRGB(122, 122, 128),
+    controlText = Color3.fromRGB(242, 242, 244),
+    subtleText = Color3.fromRGB(214, 214, 218),
+    accent = Color3.fromRGB(186, 186, 192),
+    stroke = Color3.fromRGB(158, 158, 164),
 }
 
 local main = Instance.new("Frame")
@@ -2175,9 +2193,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 48, 52)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(34, 34, 38)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 27)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(132, 132, 138)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(102, 102, 108)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(82, 82, 88)),
     })
     gradient.Parent = main
 end
@@ -2197,9 +2215,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(96, 96, 102)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(78, 78, 84)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(62, 62, 66)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(156, 156, 162)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(126, 126, 132)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(102, 102, 108)),
     })
     topGradient.Parent = topBar
 end
@@ -2390,7 +2408,7 @@ local function activateTab(name)
         page.Visible = isActive
         if btn then
             btn.BackgroundColor3 = isActive and THEME.tabActive or THEME.tabIdle
-            btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or THEME.controlText
+            btn.TextColor3 = isActive and THEME.topBarText or THEME.controlText
         end
     end
     activeTab = name
@@ -4158,6 +4176,9 @@ local function enableAntiSit(character)
         return
     end
 
+    pcall(function()
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    end)
     humanoid.Sit = false
 
     table.insert(antiSitConnections, humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
