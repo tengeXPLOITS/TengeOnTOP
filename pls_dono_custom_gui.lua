@@ -341,10 +341,10 @@ local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local defaults = {
     textUpdateToggle = true,
     textUpdateDelay = 30,
-    hexBox = "#32CD32",
+    hexBox = "green",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
-    goalBarHeaderText = "GOAL $G",
+    goalBarColor = "green",
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
@@ -438,6 +438,7 @@ local function migrateLegacySettings(data)
     data.animSpeedSetting = nil
     data.animSpeedMultiplier = nil
     data.antiLag = nil
+    data.goalBarHeaderText = nil
     data.render = nil
     data.helicopterShowPlatform = nil
     return data
@@ -1296,6 +1297,50 @@ local function getGoalProgressSnapshot()
     return current, goal, ratio
 end
 
+local function getNamedTextColorMap()
+    return {
+        green = Color3.fromRGB(50, 205, 50),
+        blue = Color3.fromRGB(30, 144, 255),
+        yellow = Color3.fromRGB(255, 215, 0),
+        black = Color3.fromRGB(0, 0, 0),
+        white = Color3.fromRGB(255, 255, 255),
+        red = Color3.fromRGB(255, 69, 69),
+        orange = Color3.fromRGB(255, 140, 0),
+        pink = Color3.fromRGB(255, 105, 180),
+        purple = Color3.fromRGB(170, 102, 255),
+    }
+end
+
+local function getGoalBarColorName()
+    local value = tostring(settings.goalBarColor or "green"):lower()
+    local allowed = {
+        green = true,
+        blue = true,
+        red = true,
+        orange = true,
+        purple = true,
+    }
+    if allowed[value] then
+        return value
+    end
+    return "green"
+end
+
+local function color3ToRgbText(color)
+    local r = math.floor((color.R * 255) + 0.5)
+    local g = math.floor((color.G * 255) + 0.5)
+    local b = math.floor((color.B * 255) + 0.5)
+    return string.format("rgb(%d,%d,%d)", r, g, b)
+end
+
+local function boothTextUsesGoalBar()
+    return tostring(settings.customBoothText or ""):find("%$BAR", 1, true) ~= nil
+end
+
+local function shouldAutoUpdateBoothText()
+    return settings.textUpdateToggle == true or boothTextUsesGoalBar()
+end
+
 local function buildGoalProgressBar()
     local current, goal, ratio = getGoalProgressSnapshot()
     local totalSegments = 21
@@ -1306,8 +1351,11 @@ local function buildGoalProgressBar()
     end
 
     local emptySegments = math.max(0, totalSegments - filledSegments)
+    local namedColors = getNamedTextColorMap()
+    local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
     return string.format(
-        "<font color=\"rgb(30,144,255)\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
+        "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
+        color3ToRgbText(filledColor),
         string.rep("|", filledSegments),
         string.rep("|", emptySegments)
     )
@@ -1338,12 +1386,7 @@ local function buildBoothText()
 end
 
 local function buildGoalBarTemplate()
-    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
-
     return table.concat({
-        "<font color=\"rgb(30,144,255)\" size=\"22\"><b>",
-        headerText,
-        "</b></font><br/>",
         "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
         "$BAR",
         "</stroke>",
@@ -1351,7 +1394,14 @@ local function buildGoalBarTemplate()
 end
 
 local function hexToColor3(hex)
-    local value = tostring(hex or "#32CD32"):gsub("#", "")
+    local namedColors = getNamedTextColorMap()
+    local rawValue = tostring(hex or "green"):gsub("^%s+", ""):gsub("%s+$", "")
+    local named = namedColors[rawValue:lower()]
+    if named then
+        return named
+    end
+
+    local value = rawValue:gsub("#", "")
     if #value ~= 6 then
         return Color3.fromRGB(50, 205, 50)
     end
@@ -2029,17 +2079,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(119, 176, 214),
-    topBarText = Color3.fromRGB(247, 252, 255),
-    panel = Color3.fromRGB(221, 239, 247),
-    tabIdle = Color3.fromRGB(201, 227, 241),
-    tabActive = Color3.fromRGB(135, 195, 228),
-    section = Color3.fromRGB(236, 247, 252),
-    control = Color3.fromRGB(214, 236, 246),
-    controlText = Color3.fromRGB(54, 92, 116),
-    subtleText = Color3.fromRGB(112, 149, 172),
-    accent = Color3.fromRGB(152, 212, 238),
-    stroke = Color3.fromRGB(166, 201, 222),
+    topBar = Color3.fromRGB(22, 63, 97),
+    topBarText = Color3.fromRGB(238, 248, 255),
+    panel = Color3.fromRGB(10, 32, 51),
+    tabIdle = Color3.fromRGB(18, 52, 79),
+    tabActive = Color3.fromRGB(41, 108, 161),
+    section = Color3.fromRGB(14, 42, 66),
+    control = Color3.fromRGB(20, 57, 88),
+    controlText = Color3.fromRGB(220, 239, 248),
+    subtleText = Color3.fromRGB(142, 189, 214),
+    accent = Color3.fromRGB(84, 176, 220),
+    stroke = Color3.fromRGB(43, 96, 132),
 }
 
 local main = Instance.new("Frame")
@@ -2096,9 +2146,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(237, 248, 253)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(222, 239, 248)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(204, 228, 241)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 71, 107)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(13, 45, 70)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 28, 45)),
     })
     gradient.Parent = main
 end
@@ -2118,9 +2168,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(149, 207, 233)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(123, 185, 219)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(105, 169, 205)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(56, 132, 182)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(34, 92, 136)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(23, 68, 106)),
     })
     topGradient.Parent = topBar
 end
@@ -3003,18 +3053,29 @@ settingHandlers = {
         end
     end,
     textUpdateToggle = function(value)
-        if value and updateBoothTextNow then
+        if shouldAutoUpdateBoothText() and updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
     hexBox = function(value)
-        local normalized = tostring(value or ""):upper():gsub("%s+", "")
-        if not normalized:match("^#%x%x%x%x%x%x$") then
+        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        local lower = normalized:lower()
+        local allowedNames = {
+            green = true,
+            blue = true,
+            yellow = true,
+            black = true,
+            white = true,
+            red = true,
+            orange = true,
+            pink = true,
+        }
+        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
             settings.hexBox = defaults.hexBox
             saveSettings()
             return
         end
-        settings.hexBox = normalized
+        settings.hexBox = allowedNames[lower] and lower or normalized:upper()
         saveSettings()
         if updateBoothTextNow then
             updateBoothTextNow()
@@ -3025,7 +3086,16 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
-    goalBarHeaderText = function()
+    goalBarColor = function(value)
+        local lower = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        local allowed = {
+            green = true,
+            blue = true,
+            red = true,
+            orange = true,
+            purple = true,
+        }
+        settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
         saveSettings()
         if updateBoothTextNow then
             updateBoothTextNow()
@@ -3110,7 +3180,7 @@ local function onBoothClaimDetected(slot)
         moveToClaimedBooth(slot)
     end
 
-    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    if shouldAutoUpdateBoothText() and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
             pcall(function()
                 updateBoothTextNow()
@@ -3247,7 +3317,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
                     return
                 end
 
-                if settings.textUpdateToggle and tostring(settings[key]) ~= "" and updateBoothTextNow then
+                if shouldAutoUpdateBoothText() and tostring(settings[key]) ~= "" and updateBoothTextNow then
                     pcall(function()
                         updateBoothTextNow()
                     end)
@@ -3734,12 +3804,9 @@ local function buildSettingsTabs()
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
     createTextBox(boothSection, "Text Color", "hexBox", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
+    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
-    createInfoLabel(boothSection, "Goal Bar Header:")
-    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-    createButton(boothSection, "Paste Blue Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+    createButton(boothSection, "Paste Goal Bar", function()
         local nextText = buildGoalBarTemplate()
         if #nextText > 221 then
             notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
@@ -3761,6 +3828,7 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
@@ -3972,7 +4040,7 @@ end)
 task.spawn(function()
     local lastTextUpdate = 0
     while task.wait(1) do
-        if settings.textUpdateToggle then
+        if shouldAutoUpdateBoothText() then
             local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
             if tick() - lastTextUpdate >= delaySeconds then
                 lastTextUpdate = tick()
