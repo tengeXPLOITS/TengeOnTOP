@@ -2164,6 +2164,81 @@ do
     miniCorner.Parent = minimizeBtn
 end
 
+local creatorCard = Instance.new("TextButton")
+creatorCard.Name = "CreatorCard"
+creatorCard.Size = UDim2.new(0, 190, 0, 48)
+creatorCard.Position = UDim2.new(1, -253, 0, 0)
+creatorCard.BackgroundColor3 = THEME.topBar
+creatorCard.BorderSizePixel = 0
+creatorCard.AutoButtonColor = false
+creatorCard.Text = ""
+creatorCard.Parent = topBar
+
+do
+    local creatorCorner = Instance.new("UICorner")
+    creatorCorner.CornerRadius = UDim.new(0, 8)
+    creatorCorner.Parent = creatorCard
+
+    local creatorStroke = Instance.new("UIStroke")
+    creatorStroke.Thickness = 1
+    creatorStroke.Color = THEME.stroke
+    creatorStroke.Parent = creatorCard
+
+    local creatorAvatar = Instance.new("ImageLabel")
+    creatorAvatar.Name = "Avatar"
+    creatorAvatar.BackgroundColor3 = THEME.control
+    creatorAvatar.BorderSizePixel = 0
+    creatorAvatar.Size = UDim2.new(0, 34, 0, 34)
+    creatorAvatar.Position = UDim2.new(0, 7, 0.5, -17)
+    creatorAvatar.Parent = creatorCard
+
+    local creatorAvatarCorner = Instance.new("UICorner")
+    creatorAvatarCorner.CornerRadius = UDim.new(1, 0)
+    creatorAvatarCorner.Parent = creatorAvatar
+
+    local creatorDisplayLabel = Instance.new("TextLabel")
+    creatorDisplayLabel.BackgroundTransparency = 1
+    creatorDisplayLabel.Size = UDim2.new(1, -52, 0, 18)
+    creatorDisplayLabel.Position = UDim2.new(0, 48, 0, 7)
+    creatorDisplayLabel.TextXAlignment = Enum.TextXAlignment.Left
+    creatorDisplayLabel.TextColor3 = THEME.topBarText
+    creatorDisplayLabel.Font = Enum.Font.GothamSemibold
+    creatorDisplayLabel.TextSize = 12
+    creatorDisplayLabel.Text = "buriedinplainview"
+    creatorDisplayLabel.Parent = creatorCard
+
+    local creatorUsernameLabel = Instance.new("TextLabel")
+    creatorUsernameLabel.BackgroundTransparency = 1
+    creatorUsernameLabel.Size = UDim2.new(1, -52, 0, 14)
+    creatorUsernameLabel.Position = UDim2.new(0, 48, 0, 24)
+    creatorUsernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    creatorUsernameLabel.TextColor3 = THEME.subtleText
+    creatorUsernameLabel.Font = Enum.Font.Gotham
+    creatorUsernameLabel.TextSize = 10
+    creatorUsernameLabel.Text = "@buriedinplainview"
+    creatorUsernameLabel.Parent = creatorCard
+
+    task.spawn(function()
+        local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
+        if creatorHeadshot then
+            creatorAvatar.Image = creatorHeadshot
+        end
+    end)
+
+    creatorCard.MouseButton1Click:Connect(function()
+        setclipboard("https://www.roblox.com/users/1230653127/profile")
+        notify("Creator Profile", "Profile URL copied to clipboard!", 3, "creator-profile-click", 1)
+    end)
+
+    creatorCard.MouseEnter:Connect(function()
+        creatorCard.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    end)
+
+    creatorCard.MouseLeave:Connect(function()
+        creatorCard.BackgroundColor3 = THEME.topBar
+    end)
+end
+
 local body = Instance.new("Frame")
 body.Name = "Body"
 body.Size = UDim2.new(1, 0, 1, -46)
@@ -2795,9 +2870,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
                 local donationSpinBoost = (amount / 3) * spinMultiplier
                 local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
-                local riseHeight = math.max(8, math.min(80, amount * 3.5))
-                local riseDuration = 7
-                local fallDuration = 7
+                
+                -- Improved height scaling for stability with large donations
+                -- Uses logarithmic scaling to handle 1-10000 R$ smoothly
+                local heightFactor = math.log(math.max(1, amount)) / math.log(100)
+                local riseHeight = math.max(8, math.min(120, 15 + (heightFactor * 35)))
+                
+                local riseDuration = 6
+                local fallDuration = 8
                 local totalDuration = riseDuration + fallDuration
 
                 stopHelicopterIdleTask()
@@ -2847,6 +2927,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 local startPos = root.Position
                 local startRot = root.CFrame - root.CFrame.Position
                 local yaw = 0
+                local currentSpinSpeed = targetSpinSpeed
 
                 local existingHeli = root:FindFirstChild("HL1__HELI")
                 if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
@@ -2858,17 +2939,23 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 while tick() - startTick < totalDuration and char.Parent and root.Parent do
                     local elapsed = tick() - startTick
                     local yOffset
+                    local spinSpeedAtFrame = currentSpinSpeed
 
                     if elapsed < riseDuration then
+                        -- Rise phase with quadratic easing
                         local p = math.clamp(elapsed / riseDuration, 0, 1)
                         yOffset = riseHeight * (p * p)
                     else
+                        -- Fall phase with smooth deceleration
                         local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
                         local inv = 1 - p
                         yOffset = riseHeight * (inv * inv)
+                        
+                        -- Smooth spin speed deceleration during landing
+                        spinSpeedAtFrame = currentSpinSpeed * (inv * inv)
                     end
 
-                    yaw += targetSpinSpeed
+                    yaw += spinSpeedAtFrame
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
