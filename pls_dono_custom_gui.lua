@@ -1,6 +1,8 @@
 --[[
-    PLS DONATE - old script broke lol, from your bff matty
+    PLS DONATE - Custom GUI Foundation
 ]]
+
+print("bipv's UI reworked - darkmode/antilag")
 
 repeat
     task.wait()
@@ -14,7 +16,6 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
-local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -341,10 +342,10 @@ local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local defaults = {
     textUpdateToggle = true,
     textUpdateDelay = 30,
-    hexBox = "gray",
+    hexBox = "#32CD32",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
-    goalBarColor = "green",
+    goalBarHeaderText = "GOAL $G",
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
@@ -373,14 +374,48 @@ local defaults = {
     minPlayerCount = 23,
     maxPlayerCount = 24,
 
+    catalogEmote = "Disabled",
+    antiLag = false,
     AnonymousMode = false,
     spinSet = false,
     spinSpeedMultiplier = 1,
+    animSpeedSetting = 1,
+    animSpeedMultiplier = 1,
+    animSpeedPerRobux = false,
     helicopterEnabled = false,
     helicopterSpeed = 1,
     helicopterDieAfterLanding = false,
     testDonationAmount = 6,
 }
+
+local emotePresetOrder = {
+    "sturdy",
+    "jumping wave",
+    "wake up call-ksi",
+    "twice the feels",
+    "louder",
+    "low cortisol",
+    "zesty sturdy",
+    "korean greeting",
+    "block party",
+}
+
+local emotePresets = {
+    ["sturdy"] = "102571052202995",
+    ["jumping wave"] = "10714378156",
+    ["wake up call-ksi"] = "10714168145",
+    ["twice the feels"] = "12874447851",
+    ["louder"] = "10714385204",
+    ["low cortisol"] = "77387643699357",
+    ["zesty sturdy"] = "132104757386824",
+    ["korean greeting"] = "138591721528570",
+    ["block party"] = "10713988674",
+}
+
+local catalogEmoteOptions = {"Disabled"}
+for _, emoteName in ipairs(emotePresetOrder) do
+    table.insert(catalogEmoteOptions, emoteName)
+end
 
 local boothFontOptions = {"SciFi"}
 do
@@ -433,12 +468,10 @@ local function migrateLegacySettings(data)
         return data
     end
 
-    data.catalogEmote = nil
-    data.animSpeedPerRobux = nil
-    data.animSpeedSetting = nil
-    data.animSpeedMultiplier = nil
-    data.antiLag = nil
-    data.goalBarHeaderText = nil
+    if data.antiLag == nil and data.render ~= nil then
+        data.antiLag = data.render == true
+    end
+
     data.render = nil
     data.helicopterShowPlatform = nil
     return data
@@ -630,7 +663,6 @@ local hopRetryTask
 local hopAttemptQueue = {}
 local hopAttemptPlaceId
 local hopAttemptActive = false
-local boothWalkJumpTask
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -1297,74 +1329,6 @@ local function getGoalProgressSnapshot()
     return current, goal, ratio
 end
 
-local function getNamedTextColorMap()
-    return {
-        green = Color3.fromRGB(50, 205, 50),
-        blue = Color3.fromRGB(30, 144, 255),
-        yellow = Color3.fromRGB(255, 215, 0),
-        black = Color3.fromRGB(0, 0, 0),
-        white = Color3.fromRGB(255, 255, 255),
-        red = Color3.fromRGB(255, 69, 69),
-        orange = Color3.fromRGB(255, 140, 0),
-        pink = Color3.fromRGB(255, 105, 180),
-        purple = Color3.fromRGB(170, 102, 255),
-        gray = Color3.fromRGB(145, 145, 150),
-        grey = Color3.fromRGB(145, 145, 150),
-    }
-end
-
-local function getGoalBarColorName()
-    local value = tostring(settings.goalBarColor or "green"):lower()
-    local allowed = {
-        green = true,
-        blue = true,
-        red = true,
-        orange = true,
-        purple = true,
-    }
-    if allowed[value] then
-        return value
-    end
-    return "green"
-end
-
-local function color3ToRgbText(color)
-    local r = math.floor((color.R * 255) + 0.5)
-    local g = math.floor((color.G * 255) + 0.5)
-    local b = math.floor((color.B * 255) + 0.5)
-    return string.format("rgb(%d,%d,%d)", r, g, b)
-end
-
-local function boothTextUsesGoalBar()
-    return tostring(settings.customBoothText or ""):find("%$BAR", 1, true) ~= nil
-end
-
-local function shouldAutoUpdateBoothText()
-    return settings.textUpdateToggle == true or boothTextUsesGoalBar()
-end
-
-local function getEditableBoothTextColor(value)
-    local namedColors = getNamedTextColorMap()
-    local rawValue = tostring(value or settings.hexBox or "gray"):gsub("^%s+", ""):gsub("%s+$", "")
-    local named = namedColors[rawValue:lower()]
-    if named then
-        return named
-    end
-
-    local value = rawValue:gsub("#", "")
-    if #value ~= 6 then
-        return Color3.fromRGB(145, 145, 150)
-    end
-
-    local r = tonumber(value:sub(1, 2), 16)
-    local g = tonumber(value:sub(3, 4), 16)
-    local b = tonumber(value:sub(5, 6), 16)
-    if not r or not g or not b then
-        return Color3.fromRGB(145, 145, 150)
-    end
-    return Color3.fromRGB(r, g, b)
-end
-
 local function buildGoalProgressBar()
     local current, goal, ratio = getGoalProgressSnapshot()
     local totalSegments = 21
@@ -1375,13 +1339,9 @@ local function buildGoalProgressBar()
     end
 
     local emptySegments = math.max(0, totalSegments - filledSegments)
-    local namedColors = getNamedTextColorMap()
-    local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
     return string.format(
-        "<font color=\"%s\" size=\"23\">%s</font><font color=\"%s\" size=\"23\">%s</font>",
-        color3ToRgbText(filledColor),
+        "<font color=\"rgb(30,144,255)\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
         string.rep("|", filledSegments),
-        "rgb(120,120,126)",
         string.rep("|", emptySegments)
     )
 end
@@ -1410,56 +1370,32 @@ local function buildBoothText()
     return text
 end
 
-local function sanitizeGoalBarHeaderText(value)
-    local lines = {}
-    local rawText = tostring(value or "")
+local function buildGoalBarTemplate()
+    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
 
-    for rawLine in rawText:gmatch("[^\r\n]+") do
-        local line = trimText(rawLine)
-        local isGoalBarLine = line:find("%$BAR", 1, true)
-            or line:find("<stroke", 1, true)
-            or line:find("</stroke>", 1, true)
-        if line ~= "" and not isGoalBarLine then
-            table.insert(lines, line)
-        end
-    end
-
-    if #lines == 0 then
-        return "Goal: $C / $G"
-    end
-
-    return table.concat(lines, "\n")
-end
-
-local function buildGoalBarHeaderText(textAbove)
-    local wrappedLines = {}
-    local headerText = sanitizeGoalBarHeaderText(textAbove)
-
-    for rawLine in headerText:gmatch("[^\n]+") do
-        local line = trimText(rawLine)
-        if line ~= "" then
-            table.insert(wrappedLines, string.format("<font size=\"25\">%s</font>", line))
-        end
-    end
-
-    if #wrappedLines == 0 then
-        return "<font size=\"25\">Goal: $C / $G</font>"
-    end
-
-    return table.concat(wrappedLines, "\n")
-end
-
-local function buildGoalBarTemplate(textAbove)
     return table.concat({
-        buildGoalBarHeaderText(textAbove),
-        "<stroke thickness=\"4\" color=\"rgb(110,110,116)\">",
+        "<font color=\"rgb(30,144,255)\" size=\"22\"><b>",
+        headerText,
+        "</b></font><br/>",
+        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
         "$BAR",
         "</stroke>",
-    }, "\n")
+    })
 end
 
 local function hexToColor3(hex)
-    return getEditableBoothTextColor(hex)
+    local value = tostring(hex or "#32CD32"):gsub("#", "")
+    if #value ~= 6 then
+        return Color3.fromRGB(50, 205, 50)
+    end
+
+    local r = tonumber(value:sub(1, 2), 16)
+    local g = tonumber(value:sub(3, 4), 16)
+    local b = tonumber(value:sub(5, 6), 16)
+    if not r or not g or not b then
+        return Color3.fromRGB(50, 205, 50)
+    end
+    return Color3.fromRGB(r, g, b)
 end
 
 updateBoothTextNow = function()
@@ -1480,13 +1416,13 @@ updateBoothTextNow = function()
         text = text,
         textFont = chosenFont,
         richText = true,
-        strokeColor = Color3.fromRGB(110, 110, 116),
+        strokeColor = Color3.new(0, 0, 0),
         strokeOpacity = 0,
         textColor = hexToColor3(settings.hexBox),
-        buttonStrokeColor = Color3.fromRGB(110, 110, 116),
-        buttonTextColor = Color3.fromRGB(242, 242, 244),
-        buttonColor = Color3.fromRGB(116, 116, 122),
-        buttonHoverColor = Color3.fromRGB(138, 138, 144),
+        buttonStrokeColor = Color3.new(0, 0, 0),
+        buttonTextColor = Color3.new(1, 1, 1),
+        buttonColor = Color3.new(98 / 255, 1, 0),
+        buttonHoverColor = Color3.new(98 / 255, 1, 0),
         buttonLayout = "",
     }
 
@@ -1887,130 +1823,39 @@ local function moveToClaimedBooth(slot)
         end)
     end
 
-    local function stabilizeAtBooth()
-        if not hrp or not hrp.Parent or not humanoid or not humanoid.Parent then
-            return
-        end
-
-        humanoid.Sit = false
-        humanoid.Jump = false
-        pcall(function()
-            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-        end)
-
-        local stableCF = targetCF + Vector3.new(0, 0.1, 0)
-        hrp.CFrame = stableCF
-        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        task.delay(0.12, function()
-            if hrp and hrp.Parent and humanoid and humanoid.Parent then
-                hrp.CFrame = stableCF
-                pcall(function()
-                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                end)
-                humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            end
-        end)
-    end
-
     if moveMode == "Walk" then
-        if boothWalkJumpTask then
-            task.cancel(boothWalkJumpTask)
-            boothWalkJumpTask = nil
-        end
-
         local oldSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = 16
-        humanoid.Sit = false
-
-        local jumpActive = true
-        boothWalkJumpTask = task.spawn(function()
-            while jumpActive and humanoid and humanoid.Parent do
-                humanoid.Sit = false
-                local state = humanoid:GetState()
-                if state ~= Enum.HumanoidStateType.Jumping
-                    and state ~= Enum.HumanoidStateType.Freefall
-                    and state ~= Enum.HumanoidStateType.FallingDown then
-                    humanoid.Jump = true
-                end
-                task.wait(0.35)
+        humanoid.WalkSpeed = 32
+        local reached = false
+        local moveConn
+        moveConn = humanoid.MoveToFinished:Connect(function(ok)
+            reached = ok or reached
+            if moveConn then
+                moveConn:Disconnect()
             end
         end)
 
-        local reached = false
-        local function walkToPoint(point, timeoutSeconds)
-            humanoid:MoveTo(point)
-            local started = tick()
-            while tick() - started < timeoutSeconds do
-                if not hrp or not hrp.Parent or not humanoid or not humanoid.Parent then
-                    return false
-                end
-                if (hrp.Position - point).Magnitude <= 3.5 then
-                    return true
-                end
-                task.wait(0.1)
+        humanoid:MoveTo(targetCF.Position)
+        local started = tick()
+        while tick() - started < 8 do
+            if reached then
+                break
             end
-            return false
+            task.wait(0.1)
         end
 
-        local pathOk = false
-        for _ = 1, 3 do
-            local path = PathfindingService:CreatePath({
-                AgentRadius = 2,
-                AgentHeight = 5,
-                AgentCanJump = true,
-                AgentCanClimb = true,
-                WaypointSpacing = 4,
-            })
-
-            local computed = pcall(function()
-                path:ComputeAsync(hrp.Position, targetCF.Position)
-            end)
-
-            if computed and path.Status == Enum.PathStatus.Success then
-                local waypoints = path:GetWaypoints()
-                pathOk = #waypoints > 0
-                for _, waypoint in ipairs(waypoints) do
-                    if waypoint.Action == Enum.PathWaypointAction.Jump then
-                        humanoid.Jump = true
-                    end
-                    if not walkToPoint(waypoint.Position, 3.5) then
-                        pathOk = false
-                        break
-                    end
-                end
-                if pathOk and walkToPoint(targetCF.Position, 3) then
-                    reached = true
-                    break
-                end
-            else
-                if walkToPoint(targetCF.Position, 4) then
-                    reached = true
-                    break
-                end
-            end
-
-            task.wait(0.2)
-        end
-
-        jumpActive = false
-        if boothWalkJumpTask then
-            task.cancel(boothWalkJumpTask)
-            boothWalkJumpTask = nil
-        end
         humanoid.WalkSpeed = oldSpeed
 
-        if reached then
-            stabilizeAtBooth()
-            return true, "walk"
+        if not reached then
+            applyFacing()
+            return false, "walk-timeout-fallback-teleport"
         end
 
-        return false, "walk-timeout"
+        applyFacing()
+        return true, "walk"
     end
 
     applyFacing()
-    stabilizeAtBooth()
     return true, "teleport"
 end
 
@@ -2126,21 +1971,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(42, 42, 45),
-    topBarText = Color3.fromRGB(244, 244, 246),
-    panel = Color3.fromRGB(58, 58, 63),
-    tabIdle = Color3.fromRGB(68, 68, 74),
-    tabActive = Color3.fromRGB(90, 90, 96),
-    section = Color3.fromRGB(50, 50, 55),
-    control = Color3.fromRGB(46, 46, 51),
-    controlText = Color3.fromRGB(238, 238, 241),
-    subtleText = Color3.fromRGB(201, 201, 206),
-    accent = Color3.fromRGB(122, 122, 128),
-    stroke = Color3.fromRGB(82, 82, 88),
-    panelTransparency = 0.14,
-    topBarTransparency = 0.04,
-    sectionTransparency = 0.18,
-    controlTransparency = 0.12,
+    topBar = Color3.fromRGB(18, 20, 28),
+    topBarText = Color3.fromRGB(232, 236, 245),
+    panel = Color3.fromRGB(12, 14, 20),
+    tabIdle = Color3.fromRGB(25, 28, 38),
+    tabActive = Color3.fromRGB(76, 94, 128),
+    section = Color3.fromRGB(19, 22, 31),
+    control = Color3.fromRGB(28, 32, 44),
+    controlText = Color3.fromRGB(222, 227, 238),
+    subtleText = Color3.fromRGB(150, 157, 176),
+    accent = Color3.fromRGB(136, 154, 194),
+    stroke = Color3.fromRGB(52, 58, 74),
 }
 
 local main = Instance.new("Frame")
@@ -2148,7 +1989,6 @@ main.Name = "Main"
 main.Size = UDim2.new(0, 620, 0, 430)
 main.Position = UDim2.fromOffset(220, 120)
 main.BackgroundColor3 = THEME.panel
-main.BackgroundTransparency = THEME.panelTransparency
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = false
@@ -2198,9 +2038,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(74, 74, 80)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(58, 58, 63)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(46, 46, 50)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 27, 36)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(16, 19, 27)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 18)),
     })
     gradient.Parent = main
 end
@@ -2209,7 +2049,6 @@ local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, 0, 0, 30)
 topBar.BackgroundColor3 = THEME.topBar
-topBar.BackgroundTransparency = THEME.topBarTransparency
 topBar.BorderSizePixel = 0
 topBar.Parent = main
 
@@ -2221,9 +2060,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(62, 62, 68)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(50, 50, 55)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(42, 42, 45)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 48, 62)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(28, 31, 42)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 20, 29)),
     })
     topGradient.Parent = topBar
 end
@@ -2238,7 +2077,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "Pls Donate Animosity | .gg/VVzcvgeuRw."
+    title.Text = ".gg/SYpKSnFetn | PLS DONO ANIMOSITY"
     title.Parent = topBar
 end
 
@@ -2247,7 +2086,6 @@ minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 26, 0, 20)
 minimizeBtn.Position = UDim2.new(1, -33, 0.5, -10)
 minimizeBtn.BackgroundColor3 = THEME.topBar
-minimizeBtn.BackgroundTransparency = THEME.topBarTransparency
 minimizeBtn.TextColor3 = THEME.topBarText
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 14
@@ -2380,7 +2218,6 @@ local function setMinimized(state)
     local targetSize = state and UDim2.new(0, expandedWidth, 0, 30) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
     minimizeBtn.BackgroundColor3 = THEME.topBar
-    minimizeBtn.BackgroundTransparency = THEME.topBarTransparency
 
     minimizeTween = TweenService:Create(
         main,
@@ -2416,7 +2253,7 @@ local function activateTab(name)
         page.Visible = isActive
         if btn then
             btn.BackgroundColor3 = isActive and THEME.tabActive or THEME.tabIdle
-            btn.TextColor3 = isActive and THEME.topBarText or THEME.controlText
+            btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or THEME.controlText
         end
     end
     activeTab = name
@@ -2427,7 +2264,6 @@ local function createTab(name)
     btn.Name = name .. "Btn"
     btn.Size = UDim2.new(0, 62, 1, 0)
     btn.BackgroundColor3 = THEME.tabIdle
-    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 12
@@ -2443,7 +2279,6 @@ local function createTab(name)
     page.Visible = false
     page.Size = UDim2.new(1, 0, 1, 0)
     page.BackgroundColor3 = THEME.panel
-    page.BackgroundTransparency = THEME.panelTransparency
     page.BorderSizePixel = 0
     page.ScrollBarThickness = 5
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -2479,7 +2314,6 @@ end
 local function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.BackgroundColor3 = THEME.section
-    section.BackgroundTransparency = THEME.sectionTransparency
     section.BorderSizePixel = 0
     section.Size = UDim2.new(1, 0, 0, 0)
     section.AutomaticSize = Enum.AutomaticSize.Y
@@ -2551,7 +2385,7 @@ local function createToggle(parent, text, key)
         local enabled = settings[key] == true
         btn.Text = enabled and "x" or ""
         btn.BackgroundColor3 = enabled and THEME.accent or THEME.control
-        btn.TextColor3 = enabled and THEME.panel or THEME.controlText
+        btn.TextColor3 = enabled and Color3.fromRGB(19, 11, 21) or THEME.controlText
     end
 
     applyState()
@@ -2574,7 +2408,10 @@ local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
-local queuedHelicopterDonationAmount = 0
+local antiLagConnections = {}
+local antiLagObjectState = setmetatable({}, {__mode = "k"})
+local antiLagLightingState
+local antiLagTerrainState
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
@@ -2746,10 +2583,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
     if not hum then return end
     local root = hum.RootPart
     if not root then return end
-    if currentHelicopterSpinTask then
-        queuedHelicopterDonationAmount += math.max(1, tonumber(raisedAmount) or 1)
-        return
-    end
+    if currentHelicopterSpinTask then return end
 
     currentHelicopterSpinTask = task.spawn(function()
         local ok, err = pcall(function()
@@ -2823,14 +2657,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
 
             local startTick = tick()
             while tick() - startTick < totalDuration and char.Parent and root.Parent do
-                if queuedHelicopterDonationAmount > 0 then
-                    local extraAmount = queuedHelicopterDonationAmount
-                    queuedHelicopterDonationAmount = 0
-                    riseHeight = math.max(riseHeight, math.min(150, riseHeight + (extraAmount * 3.5)))
-                    targetSpinSpeed += (extraAmount / 3) * spinMultiplier
-                    totalDuration += math.min(4, extraAmount * 0.2)
-                end
-
                 local elapsed = tick() - startTick
                 local yOffset
 
@@ -2869,13 +2695,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
             end
 
             currentHelicopterSpinTask = nil
-
-            if queuedHelicopterDonationAmount > 0 and settings.helicopterEnabled then
-                local nextAmount = queuedHelicopterDonationAmount
-                queuedHelicopterDonationAmount = 0
-                performHelicopterBurst(nextAmount, spinSpeed, spinDuration)
-                return
-            end
 
             if settings.helicopterDieAfterLanding and hum and hum.Parent then
                 task.delay(0.15, function()
@@ -2925,15 +2744,15 @@ end
 local function performHelicopterDonationSequence(raisedAmount)
     local speedScale = math.max(0.5, tonumber(settings.helicopterSpeed) or 1)
     local spinSpeed = 0.55 * speedScale
-    if currentHelicopterSpinTask then
-        queuedHelicopterDonationAmount += math.max(1, tonumber(raisedAmount) or 1)
-        return
-    end
     performHelicopterBurst(raisedAmount, spinSpeed, 1.8)
 end
 
 local function getAppliedAnimSpeed()
-    return 1
+    local speed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
+    if settings.animSpeedPerRobux then
+        speed += math.max(0, tonumber(donationAnimSpeedBoost) or 0)
+    end
+    return math.clamp(speed, 1, 1000)
 end
 
 local function stopCatalogEmoteTrack()
@@ -3046,6 +2865,11 @@ local function playCatalogEmoteByName(name)
 end
 
 local function applySelectedAnimation()
+    if settings.catalogEmote and settings.catalogEmote ~= "Disabled" then
+        playCatalogEmoteByName(settings.catalogEmote)
+        return
+    end
+
     stopCatalogEmoteTrack()
 end
 
@@ -3092,7 +2916,150 @@ local function applySpinState()
     end
 end
 
+local function clearAntiLagConnections()
+    for _, connection in ipairs(antiLagConnections) do
+        if connection then
+            connection:Disconnect()
+        end
+    end
+    table.clear(antiLagConnections)
+end
+
+local function captureAntiLagObjectProperty(obj, property)
+    local state = antiLagObjectState[obj]
+    if not state then
+        state = {}
+        antiLagObjectState[obj] = state
+    end
+    if state[property] ~= nil then
+        return
+    end
+    local ok, value = pcall(function()
+        return obj[property]
+    end)
+    if ok then
+        state[property] = value
+    end
+end
+
+local function setObjectProperty(obj, property, value)
+    pcall(function()
+        obj[property] = value
+    end)
+end
+
+local function applyAntiLagToObject(obj)
+    if obj:IsA("BasePart") then
+        captureAntiLagObjectProperty(obj, "Material")
+        captureAntiLagObjectProperty(obj, "Reflectance")
+        captureAntiLagObjectProperty(obj, "CastShadow")
+        setObjectProperty(obj, "Material", Enum.Material.Plastic)
+        setObjectProperty(obj, "Reflectance", 0)
+        setObjectProperty(obj, "CastShadow", false)
+    end
+
+    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+        captureAntiLagObjectProperty(obj, "Enabled")
+        setObjectProperty(obj, "Enabled", false)
+    end
+
+    if obj:IsA("PostEffect") then
+        captureAntiLagObjectProperty(obj, "Enabled")
+        setObjectProperty(obj, "Enabled", false)
+    end
+end
+
+local function restoreAntiLagObjects()
+    for obj, state in pairs(antiLagObjectState) do
+        if obj and state then
+            for property, value in pairs(state) do
+                setObjectProperty(obj, property, value)
+            end
+        end
+        antiLagObjectState[obj] = nil
+    end
+end
+
+local function applyAntiLagState()
+    clearAntiLagConnections()
+
+    if settings.antiLag then
+        antiLagLightingState = {
+            Brightness = Lighting.Brightness,
+            GlobalShadows = Lighting.GlobalShadows,
+            EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+            EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+            FogEnd = Lighting.FogEnd,
+        }
+
+        local terrain = Workspace:FindFirstChildOfClass("Terrain") or Workspace.Terrain
+        if terrain then
+            antiLagTerrainState = {
+                WaterWaveSize = terrain.WaterWaveSize,
+                WaterWaveSpeed = terrain.WaterWaveSpeed,
+                WaterReflectance = terrain.WaterReflectance,
+                WaterTransparency = terrain.WaterTransparency,
+            }
+        else
+            antiLagTerrainState = nil
+        end
+
+        setObjectProperty(Lighting, "Brightness", 1)
+        setObjectProperty(Lighting, "GlobalShadows", false)
+        setObjectProperty(Lighting, "EnvironmentDiffuseScale", 0)
+        setObjectProperty(Lighting, "EnvironmentSpecularScale", 0)
+        setObjectProperty(Lighting, "FogEnd", 100000)
+
+        if terrain then
+            setObjectProperty(terrain, "WaterWaveSize", 0)
+            setObjectProperty(terrain, "WaterWaveSpeed", 0)
+            setObjectProperty(terrain, "WaterReflectance", 0)
+            setObjectProperty(terrain, "WaterTransparency", 1)
+        end
+
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            applyAntiLagToObject(obj)
+        end
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            applyAntiLagToObject(obj)
+        end
+
+        table.insert(antiLagConnections, Workspace.DescendantAdded:Connect(applyAntiLagToObject))
+        table.insert(antiLagConnections, Lighting.DescendantAdded:Connect(applyAntiLagToObject))
+        return
+    end
+
+    restoreAntiLagObjects()
+
+    if antiLagLightingState then
+        for property, value in pairs(antiLagLightingState) do
+            setObjectProperty(Lighting, property, value)
+        end
+        antiLagLightingState = nil
+    end
+
+    local terrain = Workspace:FindFirstChildOfClass("Terrain") or Workspace.Terrain
+    if terrain and antiLagTerrainState then
+        for property, value in pairs(antiLagTerrainState) do
+            setObjectProperty(terrain, property, value)
+        end
+    end
+    antiLagTerrainState = nil
+end
+
 settingHandlers = {
+    catalogEmote = function(value)
+        applySelectedAnimation()
+    end,
+    animSpeedSetting = function()
+        applyCurrentAnimSpeed()
+    end,
+    animSpeedPerRobux = function(value)
+        if not value then
+            resetDonationAnimSpeedBoost()
+        end
+        applyCurrentAnimSpeed()
+    end,
     helicopterEnabled = function(value)
         if value then
             startHelicopterIdleMode()
@@ -3110,32 +3077,24 @@ settingHandlers = {
             startHelicopterIdleMode()
         end
     end,
+    animSpeedMultiplier = function(value)
+        local multiplier = math.max(0, tonumber(value) or 1)
+        settings.animSpeedMultiplier = multiplier
+        saveSettings()
+    end,
     textUpdateToggle = function(value)
-        if shouldAutoUpdateBoothText() and updateBoothTextNow then
+        if value and updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
     hexBox = function(value)
-        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local lower = normalized:lower()
-        local allowedNames = {
-            green = true,
-            blue = true,
-            yellow = true,
-            black = true,
-            white = true,
-            red = true,
-            orange = true,
-            pink = true,
-            gray = true,
-            grey = true,
-        }
-        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
+        local normalized = tostring(value or ""):upper():gsub("%s+", "")
+        if not normalized:match("^#%x%x%x%x%x%x$") then
             settings.hexBox = defaults.hexBox
             saveSettings()
             return
         end
-        settings.hexBox = allowedNames[lower] and lower or normalized:upper()
+        settings.hexBox = normalized
         saveSettings()
         if updateBoothTextNow then
             updateBoothTextNow()
@@ -3146,16 +3105,7 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
-    goalBarColor = function(value)
-        local lower = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-        local allowed = {
-            green = true,
-            blue = true,
-            red = true,
-            orange = true,
-            purple = true,
-        }
-        settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
+    goalBarHeaderText = function()
         saveSettings()
         if updateBoothTextNow then
             updateBoothTextNow()
@@ -3181,6 +3131,9 @@ settingHandlers = {
         }
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
+    end,
+    antiLag = function()
+        applyAntiLagState()
     end,
     spinSet = function()
         applySpinState()
@@ -3228,19 +3181,9 @@ local function onBoothClaimDetected(slot)
     end
 
     handledClaimSlot = slot
-    local moved = true
-    local moveMode = tostring(settings.boothMoveMode or "Teleport")
-    if moveMode == "Walk" then
-        moved = select(1, moveToClaimedBooth(slot))
-        if not moved then
-            handledClaimSlot = nil
-            return
-        end
-    else
-        moveToClaimedBooth(slot)
-    end
+    moveToClaimedBooth(slot)
 
-    if shouldAutoUpdateBoothText() and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
             pcall(function()
                 updateBoothTextNow()
@@ -3254,6 +3197,9 @@ local function onBoothClaimDetected(slot)
     end
 
     setMinimized(false)
+    if playOpenFade then
+        playOpenFade(main)
+    end
 
     task.delay(0.2, function()
         applySelectedAnimation()
@@ -3273,7 +3219,6 @@ local function createTextBox(parent, text, key, numeric)
     box.Size = UDim2.new(1, 0, 0, 24)
     box.Position = UDim2.new(0, 0, 0.5, -12)
     box.BackgroundColor3 = THEME.control
-    box.BackgroundTransparency = THEME.controlTransparency
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = Enum.Font.Gotham
@@ -3333,7 +3278,6 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     box.Size = UDim2.new(1, 0, 0, boxHeight)
     box.Position = UDim2.new(0, 0, 0, 3)
     box.BackgroundColor3 = THEME.control
-    box.BackgroundTransparency = THEME.controlTransparency
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = Enum.Font.Gotham
@@ -3379,7 +3323,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
                     return
                 end
 
-                if shouldAutoUpdateBoothText() and tostring(settings[key]) ~= "" and updateBoothTextNow then
+                if settings.textUpdateToggle and tostring(settings[key]) ~= "" and updateBoothTextNow then
                     pcall(function()
                         updateBoothTextNow()
                     end)
@@ -3413,7 +3357,6 @@ local function createDropdown(parent, text, key, options)
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
     btn.BackgroundColor3 = THEME.control
-    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
@@ -3431,7 +3374,6 @@ local function createDropdown(parent, text, key, options)
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
     listFrame.BackgroundColor3 = THEME.control
-    listFrame.BackgroundTransparency = THEME.controlTransparency
     listFrame.BorderSizePixel = 0
     listFrame.Position = UDim2.new(0, 0, 0, baseHeight)
     listFrame.Size = UDim2.new(1, 0, 0, optionsHeight)
@@ -3487,7 +3429,6 @@ local function createDropdown(parent, text, key, options)
         local optionBtn = Instance.new("TextButton")
         optionBtn.Size = UDim2.new(1, 0, 0, optionHeight)
         optionBtn.BackgroundColor3 = THEME.section
-        optionBtn.BackgroundTransparency = THEME.sectionTransparency
         optionBtn.TextColor3 = THEME.controlText
         optionBtn.Font = Enum.Font.Gotham
         optionBtn.TextSize = 12
@@ -3540,7 +3481,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
     btn.BackgroundColor3 = THEME.control
-    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
@@ -3559,7 +3499,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     local content = Instance.new("Frame")
     content.Visible = false
     content.BackgroundColor3 = THEME.control
-    content.BackgroundTransparency = THEME.controlTransparency
     content.BorderSizePixel = 0
     content.Position = UDim2.new(0, 0, 0, baseHeight)
     content.Size = UDim2.new(1, 0, 0, contentHeight)
@@ -3584,7 +3523,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     local editor = Instance.new("TextBox")
     editor.Size = UDim2.new(1, 0, 0, 140)
     editor.BackgroundColor3 = THEME.section
-    editor.BackgroundTransparency = THEME.sectionTransparency
     editor.TextColor3 = THEME.controlText
     editor.PlaceholderColor3 = THEME.subtleText
     editor.Font = Enum.Font.Gotham
@@ -3617,7 +3555,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
     saveBtn.Position = UDim2.new(0, 0, 0, 146)
     saveBtn.BackgroundColor3 = THEME.topBar
-    saveBtn.BackgroundTransparency = THEME.topBarTransparency
     saveBtn.TextColor3 = THEME.topBarText
     saveBtn.Font = Enum.Font.GothamSemibold
     saveBtn.TextSize = 11
@@ -3632,7 +3569,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
     closeBtn.Position = UDim2.new(0.5, 3, 0, 146)
     closeBtn.BackgroundColor3 = THEME.section
-    closeBtn.BackgroundTransparency = THEME.sectionTransparency
     closeBtn.TextColor3 = THEME.controlText
     closeBtn.Font = Enum.Font.GothamSemibold
     closeBtn.TextSize = 11
@@ -3647,7 +3583,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
     nextLineBtn.Position = UDim2.new(0, 0, 0, 174)
     nextLineBtn.BackgroundColor3 = THEME.control
-    nextLineBtn.BackgroundTransparency = THEME.controlTransparency
     nextLineBtn.TextColor3 = THEME.controlText
     nextLineBtn.Font = Enum.Font.GothamSemibold
     nextLineBtn.TextSize = 11
@@ -3721,7 +3656,6 @@ local function createButton(parent, text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 104, 0, 23)
     btn.BackgroundColor3 = THEME.topBar
-    btn.BackgroundTransparency = THEME.topBarTransparency
     btn.TextColor3 = THEME.topBarText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 11
@@ -3760,7 +3694,6 @@ local function createSlider(parent, text, key, minVal, maxVal)
     track.Size = UDim2.new(1, 0, 0, 8)
     track.Position = UDim2.new(0, 0, 0, 26)
     track.BackgroundColor3 = THEME.control
-    track.BackgroundTransparency = THEME.controlTransparency
     track.BorderSizePixel = 0
     track.Parent = row
 
@@ -3875,13 +3808,15 @@ local function buildSettingsTabs()
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "hexBox", false)
+    createTextBox(boothSection, "Text Color Hex", "hexBox", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
-    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
-    createButton(boothSection, "Paste Goal Bar", function()
-        local currentText = boothTextBox and boothTextBox.Text or settings.customBoothText
-        local nextText = buildGoalBarTemplate(currentText)
+    createInfoLabel(boothSection, "Goal Bar Header:")
+    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
+    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
+    createButton(boothSection, "Paste Blue Goal Bar", function()
+        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+        local nextText = buildGoalBarTemplate()
         if #nextText > 221 then
             notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
             return
@@ -3891,7 +3826,7 @@ local function buildSettingsTabs()
         local ok, mode = updateBoothTextNow()
         if ok then
             boothTextBox.Text = nextText
-            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
+            notify("Goal Bar", "Blue goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
         elseif mode == "local-preview-only" then
             boothTextBox.Text = nextText
             notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
@@ -3902,8 +3837,6 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Paste Goal Bar adds an editable text line above the bar.")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, gray/grey, or #RRGGBB")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
@@ -3929,6 +3862,11 @@ local function buildSettingsTabs()
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
+        createDropdown(mainSection, "Catalog Emote", "catalogEmote", catalogEmoteOptions)
+        animSpeedSliderUpdate = createSlider(mainSection, "Anim Speed", "animSpeedSetting", 1, 100)
+        createTextBox(mainSection, "Anim Speed Multiplier", "animSpeedMultiplier", true)
+        createToggle(mainSection, "1R$= +1 Anim Speed", "animSpeedPerRobux")
+        createToggle(mainSection, "Anti Lag", "antiLag")
     end
 
     do
@@ -4041,6 +3979,7 @@ task.spawn(function()
 end)
 
 task.defer(function()
+    applyAntiLagState()
     if settings.spinSet then
         applySpinState()
     end
@@ -4115,7 +4054,7 @@ end)
 task.spawn(function()
     local lastTextUpdate = 0
     while task.wait(1) do
-        if shouldAutoUpdateBoothText() then
+        if settings.textUpdateToggle then
             local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
             if tick() - lastTextUpdate >= delaySeconds then
                 lastTextUpdate = tick()
@@ -4170,6 +4109,27 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
+        if settings.animSpeedPerRobux then
+            local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
+            local increasedBoost = donationAnimSpeedBoost + (delta * multiplier)
+            local rawBoost = math.floor((increasedBoost * 100) + 0.5) / 100
+            local maxBoost = math.max(0, 1000 - math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100))
+            local reachedCap = rawBoost >= maxBoost and maxBoost > 0
+            if reachedCap then
+                donationAnimSpeedBoost = 0
+                settings.animSpeedSetting = 1
+                saveSettings()
+                if animSpeedSliderUpdate then
+                    animSpeedSliderUpdate(1)
+                end
+                applyCurrentAnimSpeed()
+                notify("Anim Speed", "Anim speed reset to 1 after reaching the cap.", 4, "anim-speed-reset", 2)
+            else
+                donationAnimSpeedBoost = math.clamp(rawBoost, 0, maxBoost)
+                applyCurrentAnimSpeed()
+            end
+        end
+
         sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
 
         if settings.autoThanks then
@@ -4200,9 +4160,6 @@ local function enableAntiSit(character)
         return
     end
 
-    pcall(function()
-        humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-    end)
     humanoid.Sit = false
 
     table.insert(antiSitConnections, humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
