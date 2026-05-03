@@ -1378,7 +1378,7 @@ local function buildGoalProgressBar()
     local namedColors = getNamedTextColorMap()
     local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
     return string.format(
-        "<font color=\"%s\" size=\"19\">%s</font><font color=\"%s\" size=\"19\">%s</font>",
+        "<font color=\"%s\" size=\"23\">%s</font><font color=\"%s\" size=\"23\">%s</font>",
         color3ToRgbText(filledColor),
         string.rep("|", filledSegments),
         "rgb(120,120,126)",
@@ -1438,12 +1438,12 @@ local function buildGoalBarHeaderText(textAbove)
     for rawLine in headerText:gmatch("[^\n]+") do
         local line = trimText(rawLine)
         if line ~= "" then
-            table.insert(wrappedLines, string.format("<font size=\"22\">%s</font>", line))
+            table.insert(wrappedLines, string.format("<font size=\"25\">%s</font>", line))
         end
     end
 
     if #wrappedLines == 0 then
-        return "<font size=\"22\">Goal: $C / $G</font>"
+        return "<font size=\"25\">Goal: $C / $G</font>"
     end
 
     return table.concat(wrappedLines, "\n")
@@ -1452,7 +1452,7 @@ end
 local function buildGoalBarTemplate(textAbove)
     return table.concat({
         buildGoalBarHeaderText(textAbove),
-        "<stroke thickness=\"3\" color=\"rgb(110,110,116)\">",
+        "<stroke thickness=\"4\" color=\"rgb(110,110,116)\">",
         "$BAR",
         "</stroke>",
     }, "\n")
@@ -2126,17 +2126,21 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(102, 102, 108),
+    topBar = Color3.fromRGB(42, 42, 45),
     topBarText = Color3.fromRGB(244, 244, 246),
-    panel = Color3.fromRGB(76, 76, 82),
-    tabIdle = Color3.fromRGB(110, 110, 116),
-    tabActive = Color3.fromRGB(146, 146, 152),
-    section = Color3.fromRGB(92, 92, 98),
-    control = Color3.fromRGB(122, 122, 128),
-    controlText = Color3.fromRGB(242, 242, 244),
-    subtleText = Color3.fromRGB(214, 214, 218),
-    accent = Color3.fromRGB(186, 186, 192),
-    stroke = Color3.fromRGB(158, 158, 164),
+    panel = Color3.fromRGB(58, 58, 63),
+    tabIdle = Color3.fromRGB(68, 68, 74),
+    tabActive = Color3.fromRGB(90, 90, 96),
+    section = Color3.fromRGB(50, 50, 55),
+    control = Color3.fromRGB(46, 46, 51),
+    controlText = Color3.fromRGB(238, 238, 241),
+    subtleText = Color3.fromRGB(201, 201, 206),
+    accent = Color3.fromRGB(122, 122, 128),
+    stroke = Color3.fromRGB(82, 82, 88),
+    panelTransparency = 0.14,
+    topBarTransparency = 0.04,
+    sectionTransparency = 0.18,
+    controlTransparency = 0.12,
 }
 
 local main = Instance.new("Frame")
@@ -2144,6 +2148,7 @@ main.Name = "Main"
 main.Size = UDim2.new(0, 620, 0, 430)
 main.Position = UDim2.fromOffset(220, 120)
 main.BackgroundColor3 = THEME.panel
+main.BackgroundTransparency = THEME.panelTransparency
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = false
@@ -2193,9 +2198,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(132, 132, 138)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(102, 102, 108)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(82, 82, 88)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(74, 74, 80)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(58, 58, 63)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(46, 46, 50)),
     })
     gradient.Parent = main
 end
@@ -2204,6 +2209,7 @@ local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, 0, 0, 30)
 topBar.BackgroundColor3 = THEME.topBar
+topBar.BackgroundTransparency = THEME.topBarTransparency
 topBar.BorderSizePixel = 0
 topBar.Parent = main
 
@@ -2215,9 +2221,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(156, 156, 162)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(126, 126, 132)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(102, 102, 108)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(62, 62, 68)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(50, 50, 55)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(42, 42, 45)),
     })
     topGradient.Parent = topBar
 end
@@ -2241,6 +2247,7 @@ minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 26, 0, 20)
 minimizeBtn.Position = UDim2.new(1, -33, 0.5, -10)
 minimizeBtn.BackgroundColor3 = THEME.topBar
+minimizeBtn.BackgroundTransparency = THEME.topBarTransparency
 minimizeBtn.TextColor3 = THEME.topBarText
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 14
@@ -2373,6 +2380,7 @@ local function setMinimized(state)
     local targetSize = state and UDim2.new(0, expandedWidth, 0, 30) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
     minimizeBtn.BackgroundColor3 = THEME.topBar
+    minimizeBtn.BackgroundTransparency = THEME.topBarTransparency
 
     minimizeTween = TweenService:Create(
         main,
@@ -2419,6 +2427,7 @@ local function createTab(name)
     btn.Name = name .. "Btn"
     btn.Size = UDim2.new(0, 62, 1, 0)
     btn.BackgroundColor3 = THEME.tabIdle
+    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 12
@@ -2434,6 +2443,7 @@ local function createTab(name)
     page.Visible = false
     page.Size = UDim2.new(1, 0, 1, 0)
     page.BackgroundColor3 = THEME.panel
+    page.BackgroundTransparency = THEME.panelTransparency
     page.BorderSizePixel = 0
     page.ScrollBarThickness = 5
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -2469,6 +2479,7 @@ end
 local function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.BackgroundColor3 = THEME.section
+    section.BackgroundTransparency = THEME.sectionTransparency
     section.BorderSizePixel = 0
     section.Size = UDim2.new(1, 0, 0, 0)
     section.AutomaticSize = Enum.AutomaticSize.Y
@@ -3262,6 +3273,7 @@ local function createTextBox(parent, text, key, numeric)
     box.Size = UDim2.new(1, 0, 0, 24)
     box.Position = UDim2.new(0, 0, 0.5, -12)
     box.BackgroundColor3 = THEME.control
+    box.BackgroundTransparency = THEME.controlTransparency
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = Enum.Font.Gotham
@@ -3321,6 +3333,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     box.Size = UDim2.new(1, 0, 0, boxHeight)
     box.Position = UDim2.new(0, 0, 0, 3)
     box.BackgroundColor3 = THEME.control
+    box.BackgroundTransparency = THEME.controlTransparency
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = Enum.Font.Gotham
@@ -3400,6 +3413,7 @@ local function createDropdown(parent, text, key, options)
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
     btn.BackgroundColor3 = THEME.control
+    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
@@ -3417,6 +3431,7 @@ local function createDropdown(parent, text, key, options)
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
     listFrame.BackgroundColor3 = THEME.control
+    listFrame.BackgroundTransparency = THEME.controlTransparency
     listFrame.BorderSizePixel = 0
     listFrame.Position = UDim2.new(0, 0, 0, baseHeight)
     listFrame.Size = UDim2.new(1, 0, 0, optionsHeight)
@@ -3472,6 +3487,7 @@ local function createDropdown(parent, text, key, options)
         local optionBtn = Instance.new("TextButton")
         optionBtn.Size = UDim2.new(1, 0, 0, optionHeight)
         optionBtn.BackgroundColor3 = THEME.section
+        optionBtn.BackgroundTransparency = THEME.sectionTransparency
         optionBtn.TextColor3 = THEME.controlText
         optionBtn.Font = Enum.Font.Gotham
         optionBtn.TextSize = 12
@@ -3524,6 +3540,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
     btn.BackgroundColor3 = THEME.control
+    btn.BackgroundTransparency = THEME.controlTransparency
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
@@ -3542,6 +3559,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     local content = Instance.new("Frame")
     content.Visible = false
     content.BackgroundColor3 = THEME.control
+    content.BackgroundTransparency = THEME.controlTransparency
     content.BorderSizePixel = 0
     content.Position = UDim2.new(0, 0, 0, baseHeight)
     content.Size = UDim2.new(1, 0, 0, contentHeight)
@@ -3566,6 +3584,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     local editor = Instance.new("TextBox")
     editor.Size = UDim2.new(1, 0, 0, 140)
     editor.BackgroundColor3 = THEME.section
+    editor.BackgroundTransparency = THEME.sectionTransparency
     editor.TextColor3 = THEME.controlText
     editor.PlaceholderColor3 = THEME.subtleText
     editor.Font = Enum.Font.Gotham
@@ -3598,6 +3617,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
     saveBtn.Position = UDim2.new(0, 0, 0, 146)
     saveBtn.BackgroundColor3 = THEME.topBar
+    saveBtn.BackgroundTransparency = THEME.topBarTransparency
     saveBtn.TextColor3 = THEME.topBarText
     saveBtn.Font = Enum.Font.GothamSemibold
     saveBtn.TextSize = 11
@@ -3612,6 +3632,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
     closeBtn.Position = UDim2.new(0.5, 3, 0, 146)
     closeBtn.BackgroundColor3 = THEME.section
+    closeBtn.BackgroundTransparency = THEME.sectionTransparency
     closeBtn.TextColor3 = THEME.controlText
     closeBtn.Font = Enum.Font.GothamSemibold
     closeBtn.TextSize = 11
@@ -3626,6 +3647,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
     nextLineBtn.Position = UDim2.new(0, 0, 0, 174)
     nextLineBtn.BackgroundColor3 = THEME.control
+    nextLineBtn.BackgroundTransparency = THEME.controlTransparency
     nextLineBtn.TextColor3 = THEME.controlText
     nextLineBtn.Font = Enum.Font.GothamSemibold
     nextLineBtn.TextSize = 11
@@ -3699,6 +3721,7 @@ local function createButton(parent, text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 104, 0, 23)
     btn.BackgroundColor3 = THEME.topBar
+    btn.BackgroundTransparency = THEME.topBarTransparency
     btn.TextColor3 = THEME.topBarText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 11
@@ -3737,6 +3760,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     track.Size = UDim2.new(1, 0, 0, 8)
     track.Position = UDim2.new(0, 0, 0, 26)
     track.BackgroundColor3 = THEME.control
+    track.BackgroundTransparency = THEME.controlTransparency
     track.BorderSizePixel = 0
     track.Parent = row
 
