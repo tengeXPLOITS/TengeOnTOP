@@ -341,7 +341,7 @@ local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local defaults = {
     textUpdateToggle = true,
     textUpdateDelay = 30,
-    hexBox = "green",
+    hexBox = "gray",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarColor = "green",
@@ -1161,10 +1161,10 @@ local function sendDonationWebhook(amount, donorInfo)
     local donorProfileUrl = donorUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(donorUserId) or nil
     local initialMessage = donorName ~= "Unknown"
         and ("Donation received from %s. Gathering info to show stats..."):format(donorLabel)
-        or "Donation received. Gathering info to show stats... takes like a second"
+        or "Donation received. Gathering info to show stats..."
 
     postWebhookJson(url, {
-        username = "made by matty | donation notifier",
+        username = "PLS DONATE",
         avatar_url = donorAvatarUrl or localAvatarUrl,
         content = initialMessage,
     })
@@ -1201,13 +1201,13 @@ local function sendDonationWebhook(amount, donorInfo)
                 url = latestOutfitUrl or latestAvatarUrl or localAvatarUrl,
             },
             fields = {
-                {name = "Robux Received from plr", value = string.format("%d", tonumber(amount) or 0), inline = true},
-                {name = "After Tax ):", value = string.format("%d", taxed), inline = true},
+                {name = "Robux Received", value = string.format("%d", tonumber(amount) or 0), inline = true},
+                {name = "After Tax", value = string.format("%d", taxed), inline = true},
             },
         }
 
         postWebhookJson(url, {
-            username = "made by matty | donation notifier",
+            username = "PLS DONATE",
             avatar_url = latestAvatarUrl or localAvatarUrl,
             embeds = {embed},
         })
@@ -1345,7 +1345,7 @@ end
 
 local function getEditableBoothTextColor(value)
     local namedColors = getNamedTextColorMap()
-    local rawValue = tostring(value or settings.hexBox or "green"):gsub("^%s+", ""):gsub("%s+$", "")
+    local rawValue = tostring(value or settings.hexBox or "gray"):gsub("^%s+", ""):gsub("%s+$", "")
     local named = namedColors[rawValue:lower()]
     if named then
         return named
@@ -1353,14 +1353,14 @@ local function getEditableBoothTextColor(value)
 
     local value = rawValue:gsub("#", "")
     if #value ~= 6 then
-        return Color3.fromRGB(50, 205, 50)
+        return Color3.fromRGB(145, 145, 150)
     end
 
     local r = tonumber(value:sub(1, 2), 16)
     local g = tonumber(value:sub(3, 4), 16)
     local b = tonumber(value:sub(5, 6), 16)
     if not r or not g or not b then
-        return Color3.fromRGB(50, 205, 50)
+        return Color3.fromRGB(145, 145, 150)
     end
     return Color3.fromRGB(r, g, b)
 end
@@ -1377,12 +1377,11 @@ local function buildGoalProgressBar()
     local emptySegments = math.max(0, totalSegments - filledSegments)
     local namedColors = getNamedTextColorMap()
     local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
-    local emptyColor = getEditableBoothTextColor(settings.hexBox)
     return string.format(
         "<font color=\"%s\" size=\"17\">%s</font><font color=\"%s\" size=\"17\">%s</font>",
         color3ToRgbText(filledColor),
         string.rep("|", filledSegments),
-        color3ToRgbText(emptyColor),
+        "rgb(120,120,126)",
         string.rep("|", emptySegments)
     )
 end
@@ -1411,12 +1410,34 @@ local function buildBoothText()
     return text
 end
 
-local function buildGoalBarTemplate()
+local function sanitizeGoalBarHeaderText(value)
+    local lines = {}
+    local rawText = tostring(value or "")
+
+    for rawLine in rawText:gmatch("[^\r\n]+") do
+        local line = trimText(rawLine)
+        local isGoalBarLine = line:find("%$BAR", 1, true)
+            or line:find("<stroke", 1, true)
+            or line:find("</stroke>", 1, true)
+        if line ~= "" and not isGoalBarLine then
+            table.insert(lines, line)
+        end
+    end
+
+    if #lines == 0 then
+        return "Goal: $C / $G"
+    end
+
+    return table.concat(lines, "\n")
+end
+
+local function buildGoalBarTemplate(textAbove)
     return table.concat({
-        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
+        sanitizeGoalBarHeaderText(textAbove),
+        "<stroke thickness=\"3\" color=\"rgb(110,110,116)\">",
         "$BAR",
         "</stroke>",
-    })
+    }, "\n")
 end
 
 local function hexToColor3(hex)
@@ -1441,10 +1462,10 @@ updateBoothTextNow = function()
         text = text,
         textFont = chosenFont,
         richText = true,
-        strokeColor = Color3.new(0, 0, 0),
+        strokeColor = Color3.fromRGB(110, 110, 116),
         strokeOpacity = 0,
         textColor = hexToColor3(settings.hexBox),
-        buttonStrokeColor = Color3.new(0, 0, 0),
+        buttonStrokeColor = Color3.fromRGB(110, 110, 116),
         buttonTextColor = Color3.new(1, 1, 1),
         buttonColor = Color3.new(98 / 255, 1, 0),
         buttonHoverColor = Color3.new(98 / 255, 1, 0),
@@ -2193,7 +2214,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "Pls Donate Animosity $ | .gg/VVzcvgeuRw"
+    title.Text = "Pls Donate Animosity | .gg/VVzcvgeuRw."
     title.Parent = topBar
 end
 
@@ -2501,7 +2522,7 @@ local function createToggle(parent, text, key)
         local enabled = settings[key] == true
         btn.Text = enabled and "x" or ""
         btn.BackgroundColor3 = enabled and THEME.accent or THEME.control
-        btn.TextColor3 = enabled and Color3.fromRGB(19, 11, 21) or THEME.controlText
+        btn.TextColor3 = enabled and THEME.panel or THEME.controlText
     end
 
     applyState()
@@ -3817,7 +3838,8 @@ local function buildSettingsTabs()
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
     createButton(boothSection, "Paste Goal Bar", function()
-        local nextText = buildGoalBarTemplate()
+        local currentText = boothTextBox and boothTextBox.Text or settings.customBoothText
+        local nextText = buildGoalBarTemplate(currentText)
         if #nextText > 221 then
             notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
             return
@@ -3838,6 +3860,7 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+    createInfoLabel(boothSection, "Paste Goal Bar adds an editable text line above the bar.")
     createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, gray/grey, or #RRGGBB")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
