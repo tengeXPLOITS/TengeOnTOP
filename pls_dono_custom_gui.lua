@@ -2185,7 +2185,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "God loves you <3| Brought back by Matty"
+    title.Text = "DEEP SEA FINAL"
     title.Parent = topBar
 end
 
