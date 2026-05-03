@@ -1161,10 +1161,10 @@ local function sendDonationWebhook(amount, donorInfo)
     local donorProfileUrl = donorUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(donorUserId) or nil
     local initialMessage = donorName ~= "Unknown"
         and ("Donation received from %s. Gathering info to show stats..."):format(donorLabel)
-        or "Donation received. Gathering info to show stats..."
+        or "Donation received. Gathering info to show stats... takes like a second"
 
     postWebhookJson(url, {
-        username = "PLS DONATE",
+        username = "made by matty | donation notifier",
         avatar_url = donorAvatarUrl or localAvatarUrl,
         content = initialMessage,
     })
@@ -1201,13 +1201,13 @@ local function sendDonationWebhook(amount, donorInfo)
                 url = latestOutfitUrl or latestAvatarUrl or localAvatarUrl,
             },
             fields = {
-                {name = "Robux Received", value = string.format("%d", tonumber(amount) or 0), inline = true},
-                {name = "After Tax", value = string.format("%d", taxed), inline = true},
+                {name = "Robux Received from plr", value = string.format("%d", tonumber(amount) or 0), inline = true},
+                {name = "After Tax ):", value = string.format("%d", taxed), inline = true},
             },
         }
 
         postWebhookJson(url, {
-            username = "PLS DONATE",
+            username = "made by matty | donation notifier",
             avatar_url = latestAvatarUrl or localAvatarUrl,
             embeds = {embed},
         })
@@ -1308,6 +1308,8 @@ local function getNamedTextColorMap()
         orange = Color3.fromRGB(255, 140, 0),
         pink = Color3.fromRGB(255, 105, 180),
         purple = Color3.fromRGB(170, 102, 255),
+        gray = Color3.fromRGB(145, 145, 150),
+        grey = Color3.fromRGB(145, 145, 150),
     }
 end
 
@@ -1341,6 +1343,28 @@ local function shouldAutoUpdateBoothText()
     return settings.textUpdateToggle == true or boothTextUsesGoalBar()
 end
 
+local function getEditableBoothTextColor(value)
+    local namedColors = getNamedTextColorMap()
+    local rawValue = tostring(value or settings.hexBox or "green"):gsub("^%s+", ""):gsub("%s+$", "")
+    local named = namedColors[rawValue:lower()]
+    if named then
+        return named
+    end
+
+    local value = rawValue:gsub("#", "")
+    if #value ~= 6 then
+        return Color3.fromRGB(50, 205, 50)
+    end
+
+    local r = tonumber(value:sub(1, 2), 16)
+    local g = tonumber(value:sub(3, 4), 16)
+    local b = tonumber(value:sub(5, 6), 16)
+    if not r or not g or not b then
+        return Color3.fromRGB(50, 205, 50)
+    end
+    return Color3.fromRGB(r, g, b)
+end
+
 local function buildGoalProgressBar()
     local current, goal, ratio = getGoalProgressSnapshot()
     local totalSegments = 21
@@ -1353,10 +1377,12 @@ local function buildGoalProgressBar()
     local emptySegments = math.max(0, totalSegments - filledSegments)
     local namedColors = getNamedTextColorMap()
     local filledColor = namedColors[getGoalBarColorName()] or namedColors.green
+    local emptyColor = getEditableBoothTextColor(settings.hexBox)
     return string.format(
-        "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
+        "<font color=\"%s\" size=\"17\">%s</font><font color=\"%s\" size=\"17\">%s</font>",
         color3ToRgbText(filledColor),
         string.rep("|", filledSegments),
+        color3ToRgbText(emptyColor),
         string.rep("|", emptySegments)
     )
 end
@@ -1394,25 +1420,7 @@ local function buildGoalBarTemplate()
 end
 
 local function hexToColor3(hex)
-    local namedColors = getNamedTextColorMap()
-    local rawValue = tostring(hex or "green"):gsub("^%s+", ""):gsub("%s+$", "")
-    local named = namedColors[rawValue:lower()]
-    if named then
-        return named
-    end
-
-    local value = rawValue:gsub("#", "")
-    if #value ~= 6 then
-        return Color3.fromRGB(50, 205, 50)
-    end
-
-    local r = tonumber(value:sub(1, 2), 16)
-    local g = tonumber(value:sub(3, 4), 16)
-    local b = tonumber(value:sub(5, 6), 16)
-    if not r or not g or not b then
-        return Color3.fromRGB(50, 205, 50)
-    end
-    return Color3.fromRGB(r, g, b)
+    return getEditableBoothTextColor(hex)
 end
 
 updateBoothTextNow = function()
@@ -2079,17 +2087,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(22, 63, 97),
-    topBarText = Color3.fromRGB(238, 248, 255),
-    panel = Color3.fromRGB(10, 32, 51),
-    tabIdle = Color3.fromRGB(18, 52, 79),
-    tabActive = Color3.fromRGB(41, 108, 161),
-    section = Color3.fromRGB(14, 42, 66),
-    control = Color3.fromRGB(20, 57, 88),
-    controlText = Color3.fromRGB(220, 239, 248),
-    subtleText = Color3.fromRGB(142, 189, 214),
-    accent = Color3.fromRGB(84, 176, 220),
-    stroke = Color3.fromRGB(43, 96, 132),
+    topBar = Color3.fromRGB(62, 62, 66),
+    topBarText = Color3.fromRGB(245, 245, 247),
+    panel = Color3.fromRGB(32, 32, 36),
+    tabIdle = Color3.fromRGB(54, 54, 58),
+    tabActive = Color3.fromRGB(92, 92, 98),
+    section = Color3.fromRGB(42, 42, 46),
+    control = Color3.fromRGB(52, 52, 57),
+    controlText = Color3.fromRGB(238, 238, 240),
+    subtleText = Color3.fromRGB(168, 168, 174),
+    accent = Color3.fromRGB(188, 188, 192),
+    stroke = Color3.fromRGB(104, 104, 110),
 }
 
 local main = Instance.new("Frame")
@@ -2146,9 +2154,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 71, 107)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(13, 45, 70)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 28, 45)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(48, 48, 52)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(34, 34, 38)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 24, 27)),
     })
     gradient.Parent = main
 end
@@ -2168,9 +2176,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(56, 132, 182)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(34, 92, 136)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(23, 68, 106)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(96, 96, 102)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(78, 78, 84)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(62, 62, 66)),
     })
     topGradient.Parent = topBar
 end
@@ -2185,7 +2193,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "DEEP SEA FINAL"
+    title.Text = "Pls Donate Animosity $ | .gg/VVzcvgeuRw"
     title.Parent = topBar
 end
 
@@ -3069,6 +3077,8 @@ settingHandlers = {
             red = true,
             orange = true,
             pink = true,
+            gray = true,
+            grey = true,
         }
         if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
             settings.hexBox = defaults.hexBox
@@ -3817,7 +3827,7 @@ local function buildSettingsTabs()
         local ok, mode = updateBoothTextNow()
         if ok then
             boothTextBox.Text = nextText
-            notify("Goal Bar", "Blue goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
+            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
         elseif mode == "local-preview-only" then
             boothTextBox.Text = nextText
             notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
@@ -3828,7 +3838,7 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink")
+    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, gray/grey, or #RRGGBB")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
