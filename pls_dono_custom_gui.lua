@@ -1,12 +1,6 @@
 --[[
-    PLS DONATE - Custom GUI Foundation
-    - No third-party UI libraries
-    - PC + mobile drag support
-    - Minimize/open support
-    - Persistent settings with JSON file
+    PLS DONATE - old script broke lol, from your bff matty
 ]]
-
-print("bipv's UI reworked - darkmode/antilag")
 
 repeat
     task.wait()
@@ -20,6 +14,7 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
+local PathfindingService = game:GetService("PathfindingService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -378,12 +373,9 @@ local defaults = {
     minPlayerCount = 23,
     maxPlayerCount = 24,
 
-    antiLag = false,
     AnonymousMode = false,
     spinSet = false,
     spinSpeedMultiplier = 1,
-    animSpeedSetting = 1,
-    animSpeedMultiplier = 1,
     helicopterEnabled = false,
     helicopterSpeed = 1,
     helicopterDieAfterLanding = false,
@@ -441,12 +433,11 @@ local function migrateLegacySettings(data)
         return data
     end
 
-    if data.antiLag == nil and data.render ~= nil then
-        data.antiLag = data.render == true
-    end
-
     data.catalogEmote = nil
     data.animSpeedPerRobux = nil
+    data.animSpeedSetting = nil
+    data.animSpeedMultiplier = nil
+    data.antiLag = nil
     data.render = nil
     data.helicopterShowPlatform = nil
     return data
@@ -1823,20 +1814,60 @@ local function moveToClaimedBooth(slot)
             end
         end)
 
-        humanoid:MoveTo(targetCF.Position)
-        local started = tick()
         local reached = false
-        while tick() - started < 14 do
-            local distance = (hrp.Position - targetCF.Position).Magnitude
-            if distance <= 3.5 then
-                reached = true
-                break
+        local function walkToPoint(point, timeoutSeconds)
+            humanoid:MoveTo(point)
+            local started = tick()
+            while tick() - started < timeoutSeconds do
+                if not hrp or not hrp.Parent or not humanoid or not humanoid.Parent then
+                    return false
+                end
+                if (hrp.Position - point).Magnitude <= 3.5 then
+                    return true
+                end
+                task.wait(0.1)
+            end
+            return false
+        end
+
+        local pathOk = false
+        for _ = 1, 3 do
+            local path = PathfindingService:CreatePath({
+                AgentRadius = 2,
+                AgentHeight = 5,
+                AgentCanJump = true,
+                AgentCanClimb = true,
+                WaypointSpacing = 4,
+            })
+
+            local computed = pcall(function()
+                path:ComputeAsync(hrp.Position, targetCF.Position)
+            end)
+
+            if computed and path.Status == Enum.PathStatus.Success then
+                local waypoints = path:GetWaypoints()
+                pathOk = #waypoints > 0
+                for _, waypoint in ipairs(waypoints) do
+                    if waypoint.Action == Enum.PathWaypointAction.Jump then
+                        humanoid.Jump = true
+                    end
+                    if not walkToPoint(waypoint.Position, 3.5) then
+                        pathOk = false
+                        break
+                    end
+                end
+                if pathOk and walkToPoint(targetCF.Position, 3) then
+                    reached = true
+                    break
+                end
+            else
+                if walkToPoint(targetCF.Position, 4) then
+                    reached = true
+                    break
+                end
             end
 
-            if humanoid.WalkToPoint and (humanoid.WalkToPoint - targetCF.Position).Magnitude > 2 then
-                humanoid:MoveTo(targetCF.Position)
-            end
-            task.wait(0.1)
+            task.wait(0.2)
         end
 
         jumpActive = false
@@ -1971,17 +2002,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(18, 20, 28),
-    topBarText = Color3.fromRGB(232, 236, 245),
-    panel = Color3.fromRGB(12, 14, 20),
-    tabIdle = Color3.fromRGB(25, 28, 38),
-    tabActive = Color3.fromRGB(76, 94, 128),
-    section = Color3.fromRGB(19, 22, 31),
-    control = Color3.fromRGB(28, 32, 44),
-    controlText = Color3.fromRGB(222, 227, 238),
-    subtleText = Color3.fromRGB(150, 157, 176),
-    accent = Color3.fromRGB(136, 154, 194),
-    stroke = Color3.fromRGB(52, 58, 74),
+    topBar = Color3.fromRGB(119, 176, 214),
+    topBarText = Color3.fromRGB(247, 252, 255),
+    panel = Color3.fromRGB(221, 239, 247),
+    tabIdle = Color3.fromRGB(201, 227, 241),
+    tabActive = Color3.fromRGB(135, 195, 228),
+    section = Color3.fromRGB(236, 247, 252),
+    control = Color3.fromRGB(214, 236, 246),
+    controlText = Color3.fromRGB(54, 92, 116),
+    subtleText = Color3.fromRGB(112, 149, 172),
+    accent = Color3.fromRGB(152, 212, 238),
+    stroke = Color3.fromRGB(166, 201, 222),
 }
 
 local main = Instance.new("Frame")
@@ -2038,9 +2069,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 27, 36)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(16, 19, 27)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 18)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(237, 248, 253)),
+        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(222, 239, 248)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(204, 228, 241)),
     })
     gradient.Parent = main
 end
@@ -2060,9 +2091,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 48, 62)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(28, 31, 42)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 20, 29)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(149, 207, 233)),
+        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(123, 185, 219)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(105, 169, 205)),
     })
     topGradient.Parent = topBar
 end
@@ -2409,10 +2440,6 @@ local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
 local queuedHelicopterDonationAmount = 0
-local antiLagConnections = {}
-local antiLagObjectState = setmetatable({}, {__mode = "k"})
-local antiLagLightingState
-local antiLagTerrainState
 
 local function resetDonationAnimSpeedBoost()
     donationAnimSpeedBoost = 0
@@ -2771,8 +2798,7 @@ local function performHelicopterDonationSequence(raisedAmount)
 end
 
 local function getAppliedAnimSpeed()
-    local speed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
-    return math.clamp(speed, 1, 1000)
+    return 1
 end
 
 local function stopCatalogEmoteTrack()
@@ -2931,141 +2957,7 @@ local function applySpinState()
     end
 end
 
-local function clearAntiLagConnections()
-    for _, connection in ipairs(antiLagConnections) do
-        if connection then
-            connection:Disconnect()
-        end
-    end
-    table.clear(antiLagConnections)
-end
-
-local function captureAntiLagObjectProperty(obj, property)
-    local state = antiLagObjectState[obj]
-    if not state then
-        state = {}
-        antiLagObjectState[obj] = state
-    end
-    if state[property] ~= nil then
-        return
-    end
-    local ok, value = pcall(function()
-        return obj[property]
-    end)
-    if ok then
-        state[property] = value
-    end
-end
-
-local function setObjectProperty(obj, property, value)
-    pcall(function()
-        obj[property] = value
-    end)
-end
-
-local function applyAntiLagToObject(obj)
-    if obj:IsA("BasePart") then
-        captureAntiLagObjectProperty(obj, "Material")
-        captureAntiLagObjectProperty(obj, "Reflectance")
-        captureAntiLagObjectProperty(obj, "CastShadow")
-        setObjectProperty(obj, "Material", Enum.Material.Plastic)
-        setObjectProperty(obj, "Reflectance", 0)
-        setObjectProperty(obj, "CastShadow", false)
-    end
-
-    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
-        captureAntiLagObjectProperty(obj, "Enabled")
-        setObjectProperty(obj, "Enabled", false)
-    end
-
-    if obj:IsA("PostEffect") then
-        captureAntiLagObjectProperty(obj, "Enabled")
-        setObjectProperty(obj, "Enabled", false)
-    end
-end
-
-local function restoreAntiLagObjects()
-    for obj, state in pairs(antiLagObjectState) do
-        if obj and state then
-            for property, value in pairs(state) do
-                setObjectProperty(obj, property, value)
-            end
-        end
-        antiLagObjectState[obj] = nil
-    end
-end
-
-local function applyAntiLagState()
-    clearAntiLagConnections()
-
-    if settings.antiLag then
-        antiLagLightingState = {
-            Brightness = Lighting.Brightness,
-            GlobalShadows = Lighting.GlobalShadows,
-            EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-            EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
-            FogEnd = Lighting.FogEnd,
-        }
-
-        local terrain = Workspace:FindFirstChildOfClass("Terrain") or Workspace.Terrain
-        if terrain then
-            antiLagTerrainState = {
-                WaterWaveSize = terrain.WaterWaveSize,
-                WaterWaveSpeed = terrain.WaterWaveSpeed,
-                WaterReflectance = terrain.WaterReflectance,
-                WaterTransparency = terrain.WaterTransparency,
-            }
-        else
-            antiLagTerrainState = nil
-        end
-
-        setObjectProperty(Lighting, "Brightness", 1)
-        setObjectProperty(Lighting, "GlobalShadows", false)
-        setObjectProperty(Lighting, "EnvironmentDiffuseScale", 0)
-        setObjectProperty(Lighting, "EnvironmentSpecularScale", 0)
-        setObjectProperty(Lighting, "FogEnd", 100000)
-
-        if terrain then
-            setObjectProperty(terrain, "WaterWaveSize", 0)
-            setObjectProperty(terrain, "WaterWaveSpeed", 0)
-            setObjectProperty(terrain, "WaterReflectance", 0)
-            setObjectProperty(terrain, "WaterTransparency", 1)
-        end
-
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            applyAntiLagToObject(obj)
-        end
-        for _, obj in ipairs(Lighting:GetDescendants()) do
-            applyAntiLagToObject(obj)
-        end
-
-        table.insert(antiLagConnections, Workspace.DescendantAdded:Connect(applyAntiLagToObject))
-        table.insert(antiLagConnections, Lighting.DescendantAdded:Connect(applyAntiLagToObject))
-        return
-    end
-
-    restoreAntiLagObjects()
-
-    if antiLagLightingState then
-        for property, value in pairs(antiLagLightingState) do
-            setObjectProperty(Lighting, property, value)
-        end
-        antiLagLightingState = nil
-    end
-
-    local terrain = Workspace:FindFirstChildOfClass("Terrain") or Workspace.Terrain
-    if terrain and antiLagTerrainState then
-        for property, value in pairs(antiLagTerrainState) do
-            setObjectProperty(terrain, property, value)
-        end
-    end
-    antiLagTerrainState = nil
-end
-
 settingHandlers = {
-    animSpeedSetting = function()
-        applyCurrentAnimSpeed()
-    end,
     helicopterEnabled = function(value)
         if value then
             startHelicopterIdleMode()
@@ -3082,11 +2974,6 @@ settingHandlers = {
             stopHelicopterIdleTask()
             startHelicopterIdleMode()
         end
-    end,
-    animSpeedMultiplier = function(value)
-        local multiplier = math.max(0, tonumber(value) or 1)
-        settings.animSpeedMultiplier = multiplier
-        saveSettings()
     end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
@@ -3138,9 +3025,6 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
-    antiLag = function()
-        applyAntiLagState()
-    end,
     spinSet = function()
         applySpinState()
     end,
@@ -3187,7 +3071,17 @@ local function onBoothClaimDetected(slot)
     end
 
     handledClaimSlot = slot
-    moveToClaimedBooth(slot)
+    local moved = true
+    local moveMode = tostring(settings.boothMoveMode or "Teleport")
+    if moveMode == "Walk" then
+        moved = select(1, moveToClaimedBooth(slot))
+        if not moved then
+            handledClaimSlot = nil
+            return
+        end
+    else
+        moveToClaimedBooth(slot)
+    end
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
@@ -3865,9 +3759,6 @@ local function buildSettingsTabs()
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
-        animSpeedSliderUpdate = createSlider(mainSection, "Anim Speed", "animSpeedSetting", 1, 100)
-        createTextBox(mainSection, "Anim Speed Multiplier", "animSpeedMultiplier", true)
-        createToggle(mainSection, "Anti Lag", "antiLag")
     end
 
     do
@@ -3980,7 +3871,6 @@ task.spawn(function()
 end)
 
 task.defer(function()
-    applyAntiLagState()
     if settings.spinSet then
         applySpinState()
     end
