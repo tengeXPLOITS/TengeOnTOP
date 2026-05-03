@@ -2105,7 +2105,7 @@ do
     title.Text = "Pls Donate Animosity"
     title.Parent = topBar
 
-    local subtitle = Instance.new("TextButton")
+    local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
     subtitle.Size = UDim2.new(1, -130, 0, 16)
@@ -2116,21 +2116,6 @@ do
     subtitle.TextSize = 11
     subtitle.Text = "developed by @buriedinplainview"
     subtitle.Parent = topBar
-    
-    subtitle.MouseButton1Click:Connect(function()
-        setclipboard("https://www.roblox.com/users/1230653127/profile")
-        notify("Creator Profile", "Profile URL copied to clipboard!", 3, "creator-profile-copy", 1)
-    end)
-    
-    subtitle.MouseEnter:Connect(function()
-        subtitle.TextColor3 = Color3.fromRGB(98, 98, 110)
-    end)
-    
-    subtitle.MouseLeave:Connect(function()
-        subtitle.TextColor3 = THEME.subtleText
-    end)
-    
-    subtitle.AutoButtonColor = false
 
     task.spawn(function()
         local asset = resolveLocalImageAsset(TITLE_CHARACTER_IMAGE_PATH)
@@ -2222,14 +2207,12 @@ pages.Position = UDim2.new(0, 60, 0, 5)
 pages.BackgroundTransparency = 1
 pages.Parent = body
 
-local profileCard = Instance.new("TextButton")
+local profileCard = Instance.new("Frame")
 profileCard.Name = "ProfileCard"
 profileCard.Size = UDim2.new(0, 190, 0, 48)
 profileCard.Position = UDim2.new(0, 60, 1, -53)
 profileCard.BackgroundColor3 = THEME.section
 profileCard.BorderSizePixel = 0
-profileCard.AutoButtonColor = false
-profileCard.Text = ""
 profileCard.Parent = body
 
 do
@@ -2281,19 +2264,6 @@ do
         if headshot then
             avatar.Image = headshot
         end
-    end)
-    
-    profileCard.MouseButton1Click:Connect(function()
-        setclipboard("https://www.roblox.com/users/" .. tostring(LocalPlayer.UserId) .. "/profile")
-        notify("Your Profile", "Profile URL copied to clipboard!", 3, "user-profile-copy", 1)
-    end)
-    
-    profileCard.MouseEnter:Connect(function()
-        profileCard.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    end)
-    
-    profileCard.MouseLeave:Connect(function()
-        profileCard.BackgroundColor3 = THEME.section
     end)
 end
 
