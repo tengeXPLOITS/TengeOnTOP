@@ -30,6 +30,7 @@ if not LocalPlayer then
 end
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+local TITLE_CHARACTER_IMAGE_PATH = "C:/Users/HP/Downloads/noFilter.webp"
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -350,7 +351,6 @@ local defaults = {
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
-    boothMoveMode = "Teleport",
 
     autoThanks = true,
     thanksDelay = 3,
@@ -439,6 +439,7 @@ local function migrateLegacySettings(data)
     end
 
     data.hexBox = nil
+    data.boothMoveMode = nil
     data.antiLag = nil
     data.catalogEmote = nil
     data.animSpeedSetting = nil
@@ -1132,6 +1133,35 @@ local function getRobloxAvatarOutfitThumbnailUrl(userId, size)
     if ok and imageUrl then
         avatarThumbnailCache[cacheKey] = imageUrl
         return imageUrl
+    end
+
+    return nil
+end
+
+local function resolveLocalImageAsset(path)
+    local normalizedPath = tostring(path or ""):gsub("\\", "/")
+    if normalizedPath == "" then
+        return nil
+    end
+
+    local resolvers = {}
+    if type(getcustomasset) == "function" then
+        table.insert(resolvers, getcustomasset)
+    end
+    if type(getsynasset) == "function" then
+        table.insert(resolvers, getsynasset)
+    end
+    if syn and type(syn.getcustomasset) == "function" then
+        table.insert(resolvers, syn.getcustomasset)
+    end
+
+    for _, resolver in ipairs(resolvers) do
+        if resolver then
+            local ok, asset = pcall(resolver, normalizedPath)
+            if ok and type(asset) == "string" and asset ~= "" then
+                return asset
+            end
+        end
     end
 
     return nil
@@ -1832,7 +1862,6 @@ local function moveToClaimedBooth(slot)
     if not humanoid or not hrp then
         return false, "missing-character"
     end
-    local moveMode = tostring(settings.boothMoveMode or "Teleport")
 
     local function applyFacing()
         hrp.CFrame = targetCF
@@ -1841,38 +1870,6 @@ local function moveToClaimedBooth(slot)
                 hrp.CFrame = targetCF
             end
         end)
-    end
-
-    if moveMode == "Walk" then
-        local oldSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = 32
-        local reached = false
-        local moveConn
-        moveConn = humanoid.MoveToFinished:Connect(function(ok)
-            reached = ok or reached
-            if moveConn then
-                moveConn:Disconnect()
-            end
-        end)
-
-        humanoid:MoveTo(targetCF.Position)
-        local started = tick()
-        while tick() - started < 8 do
-            if reached then
-                break
-            end
-            task.wait(0.1)
-        end
-
-        humanoid.WalkSpeed = oldSpeed
-
-        if not reached then
-            applyFacing()
-            return false, "walk-timeout-fallback-teleport"
-        end
-
-        applyFacing()
-        return true, "walk"
     end
 
     applyFacing()
@@ -2067,7 +2064,7 @@ end
 
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 34)
+topBar.Size = UDim2.new(1, 0, 0, 46)
 topBar.BackgroundColor3 = THEME.topBar
 topBar.BorderSizePixel = 0
 topBar.Parent = main
@@ -2088,17 +2085,50 @@ do
 end
 
 do
+    local titleImage = Instance.new("ImageLabel")
+    titleImage.Name = "TitleArtwork"
+    titleImage.BackgroundTransparency = 1
+    titleImage.Size = UDim2.new(0, 28, 0, 28)
+    titleImage.Position = UDim2.new(0, 10, 0.5, -14)
+    titleImage.ScaleType = Enum.ScaleType.Fit
+    titleImage.Parent = topBar
+
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -86, 1, 0)
-    title.Position = UDim2.new(0, 10, 0, 0)
+    title.Size = UDim2.new(1, -130, 0, 20)
+    title.Position = UDim2.new(0, 46, 0, 5)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
-    title.TextSize = 13
+    title.TextSize = 14
     title.Text = "Pls Donate Animosity"
     title.Parent = topBar
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Name = "Subtitle"
+    subtitle.BackgroundTransparency = 1
+    subtitle.Size = UDim2.new(1, -130, 0, 16)
+    subtitle.Position = UDim2.new(0, 46, 0, 23)
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.TextColor3 = THEME.subtleText
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 11
+    subtitle.Text = "developed by @buriedinplainview"
+    subtitle.Parent = topBar
+
+    task.spawn(function()
+        local asset = resolveLocalImageAsset(TITLE_CHARACTER_IMAGE_PATH)
+        if asset then
+            titleImage.Image = asset
+            return
+        end
+
+        local fallback = getRobloxAvatarOutfitThumbnailUrl(LocalPlayer.UserId, "420x420")
+        if fallback then
+            titleImage.Image = fallback
+        end
+    end)
 end
 
 local minimizeBtn = Instance.new("TextButton")
@@ -2121,8 +2151,8 @@ end
 
 local body = Instance.new("Frame")
 body.Name = "Body"
-body.Size = UDim2.new(1, 0, 1, -34)
-body.Position = UDim2.new(0, 0, 0, 34)
+body.Size = UDim2.new(1, 0, 1, -46)
+body.Position = UDim2.new(0, 0, 0, 46)
 body.BackgroundTransparency = 1
 body.Parent = main
 
@@ -2172,10 +2202,70 @@ end
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
-pages.Size = UDim2.new(1, -60, 1, -10)
+pages.Size = UDim2.new(1, -60, 1, -64)
 pages.Position = UDim2.new(0, 60, 0, 5)
 pages.BackgroundTransparency = 1
 pages.Parent = body
+
+local profileCard = Instance.new("Frame")
+profileCard.Name = "ProfileCard"
+profileCard.Size = UDim2.new(0, 190, 0, 48)
+profileCard.Position = UDim2.new(0, 60, 1, -53)
+profileCard.BackgroundColor3 = THEME.section
+profileCard.BorderSizePixel = 0
+profileCard.Parent = body
+
+do
+    local profileCorner = Instance.new("UICorner")
+    profileCorner.CornerRadius = UDim.new(0, 8)
+    profileCorner.Parent = profileCard
+
+    local profileStroke = Instance.new("UIStroke")
+    profileStroke.Thickness = 1
+    profileStroke.Color = THEME.stroke
+    profileStroke.Parent = profileCard
+
+    local avatar = Instance.new("ImageLabel")
+    avatar.Name = "Avatar"
+    avatar.BackgroundColor3 = THEME.control
+    avatar.BorderSizePixel = 0
+    avatar.Size = UDim2.new(0, 34, 0, 34)
+    avatar.Position = UDim2.new(0, 7, 0.5, -17)
+    avatar.Parent = profileCard
+
+    local avatarCorner = Instance.new("UICorner")
+    avatarCorner.CornerRadius = UDim.new(1, 0)
+    avatarCorner.Parent = avatar
+
+    local displayLabel = Instance.new("TextLabel")
+    displayLabel.BackgroundTransparency = 1
+    displayLabel.Size = UDim2.new(1, -52, 0, 18)
+    displayLabel.Position = UDim2.new(0, 48, 0, 7)
+    displayLabel.TextXAlignment = Enum.TextXAlignment.Left
+    displayLabel.TextColor3 = THEME.topBarText
+    displayLabel.Font = Enum.Font.GothamSemibold
+    displayLabel.TextSize = 12
+    displayLabel.Text = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Player")
+    displayLabel.Parent = profileCard
+
+    local usernameLabel = Instance.new("TextLabel")
+    usernameLabel.BackgroundTransparency = 1
+    usernameLabel.Size = UDim2.new(1, -52, 0, 14)
+    usernameLabel.Position = UDim2.new(0, 48, 0, 24)
+    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    usernameLabel.TextColor3 = THEME.subtleText
+    usernameLabel.Font = Enum.Font.Gotham
+    usernameLabel.TextSize = 10
+    usernameLabel.Text = "@" .. tostring(LocalPlayer.Name or "player")
+    usernameLabel.Parent = profileCard
+
+    task.spawn(function()
+        local headshot = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", true)
+        if headshot then
+            avatar.Image = headshot
+        end
+    end)
+end
 
 local function makeDraggable(frame, handle)
     local DRAG_SMOOTH_TIME = 0.06
@@ -2252,7 +2342,7 @@ local function setMinimized(state)
         body.Visible = true
     end
 
-    local targetSize = state and UDim2.new(0, expandedWidth, 0, 30) or UDim2.new(0, expandedWidth, 0, expandedHeight)
+    local targetSize = state and UDim2.new(0, expandedWidth, 0, 46) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
     minimizeBtn.BackgroundColor3 = THEME.topBar
 
@@ -2450,6 +2540,7 @@ end
 
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
+local pendingHelicopterRaisedAmount = 0
 
 local function stopAstronautIdle()
     if currentAstronautIdleTrack then
@@ -2506,6 +2597,7 @@ local function loadAstronautIdle()
 end
 
 local function stopHelicopterSpin()
+    pendingHelicopterRaisedAmount = 0
     if currentHelicopterSpinTask then
         pcall(function()
             task.cancel(currentHelicopterSpinTask)
@@ -2611,130 +2703,16 @@ local function startHelicopterIdleMode()
 end
 
 local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    local root = hum.RootPart
-    if not root then return end
-    if currentHelicopterSpinTask then return end
+    pendingHelicopterRaisedAmount += math.max(1, tonumber(raisedAmount) or 1)
+    if currentHelicopterSpinTask then
+        return
+    end
 
     currentHelicopterSpinTask = task.spawn(function()
-        local ok, err = pcall(function()
-            loadAstronautIdle()
+        local burstIndex = 0
 
-            local animateScript = char:FindFirstChild("Animate")
-            local animatePrevEnabled = nil
-            if animateScript and animateScript:IsA("LocalScript") then
-                animatePrevEnabled = animateScript.Enabled
-                animateScript.Enabled = false
-            end
-
-            local amount = math.max(1, tonumber(raisedAmount) or 1)
-            local baseIdleSpeed = getHelicopterIdleAngularVelocity()
-            local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-            local donationSpinBoost = (amount / 3) * spinMultiplier
-            local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
-            local riseHeight = math.max(8, math.min(80, amount * 3.5))
-            local riseDuration = 7
-            local fallDuration = 7
-            local totalDuration = riseDuration + fallDuration
-
-            -- Ensure idle loop is stopped before we take manual control of spin
-            stopHelicopterIdleTask()
-
-            -- Make sure HL1__HELI exists for the spin ramp
-            local heliBody = root:FindFirstChild("HL1__HELI")
-            if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
-                heliBody = Instance.new("BodyAngularVelocity")
-                heliBody.Name = "HL1__HELI"
-                heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
-                heliBody.AngularVelocity = Vector3.new(0, getHelicopterIdleAngularVelocity(), 0)
-                heliBody.Parent = root
-            end
-
-            -- Ramp toward the donation-driven flight speed before takeoff.
-            sendChatMessage("Enabling engines...")
-            task.spawn(function()
-                local rampStart = tick()
-                local rampDuration = math.max(1.2, tonumber(spinDuration) or 1.8)
-                local fromSpeed = heliBody.AngularVelocity.Y
-                local toSpeed = math.max(baseIdleSpeed + 2, targetSpinSpeed)
-                while tick() - rampStart < rampDuration and heliBody and heliBody.Parent do
-                    local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
-                    heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * t, 0)
-                    task.wait()
-                end
-                if heliBody and heliBody.Parent then
-                    heliBody.AngularVelocity = Vector3.new(0, toSpeed, 0)
-                end
-            end)
-
-            task.wait(3)
-            sendChatMessage("TAKE OFF IN 3")
-            task.wait(1)
-            sendChatMessage("2")
-            task.wait(1)
-            sendChatMessage("1")
-            task.wait(1)
-
-            local startPos = root.Position
-            local startRot = root.CFrame - root.CFrame.Position
-            local yaw = 0
-
-            -- Switch from BodyAngularVelocity to CFrame spin for precise position control
-            local existingHeli = root:FindFirstChild("HL1__HELI")
-            if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
-                yaw = existingHeli.AngularVelocity.Y * 0.016 -- carry over approximate yaw
-                existingHeli:Destroy()
-            end
-
-            local startTick = tick()
-            while tick() - startTick < totalDuration and char.Parent and root.Parent do
-                local elapsed = tick() - startTick
-                local yOffset
-
-                if elapsed < riseDuration then
-                    -- Quad ease-in: slow at liftoff, accelerates upward (old.lua style)
-                    local p = math.clamp(elapsed / riseDuration, 0, 1)
-                    yOffset = riseHeight * (p * p)
-                else
-                    -- Quad ease-out: fast initially, decelerates smoothly to ground
-                    local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
-                    local inv = 1 - p
-                    yOffset = riseHeight * (inv * inv)
-                end
-
-                yaw += targetSpinSpeed
-                pcall(function()
-                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                end)
-
-                local targetPos = Vector3.new(startPos.X, startPos.Y + yOffset, startPos.Z)
-                root.CFrame = CFrame.new(targetPos) * (startRot * CFrame.Angles(0, yaw, 0))
-                task.wait()
-            end
-
-            if char.Parent and root.Parent then
-                root.CFrame = CFrame.new(startPos) * (startRot * CFrame.Angles(0, yaw, 0))
-                pcall(function()
-                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                end)
-            end
-
-            if animateScript and animateScript:IsA("LocalScript") and animatePrevEnabled ~= nil then
-                animateScript.Enabled = animatePrevEnabled
-            end
-
-            currentHelicopterSpinTask = nil
-
-            if settings.helicopterDieAfterLanding and hum and hum.Parent then
-                task.delay(0.15, function()
-                    triggerLandingExplosion(hum)
-                end)
-            elseif settings.helicopterEnabled then
+        local function restoreIdleMode()
+            if settings.helicopterEnabled and not currentHelicopterSpinTask then
                 task.spawn(function()
                     task.wait(0.08)
                     local started = false
@@ -2759,14 +2737,148 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                     end
                 end)
             end
-        end)
+        end
 
-        if not ok then
-            warn("Helicopter burst failed:", err)
-            stopHelicopterSpin()
-            if settings.helicopterEnabled then
-                startHelicopterIdleMode()
+        while pendingHelicopterRaisedAmount > 0 do
+            burstIndex += 1
+            local amount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
+            pendingHelicopterRaisedAmount = 0
+
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = hum and hum.RootPart
+            if not char or not hum or not root then
+                break
             end
+
+            local ok, err = pcall(function()
+                loadAstronautIdle()
+
+                local animateScript = char:FindFirstChild("Animate")
+                local animatePrevEnabled = nil
+                if animateScript and animateScript:IsA("LocalScript") then
+                    animatePrevEnabled = animateScript.Enabled
+                    animateScript.Enabled = false
+                end
+
+                local baseIdleSpeed = getHelicopterIdleAngularVelocity()
+                local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+                local donationSpinBoost = (amount / 3) * spinMultiplier
+                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
+                local riseHeight = math.max(8, math.min(80, amount * 3.5))
+                local riseDuration = 7
+                local fallDuration = 7
+                local totalDuration = riseDuration + fallDuration
+
+                stopHelicopterIdleTask()
+
+                local heliBody = root:FindFirstChild("HL1__HELI")
+                if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
+                    heliBody = Instance.new("BodyAngularVelocity")
+                    heliBody.Name = "HL1__HELI"
+                    heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
+                    heliBody.AngularVelocity = Vector3.new(0, getHelicopterIdleAngularVelocity(), 0)
+                    heliBody.Parent = root
+                end
+
+                if burstIndex == 1 then
+                    sendChatMessage("Enabling engines...")
+                else
+                    sendChatMessage("Boosting flight...")
+                end
+
+                task.spawn(function()
+                    local rampStart = tick()
+                    local rampDuration = math.max(1.2, tonumber(spinDuration) or 1.8)
+                    local fromSpeed = heliBody.AngularVelocity.Y
+                    local toSpeed = math.max(baseIdleSpeed + 2, targetSpinSpeed)
+                    while tick() - rampStart < rampDuration and heliBody and heliBody.Parent do
+                        local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
+                        heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * t, 0)
+                        task.wait()
+                    end
+                    if heliBody and heliBody.Parent then
+                        heliBody.AngularVelocity = Vector3.new(0, toSpeed, 0)
+                    end
+                end)
+
+                if burstIndex == 1 then
+                    task.wait(3)
+                    sendChatMessage("TAKE OFF IN 3")
+                    task.wait(1)
+                    sendChatMessage("2")
+                    task.wait(1)
+                    sendChatMessage("1")
+                    task.wait(1)
+                else
+                    task.wait(0.35)
+                end
+
+                local startPos = root.Position
+                local startRot = root.CFrame - root.CFrame.Position
+                local yaw = 0
+
+                local existingHeli = root:FindFirstChild("HL1__HELI")
+                if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
+                    yaw = existingHeli.AngularVelocity.Y * 0.016
+                    existingHeli:Destroy()
+                end
+
+                local startTick = tick()
+                while tick() - startTick < totalDuration and char.Parent and root.Parent do
+                    local elapsed = tick() - startTick
+                    local yOffset
+
+                    if elapsed < riseDuration then
+                        local p = math.clamp(elapsed / riseDuration, 0, 1)
+                        yOffset = riseHeight * (p * p)
+                    else
+                        local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
+                        local inv = 1 - p
+                        yOffset = riseHeight * (inv * inv)
+                    end
+
+                    yaw += targetSpinSpeed
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+
+                    local targetPos = Vector3.new(startPos.X, startPos.Y + yOffset, startPos.Z)
+                    root.CFrame = CFrame.new(targetPos) * (startRot * CFrame.Angles(0, yaw, 0))
+                    task.wait()
+                end
+
+                if char.Parent and root.Parent then
+                    root.CFrame = CFrame.new(startPos) * (startRot * CFrame.Angles(0, yaw, 0))
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                end
+
+                if animateScript and animateScript:IsA("LocalScript") and animatePrevEnabled ~= nil then
+                    animateScript.Enabled = animatePrevEnabled
+                end
+            end)
+
+            if not ok then
+                warn("Helicopter burst failed:", err)
+                pendingHelicopterRaisedAmount = 0
+                break
+            end
+        end
+
+        currentHelicopterSpinTask = nil
+
+        local currentChar = LocalPlayer.Character
+        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+        if settings.helicopterDieAfterLanding and currentHum and currentHum.Parent then
+            task.delay(0.15, function()
+                triggerLandingExplosion(currentHum)
+            end)
+        else
+            restoreIdleMode()
         end
     end)
 end
@@ -2953,7 +3065,6 @@ settingHandlers = {
     end,
 }
 
-local playOpenFade
 local handledClaimSlot
 local revealedAfterClaim = false
 local function onBoothClaimDetected(slot)
@@ -2983,9 +3094,6 @@ local function onBoothClaimDetected(slot)
     end
 
     setMinimized(false)
-    if playOpenFade then
-        playOpenFade(main)
-    end
 
 end
 
@@ -3643,7 +3751,6 @@ local function buildSettingsTabs()
         end
     end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
-    createDropdown(boothSection, "Booth Move Mode", "boothMoveMode", {"Teleport", "Walk"})
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
@@ -3707,44 +3814,6 @@ end
 end
 
 buildSettingsTabs()
-
-playOpenFade = function(root)
-    local targets = {root}
-    for _, obj in ipairs(root:GetDescendants()) do
-        table.insert(targets, obj)
-    end
-
-    local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    for _, obj in ipairs(targets) do
-        local goal = {}
-        local hasGoal = false
-
-        if obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            local originalBg = obj.BackgroundTransparency
-            obj.BackgroundTransparency = 1
-            goal.BackgroundTransparency = originalBg
-            hasGoal = true
-        end
-
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            local originalText = obj.TextTransparency
-            obj.TextTransparency = 1
-            goal.TextTransparency = originalText
-            hasGoal = true
-        end
-
-        if obj:IsA("UIStroke") then
-            local originalStroke = obj.Transparency
-            obj.Transparency = 1
-            goal.Transparency = originalStroke
-            hasGoal = true
-        end
-
-        if hasGoal then
-            TweenService:Create(obj, tweenInfo, goal):Play()
-        end
-    end
-end
 
 task.spawn(function()
     task.wait(2)
