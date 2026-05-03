@@ -1790,6 +1790,33 @@ local function moveToClaimedBooth(slot)
         end)
     end
 
+    local function stabilizeAtBooth()
+        if not hrp or not hrp.Parent or not humanoid or not humanoid.Parent then
+            return
+        end
+
+        humanoid.Sit = false
+        humanoid.Jump = false
+        pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        end)
+
+        local stableCF = targetCF + Vector3.new(0, 0.1, 0)
+        hrp.CFrame = stableCF
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        task.delay(0.12, function()
+            if hrp and hrp.Parent and humanoid and humanoid.Parent then
+                hrp.CFrame = stableCF
+                pcall(function()
+                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                end)
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end)
+    end
+
     if moveMode == "Walk" then
         if boothWalkJumpTask then
             task.cancel(boothWalkJumpTask)
@@ -1878,8 +1905,7 @@ local function moveToClaimedBooth(slot)
         humanoid.WalkSpeed = oldSpeed
 
         if reached then
-            local lookTarget = targetCF.Position + targetCF.LookVector
-            hrp.CFrame = CFrame.new(hrp.Position, lookTarget)
+            stabilizeAtBooth()
             return true, "walk"
         end
 
@@ -1887,6 +1913,7 @@ local function moveToClaimedBooth(slot)
     end
 
     applyFacing()
+    stabilizeAtBooth()
     return true, "teleport"
 end
 
@@ -3705,7 +3732,7 @@ local function buildSettingsTabs()
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color Hex", "hexBox", false)
+    createTextBox(boothSection, "Text Color", "hexBox", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     local boothTextBox
     createInfoLabel(boothSection, "Goal Bar Header:")
