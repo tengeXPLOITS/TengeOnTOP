@@ -378,48 +378,17 @@ local defaults = {
     minPlayerCount = 23,
     maxPlayerCount = 24,
 
-    catalogEmote = "Disabled",
     antiLag = false,
     AnonymousMode = false,
     spinSet = false,
     spinSpeedMultiplier = 1,
     animSpeedSetting = 1,
     animSpeedMultiplier = 1,
-    animSpeedPerRobux = false,
     helicopterEnabled = false,
     helicopterSpeed = 1,
     helicopterDieAfterLanding = false,
     testDonationAmount = 6,
 }
-
-local emotePresetOrder = {
-    "sturdy",
-    "jumping wave",
-    "wake up call-ksi",
-    "twice the feels",
-    "louder",
-    "low cortisol",
-    "zesty sturdy",
-    "korean greeting",
-    "block party",
-}
-
-local emotePresets = {
-    ["sturdy"] = "102571052202995",
-    ["jumping wave"] = "10714378156",
-    ["wake up call-ksi"] = "10714168145",
-    ["twice the feels"] = "12874447851",
-    ["louder"] = "10714385204",
-    ["low cortisol"] = "77387643699357",
-    ["zesty sturdy"] = "132104757386824",
-    ["korean greeting"] = "138591721528570",
-    ["block party"] = "10713988674",
-}
-
-local catalogEmoteOptions = {"Disabled"}
-for _, emoteName in ipairs(emotePresetOrder) do
-    table.insert(catalogEmoteOptions, emoteName)
-end
 
 local boothFontOptions = {"SciFi"}
 do
@@ -476,6 +445,8 @@ local function migrateLegacySettings(data)
         data.antiLag = data.render == true
     end
 
+    data.catalogEmote = nil
+    data.animSpeedPerRobux = nil
     data.render = nil
     data.helicopterShowPlatform = nil
     return data
@@ -667,6 +638,7 @@ local hopRetryTask
 local hopAttemptQueue = {}
 local hopAttemptPlaceId
 local hopAttemptActive = false
+local boothWalkJumpTask
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -1828,35 +1800,59 @@ local function moveToClaimedBooth(slot)
     end
 
     if moveMode == "Walk" then
+        if boothWalkJumpTask then
+            task.cancel(boothWalkJumpTask)
+            boothWalkJumpTask = nil
+        end
+
         local oldSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = 32
-        local reached = false
-        local moveConn
-        moveConn = humanoid.MoveToFinished:Connect(function(ok)
-            reached = ok or reached
-            if moveConn then
-                moveConn:Disconnect()
+        humanoid.WalkSpeed = 16
+        humanoid.Sit = false
+
+        local jumpActive = true
+        boothWalkJumpTask = task.spawn(function()
+            while jumpActive and humanoid and humanoid.Parent do
+                humanoid.Sit = false
+                local state = humanoid:GetState()
+                if state ~= Enum.HumanoidStateType.Jumping
+                    and state ~= Enum.HumanoidStateType.Freefall
+                    and state ~= Enum.HumanoidStateType.FallingDown then
+                    humanoid.Jump = true
+                end
+                task.wait(0.35)
             end
         end)
 
         humanoid:MoveTo(targetCF.Position)
         local started = tick()
-        while tick() - started < 8 do
-            if reached then
+        local reached = false
+        while tick() - started < 14 do
+            local distance = (hrp.Position - targetCF.Position).Magnitude
+            if distance <= 3.5 then
+                reached = true
                 break
+            end
+
+            if humanoid.WalkToPoint and (humanoid.WalkToPoint - targetCF.Position).Magnitude > 2 then
+                humanoid:MoveTo(targetCF.Position)
             end
             task.wait(0.1)
         end
 
+        jumpActive = false
+        if boothWalkJumpTask then
+            task.cancel(boothWalkJumpTask)
+            boothWalkJumpTask = nil
+        end
         humanoid.WalkSpeed = oldSpeed
 
-        if not reached then
-            applyFacing()
-            return false, "walk-timeout-fallback-teleport"
+        if reached then
+            local lookTarget = targetCF.Position + targetCF.LookVector
+            hrp.CFrame = CFrame.new(hrp.Position, lookTarget)
+            return true, "walk"
         end
 
-        applyFacing()
-        return true, "walk"
+        return false, "walk-timeout"
     end
 
     applyFacing()
@@ -2081,7 +2077,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = ".gg/SYpKSnFetn | PLS DONO ANIMOSITY"
+    title.Text = "God loves you <3| Brought back by Matty"
     title.Parent = topBar
 end
 
@@ -2412,6 +2408,7 @@ local currentCatalogEmoteTrack
 local donationAnimSpeedBoost = 0
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
+local queuedHelicopterDonationAmount = 0
 local antiLagConnections = {}
 local antiLagObjectState = setmetatable({}, {__mode = "k"})
 local antiLagLightingState
@@ -2587,7 +2584,10 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
     if not hum then return end
     local root = hum.RootPart
     if not root then return end
-    if currentHelicopterSpinTask then return end
+    if currentHelicopterSpinTask then
+        queuedHelicopterDonationAmount += math.max(1, tonumber(raisedAmount) or 1)
+        return
+    end
 
     currentHelicopterSpinTask = task.spawn(function()
         local ok, err = pcall(function()
@@ -2661,6 +2661,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
 
             local startTick = tick()
             while tick() - startTick < totalDuration and char.Parent and root.Parent do
+                if queuedHelicopterDonationAmount > 0 then
+                    local extraAmount = queuedHelicopterDonationAmount
+                    queuedHelicopterDonationAmount = 0
+                    riseHeight = math.max(riseHeight, math.min(150, riseHeight + (extraAmount * 3.5)))
+                    targetSpinSpeed += (extraAmount / 3) * spinMultiplier
+                    totalDuration += math.min(4, extraAmount * 0.2)
+                end
+
                 local elapsed = tick() - startTick
                 local yOffset
 
@@ -2699,6 +2707,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
             end
 
             currentHelicopterSpinTask = nil
+
+            if queuedHelicopterDonationAmount > 0 and settings.helicopterEnabled then
+                local nextAmount = queuedHelicopterDonationAmount
+                queuedHelicopterDonationAmount = 0
+                performHelicopterBurst(nextAmount, spinSpeed, spinDuration)
+                return
+            end
 
             if settings.helicopterDieAfterLanding and hum and hum.Parent then
                 task.delay(0.15, function()
@@ -2748,14 +2763,15 @@ end
 local function performHelicopterDonationSequence(raisedAmount)
     local speedScale = math.max(0.5, tonumber(settings.helicopterSpeed) or 1)
     local spinSpeed = 0.55 * speedScale
+    if currentHelicopterSpinTask then
+        queuedHelicopterDonationAmount += math.max(1, tonumber(raisedAmount) or 1)
+        return
+    end
     performHelicopterBurst(raisedAmount, spinSpeed, 1.8)
 end
 
 local function getAppliedAnimSpeed()
     local speed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
-    if settings.animSpeedPerRobux then
-        speed += math.max(0, tonumber(donationAnimSpeedBoost) or 0)
-    end
     return math.clamp(speed, 1, 1000)
 end
 
@@ -2869,11 +2885,6 @@ local function playCatalogEmoteByName(name)
 end
 
 local function applySelectedAnimation()
-    if settings.catalogEmote and settings.catalogEmote ~= "Disabled" then
-        playCatalogEmoteByName(settings.catalogEmote)
-        return
-    end
-
     stopCatalogEmoteTrack()
 end
 
@@ -3052,16 +3063,7 @@ local function applyAntiLagState()
 end
 
 settingHandlers = {
-    catalogEmote = function(value)
-        applySelectedAnimation()
-    end,
     animSpeedSetting = function()
-        applyCurrentAnimSpeed()
-    end,
-    animSpeedPerRobux = function(value)
-        if not value then
-            resetDonationAnimSpeedBoost()
-        end
         applyCurrentAnimSpeed()
     end,
     helicopterEnabled = function(value)
@@ -3201,9 +3203,6 @@ local function onBoothClaimDetected(slot)
     end
 
     setMinimized(false)
-    if playOpenFade then
-        playOpenFade(main)
-    end
 
     task.delay(0.2, function()
         applySelectedAnimation()
@@ -3866,10 +3865,8 @@ local function buildSettingsTabs()
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
-        createDropdown(mainSection, "Catalog Emote", "catalogEmote", catalogEmoteOptions)
         animSpeedSliderUpdate = createSlider(mainSection, "Anim Speed", "animSpeedSetting", 1, 100)
         createTextBox(mainSection, "Anim Speed Multiplier", "animSpeedMultiplier", true)
-        createToggle(mainSection, "1R$= +1 Anim Speed", "animSpeedPerRobux")
         createToggle(mainSection, "Anti Lag", "antiLag")
     end
 
@@ -4111,27 +4108,6 @@ task.spawn(function()
 
         if settings.helicopterEnabled then
             performHelicopterDonationSequence(delta)
-        end
-
-        if settings.animSpeedPerRobux then
-            local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
-            local increasedBoost = donationAnimSpeedBoost + (delta * multiplier)
-            local rawBoost = math.floor((increasedBoost * 100) + 0.5) / 100
-            local maxBoost = math.max(0, 1000 - math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100))
-            local reachedCap = rawBoost >= maxBoost and maxBoost > 0
-            if reachedCap then
-                donationAnimSpeedBoost = 0
-                settings.animSpeedSetting = 1
-                saveSettings()
-                if animSpeedSliderUpdate then
-                    animSpeedSliderUpdate(1)
-                end
-                applyCurrentAnimSpeed()
-                notify("Anim Speed", "Anim speed reset to 1 after reaching the cap.", 4, "anim-speed-reset", 2)
-            else
-                donationAnimSpeedBoost = math.clamp(rawBoost, 0, maxBoost)
-                applyCurrentAnimSpeed()
-            end
         end
 
         sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
