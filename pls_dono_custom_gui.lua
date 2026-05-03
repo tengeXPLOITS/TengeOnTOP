@@ -2092,33 +2092,6 @@ do
     titleImage.Position = UDim2.new(0, 10, 0.5, -14)
     titleImage.ScaleType = Enum.ScaleType.Fit
     titleImage.Parent = topBar
-    
-    local creatorHeadshotLabel = Instance.new("ImageLabel")
-    creatorHeadshotLabel.Name = "CreatorHeadshot"
-    creatorHeadshotLabel.BackgroundTransparency = 0
-    creatorHeadshotLabel.BackgroundColor3 = THEME.control
-    creatorHeadshotLabel.BorderSizePixel = 0
-    creatorHeadshotLabel.Size = UDim2.new(0, 20, 0, 20)
-    creatorHeadshotLabel.Position = UDim2.new(0, 3, 0.5, -10)
-    creatorHeadshotLabel.Parent = topBar
-    
-    local creatorHeadshotCorner = Instance.new("UICorner")
-    creatorHeadshotCorner.CornerRadius = UDim.new(1, 0)
-    creatorHeadshotCorner.Parent = creatorHeadshotLabel
-    
-    task.spawn(function()
-        local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
-        if creatorHeadshot then
-            creatorHeadshotLabel.Image = creatorHeadshot
-        end
-    end)
-    
-    creatorHeadshotLabel.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            setclipboard("https://www.roblox.com/users/1230653127/profile")
-            notify("Creator Profile", "Profile URL copied!", 2, "creator-profile-link", 1)
-        end
-    end)
 
     local title = Instance.new("TextLabel")
     title.Name = "Title"
@@ -2201,7 +2174,7 @@ body.Parent = main
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
 tabHolder.Size = UDim2.new(0, 42, 1, -10)
-tabHolder.Position = UDim2.new(0, 60, 0, 5)
+tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 0
@@ -2236,7 +2209,7 @@ do
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
     tabUnderline.Size = UDim2.new(0, 1, 1, -10)
-    tabUnderline.Position = UDim2.new(0, 108, 0, 5)
+    tabUnderline.Position = UDim2.new(0, 54, 0, 5)
     tabUnderline.BackgroundColor3 = THEME.accent
     tabUnderline.BorderSizePixel = 0
     tabUnderline.Parent = body
@@ -2249,74 +2222,78 @@ pages.Position = UDim2.new(0, 60, 0, 5)
 pages.BackgroundTransparency = 1
 pages.Parent = body
 
-local userProfileFrame = Instance.new("Frame")
-userProfileFrame.Name = "UserProfile"
-userProfileFrame.Size = UDim2.new(0, 48, 1, -10)
-userProfileFrame.Position = UDim2.new(0, 6, 0, 5)
-userProfileFrame.BackgroundColor3 = THEME.section
-userProfileFrame.BorderSizePixel = 0
-userProfileFrame.Parent = body
+local profileCard = Instance.new("TextButton")
+profileCard.Name = "ProfileCard"
+profileCard.Size = UDim2.new(0, 190, 0, 48)
+profileCard.Position = UDim2.new(0, 60, 1, -53)
+profileCard.BackgroundColor3 = THEME.section
+profileCard.BorderSizePixel = 0
+profileCard.AutoButtonColor = false
+profileCard.Text = ""
+profileCard.Parent = body
 
 do
-    local userProfileCorner = Instance.new("UICorner")
-    userProfileCorner.CornerRadius = UDim.new(0, 8)
-    userProfileCorner.Parent = userProfileFrame
-    
-    local userProfileStroke = Instance.new("UIStroke")
-    userProfileStroke.Thickness = 1
-    userProfileStroke.Color = THEME.stroke
-    userProfileStroke.Parent = userProfileFrame
-    
-    local userAvatar = Instance.new("ImageLabel")
-    userAvatar.Name = "Avatar"
-    userAvatar.BackgroundColor3 = THEME.control
-    userAvatar.BorderSizePixel = 0
-    userAvatar.Size = UDim2.new(0, 36, 0, 36)
-    userAvatar.Position = UDim2.new(0.5, -18, 0, 6)
-    userAvatar.Parent = userProfileFrame
-    
-    local userAvatarCorner = Instance.new("UICorner")
-    userAvatarCorner.CornerRadius = UDim.new(1, 0)
-    userAvatarCorner.Parent = userAvatar
-    
+    local profileCorner = Instance.new("UICorner")
+    profileCorner.CornerRadius = UDim.new(0, 8)
+    profileCorner.Parent = profileCard
+
+    local profileStroke = Instance.new("UIStroke")
+    profileStroke.Thickness = 1
+    profileStroke.Color = THEME.stroke
+    profileStroke.Parent = profileCard
+
+    local avatar = Instance.new("ImageLabel")
+    avatar.Name = "Avatar"
+    avatar.BackgroundColor3 = THEME.control
+    avatar.BorderSizePixel = 0
+    avatar.Size = UDim2.new(0, 34, 0, 34)
+    avatar.Position = UDim2.new(0, 7, 0.5, -17)
+    avatar.Parent = profileCard
+
+    local avatarCorner = Instance.new("UICorner")
+    avatarCorner.CornerRadius = UDim.new(1, 0)
+    avatarCorner.Parent = avatar
+
+    local displayLabel = Instance.new("TextLabel")
+    displayLabel.BackgroundTransparency = 1
+    displayLabel.Size = UDim2.new(1, -52, 0, 18)
+    displayLabel.Position = UDim2.new(0, 48, 0, 7)
+    displayLabel.TextXAlignment = Enum.TextXAlignment.Left
+    displayLabel.TextColor3 = THEME.topBarText
+    displayLabel.Font = Enum.Font.GothamSemibold
+    displayLabel.TextSize = 12
+    displayLabel.Text = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Player")
+    displayLabel.Parent = profileCard
+
+    local usernameLabel = Instance.new("TextLabel")
+    usernameLabel.BackgroundTransparency = 1
+    usernameLabel.Size = UDim2.new(1, -52, 0, 14)
+    usernameLabel.Position = UDim2.new(0, 48, 0, 24)
+    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    usernameLabel.TextColor3 = THEME.subtleText
+    usernameLabel.Font = Enum.Font.Gotham
+    usernameLabel.TextSize = 10
+    usernameLabel.Text = "@" .. tostring(LocalPlayer.Name or "player")
+    usernameLabel.Parent = profileCard
+
     task.spawn(function()
-        local userHeadshot = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", true)
-        if userHeadshot then
-            userAvatar.Image = userHeadshot
+        local headshot = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", true)
+        if headshot then
+            avatar.Image = headshot
         end
     end)
     
-    local displayNameLabel = Instance.new("TextLabel")
-    displayNameLabel.Name = "DisplayName"
-    displayNameLabel.BackgroundTransparency = 1
-    displayNameLabel.Size = UDim2.new(1, -8, 0, 16)
-    displayNameLabel.Position = UDim2.new(0, 4, 0, 46)
-    displayNameLabel.TextXAlignment = Enum.TextXAlignment.Center
-    displayNameLabel.TextColor3 = THEME.topBarText
-    displayNameLabel.Font = Enum.Font.GothamSemibold
-    displayNameLabel.TextSize = 10
-    displayNameLabel.TextWrapped = true
-    displayNameLabel.Text = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Player")
-    displayNameLabel.Parent = userProfileFrame
+    profileCard.MouseButton1Click:Connect(function()
+        setclipboard("https://www.roblox.com/users/" .. tostring(LocalPlayer.UserId) .. "/profile")
+        notify("Your Profile", "Profile URL copied to clipboard!", 3, "user-profile-copy", 1)
+    end)
     
-    local usernameLabel = Instance.new("TextLabel")
-    usernameLabel.Name = "Username"
-    usernameLabel.BackgroundTransparency = 1
-    usernameLabel.Size = UDim2.new(1, -8, 0, 14)
-    usernameLabel.Position = UDim2.new(0, 4, 0, 62)
-    usernameLabel.TextXAlignment = Enum.TextXAlignment.Center
-    usernameLabel.TextColor3 = THEME.subtleText
-    usernameLabel.Font = Enum.Font.Gotham
-    usernameLabel.TextSize = 8
-    usernameLabel.TextWrapped = true
-    usernameLabel.Text = "@" .. tostring(LocalPlayer.Name or "player")
-    usernameLabel.Parent = userProfileFrame
+    profileCard.MouseEnter:Connect(function()
+        profileCard.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    end)
     
-    userProfileFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            setclipboard("https://www.roblox.com/users/" .. tostring(LocalPlayer.UserId) .. "/profile")
-            notify("Your Profile", "Profile URL copied!", 2, "user-profile-link", 1)
-        end
+    profileCard.MouseLeave:Connect(function()
+        profileCard.BackgroundColor3 = THEME.section
     end)
 end
 
@@ -2818,14 +2795,9 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
                 local donationSpinBoost = (amount / 3) * spinMultiplier
                 local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
-                
-                -- Improved height scaling for stability with large donations
-                -- Uses logarithmic scaling to handle 1-10000 R$ smoothly
-                local heightFactor = math.log(math.max(1, amount)) / math.log(100)
-                local riseHeight = math.max(8, math.min(120, 15 + (heightFactor * 35)))
-                
-                local riseDuration = 6
-                local fallDuration = 8
+                local riseHeight = math.max(8, math.min(80, amount * 3.5))
+                local riseDuration = 7
+                local fallDuration = 7
                 local totalDuration = riseDuration + fallDuration
 
                 stopHelicopterIdleTask()
@@ -2875,7 +2847,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 local startPos = root.Position
                 local startRot = root.CFrame - root.CFrame.Position
                 local yaw = 0
-                local currentSpinSpeed = targetSpinSpeed
 
                 local existingHeli = root:FindFirstChild("HL1__HELI")
                 if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
@@ -2887,23 +2858,17 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 while tick() - startTick < totalDuration and char.Parent and root.Parent do
                     local elapsed = tick() - startTick
                     local yOffset
-                    local spinSpeedAtFrame = currentSpinSpeed
 
                     if elapsed < riseDuration then
-                        -- Rise phase with quadratic easing
                         local p = math.clamp(elapsed / riseDuration, 0, 1)
                         yOffset = riseHeight * (p * p)
                     else
-                        -- Fall phase with smooth deceleration
                         local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
                         local inv = 1 - p
                         yOffset = riseHeight * (inv * inv)
-                        
-                        -- Smooth spin speed deceleration during landing
-                        spinSpeedAtFrame = currentSpinSpeed * (inv * inv)
                     end
 
-                    yaw += spinSpeedAtFrame
+                    yaw += targetSpinSpeed
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
