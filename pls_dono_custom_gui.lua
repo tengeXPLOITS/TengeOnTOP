@@ -361,7 +361,6 @@ local defaults = {
 
     webhookToggle = false,
     webhookBox = "",
-    webhookAfterSH = false,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -1248,25 +1247,7 @@ local function sendDonationWebhook(amount, donorInfo)
 end
 
 local function notifyWebhookAfterHop()
-    if not settings.webhookAfterSH then
-        return
-    end
-
-    local url = tostring(settings.webhookBox or ""):match("%S+")
-    if not url or url == "" then
-        return
-    end
-
-    local display = tostring(LocalPlayer.DisplayName or LocalPlayer.Name)
-    local user = tostring(LocalPlayer.Name or "")
-    local msg
-    if display ~= user then
-        msg = display .. " (@" .. user .. ") serverhopped"
-    else
-        msg = "@" .. user .. " serverhopped"
-    end
-
-    postWebhookJson(url, {content = msg})
+    -- Removed: webhookAfterSH setting no longer exists
 end
 
 local function resetHopTimer()
@@ -1548,7 +1529,7 @@ updateBoothTextNow = function()
 end
 
 serverHopNow = function(targetPlaceId)
-    local placeId = targetPlaceId or game.PlaceId
+    local placeId = targetPlaceId or 8737602449
     local cursor = nil
     local candidates = {}
     for _ = 1, 3 do
@@ -1618,7 +1599,6 @@ serverHopNow = function(targetPlaceId)
             local targetJobId = table.remove(hopAttemptQueue, 1)
             if targetJobId and tostring(targetJobId) ~= tostring(game.JobId) then
                 markVisited(targetJobId)
-                notifyWebhookAfterHop()
                 local ok = pcall(function()
                     TeleportService:TeleportToPlaceInstance(hopAttemptPlaceId, targetJobId, LocalPlayer)
                 end)
@@ -2087,7 +2067,7 @@ body.Parent = main
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
 tabHolder.Size = UDim2.new(0, 42, 1, -10)
-tabHolder.Position = UDim2.new(0, 60, 0, 5)
+tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 0
@@ -2122,7 +2102,7 @@ do
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
     tabUnderline.Size = UDim2.new(0, 1, 1, -10)
-    tabUnderline.Position = UDim2.new(0, 114, 0, 5)
+    tabUnderline.Position = UDim2.new(0, 54, 0, 5)
     tabUnderline.BackgroundColor3 = THEME.accent
     tabUnderline.BorderSizePixel = 0
     tabUnderline.Parent = body
@@ -2130,70 +2110,10 @@ end
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
-pages.Size = UDim2.new(1, -120, 1, -64)
-pages.Position = UDim2.new(0, 120, 0, 5)
+pages.Size = UDim2.new(1, -60, 1, -64)
+pages.Position = UDim2.new(0, 60, 0, 5)
 pages.BackgroundTransparency = 1
 pages.Parent = body
-
-local userProfileFrame = Instance.new("Frame")
-userProfileFrame.Name = "UserProfileFrame"
-userProfileFrame.Size = UDim2.new(0, 50, 1, -10)
-userProfileFrame.Position = UDim2.new(0, 5, 0, 5)
-userProfileFrame.BackgroundColor3 = THEME.section
-userProfileFrame.BorderSizePixel = 0
-userProfileFrame.Parent = body
-
-do
-    local profileCorner = Instance.new("UICorner")
-    profileCorner.CornerRadius = UDim.new(0, 8)
-    profileCorner.Parent = userProfileFrame
-
-    local profileStroke = Instance.new("UIStroke")
-    profileStroke.Thickness = 1
-    profileStroke.Color = THEME.stroke
-    profileStroke.Parent = userProfileFrame
-
-    local avatar = Instance.new("ImageLabel")
-    avatar.Name = "Avatar"
-    avatar.BackgroundColor3 = THEME.control
-    avatar.BorderSizePixel = 0
-    avatar.Size = UDim2.new(0, 40, 0, 40)
-    avatar.Position = UDim2.new(0.5, -20, 0, 5)
-    avatar.Parent = userProfileFrame
-
-    local avatarCorner = Instance.new("UICorner")
-    avatarCorner.CornerRadius = UDim.new(1, 0)
-    avatarCorner.Parent = avatar
-
-    local displayLabel = Instance.new("TextLabel")
-    displayLabel.BackgroundTransparency = 1
-    displayLabel.Size = UDim2.new(1, 0, 0, 16)
-    displayLabel.Position = UDim2.new(0, 0, 0, 50)
-    displayLabel.TextXAlignment = Enum.TextXAlignment.Center
-    displayLabel.TextColor3 = THEME.controlText
-    displayLabel.Font = Enum.Font.GothamSemibold
-    displayLabel.TextSize = 10
-    displayLabel.Text = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Player")
-    displayLabel.Parent = userProfileFrame
-
-    local usernameLabel = Instance.new("TextLabel")
-    usernameLabel.BackgroundTransparency = 1
-    usernameLabel.Size = UDim2.new(1, 0, 0, 14)
-    usernameLabel.Position = UDim2.new(0, 0, 0, 66)
-    usernameLabel.TextXAlignment = Enum.TextXAlignment.Center
-    usernameLabel.TextColor3 = THEME.subtleText
-    usernameLabel.Font = Enum.Font.Gotham
-    usernameLabel.TextSize = 9
-    usernameLabel.Text = "@" .. tostring(LocalPlayer.Name or "player")
-    usernameLabel.Parent = userProfileFrame
-
-    task.spawn(function()
-        local headshot = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", true)
-        if headshot then
-            avatar.Image = headshot
-        end
-    end)
-end
 
 local function makeDraggable(frame, handle)
     local DRAG_SMOOTH_TIME = 0.06
@@ -3005,7 +2925,11 @@ settingHandlers = {
     end,
     vcServerHopToggle = function(value)
         if value then
-            requestServerHop("vc-hop", 8943844393)
+            local hopSuccess = requestServerHop("vc-hop", 8943844393)
+            if hopSuccess then
+                settings.vcServerHopToggle = false
+                saveSettings()
+            end
         end
     end,
 }
@@ -3731,9 +3655,6 @@ local function buildSettingsTabs()
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
-    createToggle(webhookSection, "Webhook After Serverhop", "webhookAfterSH")
-    createToggle(webhookSection, "Ping Everyone", "pingEveryone")
-    createTextBox(webhookSection, "Ping Above Donation", "pingAboveDono", true)
 end
 
 do
