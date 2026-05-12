@@ -1528,8 +1528,8 @@ updateBoothTextNow = function()
     return applied, applied and "updated" or "local-preview-only"
 end
 
-serverHopNow = function(targetPlaceId)
-    local placeId = targetPlaceId or 8737602449
+serverHopNow = function()
+    local placeId = 8737602449
     local cursor = nil
     local candidates = {}
     for _ = 1, 3 do
@@ -1649,13 +1649,130 @@ serverHopNow = function(targetPlaceId)
     return true
 end
 
-requestServerHop = function(reason, targetPlaceId)
+requestServerHop = function(reason)
     local now = tick()
     if now - lastHopTick < hopCooldownSeconds then
         return false
     end
     lastHopTick = now
-    return serverHopNow(targetPlaceId)
+    return serverHopNow()
+end
+
+serverHopNowVC = function()
+    local placeId = 8943844393
+    local cursor = nil
+    local candidates = {}
+    for _ = 1, 3 do
+        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true%s"):format(
+            tostring(placeId),
+            cursor and ("&cursor=" .. HttpService:UrlEncode(cursor)) or ""
+        )
+        local body = httpGet(url)
+        if not body or body == "" then
+            break
+        end
+
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(body)
+        end)
+        if not ok or type(data) ~= "table" or type(data.data) ~= "table" then
+            break
+        end
+
+        for _, server in ipairs(data.data) do
+            local id = server.id
+            local playing = tonumber(server.playing or 0) or 0
+            local maxPlayers = tonumber(server.maxPlayers or 0) or 0
+            if id and id ~= game.JobId and maxPlayers > 0 and playing < maxPlayers then
+                table.insert(candidates, id)
+            end
+        end
+
+        cursor = data.nextPageCursor
+        if not cursor or #candidates >= 8 then
+            break
+        end
+    end
+
+    if #candidates == 0 then
+        notify("Server Hop", "No VC server found right now.", 4, "vc-server-hop-fail", 5)
+        return false
+    end
+
+    for index = #candidates, 2, -1 do
+        local swapIndex = math.random(1, index)
+        candidates[index], candidates[swapIndex] = candidates[swapIndex], candidates[index]
+    end
+
+    hopAttemptPlaceId = placeId
+    hopAttemptQueue = candidates
+    hopAttemptActive = true
+
+    local function markVisited(jobId)
+        table.insert(visitedServerIds, jobId)
+        if #visitedServerIds > 220 then
+            table.remove(visitedServerIds, 1)
+        end
+        saveVisitedIds()
+    end
+
+    local function attemptNextHop()
+        if not hopAttemptActive then
+            return false
+        end
+
+        while #hopAttemptQueue > 0 do
+            local targetJobId = table.remove(hopAttemptQueue, 1)
+            if targetJobId and tostring(targetJobId) ~= tostring(game.JobId) then
+                markVisited(targetJobId)
+                local ok = pcall(function()
+                    TeleportService:TeleportToPlaceInstance(hopAttemptPlaceId, targetJobId, LocalPlayer)
+                end)
+                if ok then
+                    return true
+                end
+            end
+        end
+
+        hopAttemptActive = false
+        notify("Server Hop", "No VC server found right now.", 4, "vc-server-hop-fail", 5)
+        return false
+    end
+
+    if hopRetryConnection then
+        hopRetryConnection:Disconnect()
+        hopRetryConnection = nil
+    end
+
+    hopRetryConnection = TeleportService.TeleportInitFailed:Connect(function(_, result)
+        if not hopAttemptActive then
+            return
+        end
+
+        if result == Enum.TeleportResult.GameFull or result == Enum.TeleportResult.Failure or result == Enum.TeleportResult.Flooded or result == Enum.TeleportResult.Unauthorized then
+            task.delay(0.75, function()
+                if hopAttemptActive then
+                    attemptNextHop()
+                end
+            end)
+        end
+    end)
+
+    if hopRetryTask and coroutine.status(hopRetryTask) ~= "dead" then
+        task.cancel(hopRetryTask)
+    end
+
+    hopRetryTask = task.spawn(function()
+        while hopAttemptActive and #hopAttemptQueue > 0 do
+            local started = attemptNextHop()
+            if not started then
+                break
+            end
+            task.wait(1.5)
+        end
+    end)
+
+    return true
 end
 
 findOwnedBoothSlot = function(boothUiFolder)
@@ -2925,7 +3042,7 @@ settingHandlers = {
     end,
     vcServerHopToggle = function(value)
         if value then
-            local hopSuccess = requestServerHop("vc-hop", 8943844393)
+            local hopSuccess = serverHopNowVC()
             if hopSuccess then
                 settings.vcServerHopToggle = false
                 saveSettings()
