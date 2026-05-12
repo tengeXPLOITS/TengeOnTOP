@@ -2337,12 +2337,12 @@ end
 local function createLockedToggleRow(parent, text)
     local row = Instance.new("Frame")
     row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 24)
+    row.Size = UDim2.new(1, 0, 0, 42)
     row.Parent = parent
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, 0, 1, 0)
+    label.Size = UDim2.new(1, 0, 0, 24)
     label.Font = Enum.Font.Gotham
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
@@ -2350,7 +2350,17 @@ local function createLockedToggleRow(parent, text)
     label.Text = LOCK_ICON .. " " .. tostring(text or "")
     label.Parent = row
 
-    createInfoLabel(parent, "verified players can use this.")
+    local info = Instance.new("TextLabel")
+    info.BackgroundTransparency = 1
+    info.Size = UDim2.new(1, 0, 0, 16)
+    info.Position = UDim2.new(0, 0, 0, 24)
+    info.Font = Enum.Font.Gotham
+    info.TextSize = 12
+    info.TextXAlignment = Enum.TextXAlignment.Left
+    info.TextColor3 = THEME.subtleText
+    info.TextWrapped = true
+    info.Text = "verified players can use this."
+    info.Parent = row
 end
 
 local function createToggle(parent, text, key)
