@@ -466,24 +466,52 @@ local function saveSettings()
     end)
 end
 
-local restrictedAccessResolved = false
+local restrictedAccessCacheUntil = 0
 local restrictedAccessEnabled = false
 local LOCK_ICON = utf8.char(0x1F512)
 
 local function hasVerifiedRestrictedFeatureAccess()
-    if restrictedAccessResolved then
+    local now = tick()
+    if now < restrictedAccessCacheUntil then
         return restrictedAccessEnabled
     end
 
-    restrictedAccessResolved = true
+    restrictedAccessCacheUntil = now + 3
 
-    -- Roblox doesn't expose a direct client-side age-check flag, so use
-    -- voice eligibility as the supported signal for verified-only features.
-    local ok, enabled = pcall(function()
+    local chatUiShowsUnlock = false
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if playerGui then
+        for _, guiObject in ipairs(playerGui:GetDescendants()) do
+            if guiObject:IsA("TextLabel") or guiObject:IsA("TextButton") then
+                local text = tostring(guiObject.Text or ""):lower():gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+                if text == "unlock chat" or text:find("you can only view system messages here", 1, true) or text:find("get an age check to chat", 1, true) then
+                    chatUiShowsUnlock = true
+                    break
+                end
+            end
+        end
+    end
+
+    if chatUiShowsUnlock then
+        restrictedAccessEnabled = false
+        return false
+    end
+
+    local chatOk, canChat = pcall(function()
+        return TextChatService:CanUserChatAsync(LocalPlayer.UserId)
+    end)
+    if chatOk then
+        restrictedAccessEnabled = canChat == true
+        return restrictedAccessEnabled
+    end
+
+    -- Fall back to voice eligibility if Roblox doesn't answer the local
+    -- text-chat permission check for this session.
+    local voiceOk, voiceEnabled = pcall(function()
         return game:GetService("VoiceChatService"):IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId)
     end)
 
-    restrictedAccessEnabled = ok and enabled == true
+    restrictedAccessEnabled = voiceOk and voiceEnabled == true
     return restrictedAccessEnabled
 end
 
@@ -878,6 +906,10 @@ end
 local function sendChatMessage(message)
     local text = tostring(message or "")
     if text == "" then
+        return
+    end
+
+    if not hasVerifiedRestrictedFeatureAccess() then
         return
     end
 
