@@ -466,6 +466,27 @@ local function saveSettings()
     end)
 end
 
+local restrictedAccessResolved = false
+local restrictedAccessEnabled = false
+local LOCK_ICON = utf8.char(0x1F512)
+
+local function hasVerifiedRestrictedFeatureAccess()
+    if restrictedAccessResolved then
+        return restrictedAccessEnabled
+    end
+
+    restrictedAccessResolved = true
+
+    -- Roblox doesn't expose a direct client-side age-check flag, so use
+    -- voice eligibility as the supported signal for verified-only features.
+    local ok, enabled = pcall(function()
+        return game:GetService("VoiceChatService"):IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId)
+    end)
+
+    restrictedAccessEnabled = ok and enabled == true
+    return restrictedAccessEnabled
+end
+
 local function loadSettings()
     settings = deepCopy(defaults)
 
@@ -1529,13 +1550,7 @@ updateBoothTextNow = function()
 end
 
 local function choosePlaceId()
-    local vcService = game:GetService("VoiceChatService")
-    local vcEnabled = false
-    pcall(function()
-        vcEnabled = vcService:IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId)
-    end)
-    
-    if vcEnabled and settings.vcServerHopToggle then
+    if hasVerifiedRestrictedFeatureAccess() and settings.vcServerHopToggle then
         return 8943844393
     else
         return 8737602449
@@ -2168,7 +2183,7 @@ local function activateTab(name)
     activeTab = name
 end
 
-local function createTab(name)
+local function createTab(name, buttonText)
     local compactLabels = {
         Booth = "B",
         Main = "M",
@@ -2183,7 +2198,7 @@ local function createTab(name)
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 12
-    btn.Text = compactLabels[name] or name:sub(1, 1):upper()
+    btn.Text = tostring(buttonText or compactLabels[name] or name:sub(1, 1):upper())
     btn.Parent = tabHolder
 
     local btnCorner = Instance.new("UICorner")
@@ -2262,6 +2277,48 @@ local function createSection(parent, titleText)
     holderLayout.Parent = holder
 
     return holder
+end
+
+local function createLockedTabNotice(parent)
+    local holder = Instance.new("Frame")
+    holder.BackgroundColor3 = THEME.section
+    holder.BorderSizePixel = 0
+    holder.Size = UDim2.new(1, 0, 0, 54)
+    holder.Parent = parent
+
+    local holderCorner = Instance.new("UICorner")
+    holderCorner.CornerRadius = UDim.new(0, 8)
+    holderCorner.Parent = holder
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0, 10, 0, 10)
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = 12
+    label.TextWrapped = true
+    label.TextColor3 = THEME.subtleText
+    label.Text = "verified players can use this."
+    label.Parent = holder
+end
+
+local function createLockedToggleRow(parent, text)
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 24)
+    row.Parent = parent
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextColor3 = THEME.controlText
+    label.Text = LOCK_ICON .. " " .. tostring(text or "")
+    label.Parent = row
+
+    createInfoLabel(parent, "verified players can use this.")
 end
 
 local function createToggle(parent, text, key)
@@ -2859,9 +2916,13 @@ settingHandlers = {
     end,
     vcServerHopToggle = function(value)
         if value then
+            if not hasVerifiedRestrictedFeatureAccess() then
+                settings.vcServerHopToggle = false
+                saveSettings()
+                notify("VC Server Hop", "verified players can use this.", 4, "vc-hop-locked", 2)
+                return
+            end
             serverHopNow()
-            settings.vcServerHopToggle = false
-            saveSettings()
         end
     end,
 }
@@ -3491,9 +3552,11 @@ local function createInfoLabel(parent, text)
 end
 
 local function buildSettingsTabs()
+    local hasRestrictedAccess = hasVerifiedRestrictedFeatureAccess()
+
     local boothTab = createTab("Booth")
     local mainTab = createTab("Main")
-    local chatTab = createTab("Chat")
+    local chatTab = createTab("Chat", hasRestrictedAccess and "C" or LOCK_ICON)
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server")
 
@@ -3574,13 +3637,17 @@ local function buildSettingsTabs()
     end
 
     do
-        local chatSection = createSection(chatTab, "Chat Settings")
-        createToggle(chatSection, "Auto Thank You", "autoThanks")
-        createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
-        createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
-        createToggle(chatSection, "Auto Beg", "autoBeg")
-        createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
-        createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
+        if hasRestrictedAccess then
+            local chatSection = createSection(chatTab, "Chat Settings")
+            createToggle(chatSection, "Auto Thank You", "autoThanks")
+            createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
+            createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
+            createToggle(chatSection, "Auto Beg", "autoBeg")
+            createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
+            createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
+        else
+            createLockedTabNotice(chatTab)
+        end
     end
 
     do
@@ -3609,10 +3676,10 @@ do
     end)
 
     -- VC Server Hop
-    local vcService = game:GetService("VoiceChatService")
-    local vcEnabled = pcall(function() return vcService:IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId) end)
-    if vcEnabled then
+    if hasRestrictedAccess then
         createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+    else
+        createLockedToggleRow(serverSection, "VC Server Hop (All Servers)")
     end
 end
 
