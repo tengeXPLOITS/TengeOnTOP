@@ -362,8 +362,6 @@ local defaults = {
     webhookToggle = false,
     webhookBox = "",
     webhookAfterSH = false,
-    pingEveryone = false,
-    pingAboveDono = 1000,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -375,6 +373,7 @@ local defaults = {
     minPlayerCount = 23,
     maxPlayerCount = 24,
     AnonymousMode = false,
+    vcServerHopToggle = false,
     spinSet = false,
     spinSpeedMultiplier = 1,
     helicopterEnabled = false,
@@ -1246,10 +1245,6 @@ local function sendDonationWebhook(amount, donorInfo)
             embeds = {embed},
         })
     end)
-
-    if settings.pingEveryone and (tonumber(amount) or 0) >= math.max(0, tonumber(settings.pingAboveDono) or 1000) then
-        postWebhookJson(url, {content = "@everyone"})
-    end
 end
 
 local function notifyWebhookAfterHop()
@@ -1552,84 +1547,8 @@ updateBoothTextNow = function()
     return applied, applied and "updated" or "local-preview-only"
 end
 
-serverHopNow = function()
-    local function loadVisitedIds()
-        if not canUseFiles() then
-            visitedServerIds = {}
-            return
-        end
-
-        local actualHour = os.date("!*t").hour
-        if actualHour ~= hopFileHour then
-            hopFileHour = actualHour
-            visitedServerIds = {}
-            pcall(function()
-                writefile(hopFileName .. ".json", HttpService:JSONEncode({hour = hopFileHour, ids = {}}))
-            end)
-            return
-        end
-
-        local ok, data = pcall(function()
-            if not isfile(hopFileName .. ".json") then
-                return nil
-            end
-            return HttpService:JSONDecode(readfile(hopFileName .. ".json"))
-        end)
-
-        if ok and type(data) == "table" and type(data.ids) == "table" then
-            if tonumber(data.hour) ~= hopFileHour then
-                visitedServerIds = {}
-            else
-                visitedServerIds = data.ids
-            end
-        else
-            visitedServerIds = {}
-        end
-    end
-
-    local function saveVisitedIds()
-        if not canUseFiles() then
-            return
-        end
-        pcall(function()
-            writefile(hopFileName .. ".json", HttpService:JSONEncode({hour = hopFileHour, ids = visitedServerIds}))
-        end)
-    end
-
-    local function hasVisited(id)
-        for _, existing in ipairs(visitedServerIds) do
-            if tostring(existing) == tostring(id) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function httpGet(url)
-        if syn and syn.request then
-            local response = syn.request({Url = url, Method = "GET"})
-            return response and response.Body
-        end
-        if request then
-            local response = request({Url = url, Method = "GET"})
-            return response and response.Body
-        end
-        if http_request then
-            local response = http_request({Url = url, Method = "GET"})
-            return response and response.Body
-        end
-        local ok, body = pcall(function()
-            return game:HttpGet(url)
-        end)
-        if ok then
-            return body
-        end
-        return nil
-    end
-
-    loadVisitedIds()
-
-    local placeId = 8737602449
+serverHopNow = function(targetPlaceId)
+    local placeId = targetPlaceId or game.PlaceId
     local cursor = nil
     local candidates = {}
     for _ = 1, 3 do
@@ -1750,13 +1669,13 @@ serverHopNow = function()
     return true
 end
 
-requestServerHop = function(reason)
+requestServerHop = function(reason, targetPlaceId)
     local now = tick()
     if now - lastHopTick < hopCooldownSeconds then
         return false
     end
     lastHopTick = now
-    return serverHopNow(reason)
+    return serverHopNow(targetPlaceId)
 end
 
 findOwnedBoothSlot = function(boothUiFolder)
@@ -2133,15 +2052,9 @@ do
     subtitle.AutoButtonColor = false
 
     task.spawn(function()
-        local asset = resolveLocalImageAsset(TITLE_CHARACTER_IMAGE_PATH)
-        if asset then
-            titleImage.Image = asset
-            return
-        end
-
-        local fallback = getRobloxAvatarOutfitThumbnailUrl(LocalPlayer.UserId, "420x420")
-        if fallback then
-            titleImage.Image = fallback
+        local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
+        if creatorHeadshot then
+            titleImage.Image = creatorHeadshot
         end
     end)
 end
@@ -2164,81 +2077,6 @@ do
     miniCorner.Parent = minimizeBtn
 end
 
-local creatorCard = Instance.new("TextButton")
-creatorCard.Name = "CreatorCard"
-creatorCard.Size = UDim2.new(0, 190, 0, 48)
-creatorCard.Position = UDim2.new(1, -253, 0, 0)
-creatorCard.BackgroundColor3 = THEME.topBar
-creatorCard.BorderSizePixel = 0
-creatorCard.AutoButtonColor = false
-creatorCard.Text = ""
-creatorCard.Parent = topBar
-
-do
-    local creatorCorner = Instance.new("UICorner")
-    creatorCorner.CornerRadius = UDim.new(0, 8)
-    creatorCorner.Parent = creatorCard
-
-    local creatorStroke = Instance.new("UIStroke")
-    creatorStroke.Thickness = 1
-    creatorStroke.Color = THEME.stroke
-    creatorStroke.Parent = creatorCard
-
-    local creatorAvatar = Instance.new("ImageLabel")
-    creatorAvatar.Name = "Avatar"
-    creatorAvatar.BackgroundColor3 = THEME.control
-    creatorAvatar.BorderSizePixel = 0
-    creatorAvatar.Size = UDim2.new(0, 34, 0, 34)
-    creatorAvatar.Position = UDim2.new(0, 7, 0.5, -17)
-    creatorAvatar.Parent = creatorCard
-
-    local creatorAvatarCorner = Instance.new("UICorner")
-    creatorAvatarCorner.CornerRadius = UDim.new(1, 0)
-    creatorAvatarCorner.Parent = creatorAvatar
-
-    local creatorDisplayLabel = Instance.new("TextLabel")
-    creatorDisplayLabel.BackgroundTransparency = 1
-    creatorDisplayLabel.Size = UDim2.new(1, -52, 0, 18)
-    creatorDisplayLabel.Position = UDim2.new(0, 48, 0, 7)
-    creatorDisplayLabel.TextXAlignment = Enum.TextXAlignment.Left
-    creatorDisplayLabel.TextColor3 = THEME.topBarText
-    creatorDisplayLabel.Font = Enum.Font.GothamSemibold
-    creatorDisplayLabel.TextSize = 12
-    creatorDisplayLabel.Text = "buriedinplainview"
-    creatorDisplayLabel.Parent = creatorCard
-
-    local creatorUsernameLabel = Instance.new("TextLabel")
-    creatorUsernameLabel.BackgroundTransparency = 1
-    creatorUsernameLabel.Size = UDim2.new(1, -52, 0, 14)
-    creatorUsernameLabel.Position = UDim2.new(0, 48, 0, 24)
-    creatorUsernameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    creatorUsernameLabel.TextColor3 = THEME.subtleText
-    creatorUsernameLabel.Font = Enum.Font.Gotham
-    creatorUsernameLabel.TextSize = 10
-    creatorUsernameLabel.Text = "@buriedinplainview"
-    creatorUsernameLabel.Parent = creatorCard
-
-    task.spawn(function()
-        local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
-        if creatorHeadshot then
-            creatorAvatar.Image = creatorHeadshot
-        end
-    end)
-
-    creatorCard.MouseButton1Click:Connect(function()
-        setclipboard("https://www.roblox.com/users/1230653127/profile")
-        notify("Creator Profile", "Profile URL copied to clipboard!", 3, "creator-profile-click", 1)
-    end)
-
-    creatorCard.MouseEnter:Connect(function()
-        creatorCard.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-    end)
-
-    creatorCard.MouseLeave:Connect(function()
-        creatorCard.BackgroundColor3 = THEME.topBar
-    end)
-end
-
 local body = Instance.new("Frame")
 body.Name = "Body"
 body.Size = UDim2.new(1, 0, 1, -46)
@@ -2249,7 +2087,7 @@ body.Parent = main
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
 tabHolder.Size = UDim2.new(0, 42, 1, -10)
-tabHolder.Position = UDim2.new(0, 6, 0, 5)
+tabHolder.Position = UDim2.new(0, 60, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 0
@@ -2284,7 +2122,7 @@ do
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
     tabUnderline.Size = UDim2.new(0, 1, 1, -10)
-    tabUnderline.Position = UDim2.new(0, 54, 0, 5)
+    tabUnderline.Position = UDim2.new(0, 114, 0, 5)
     tabUnderline.BackgroundColor3 = THEME.accent
     tabUnderline.BorderSizePixel = 0
     tabUnderline.Parent = body
@@ -2292,38 +2130,36 @@ end
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
-pages.Size = UDim2.new(1, -60, 1, -64)
-pages.Position = UDim2.new(0, 60, 0, 5)
+pages.Size = UDim2.new(1, -120, 1, -64)
+pages.Position = UDim2.new(0, 120, 0, 5)
 pages.BackgroundTransparency = 1
 pages.Parent = body
 
-local profileCard = Instance.new("TextButton")
-profileCard.Name = "ProfileCard"
-profileCard.Size = UDim2.new(0, 190, 0, 48)
-profileCard.Position = UDim2.new(0, 60, 1, -53)
-profileCard.BackgroundColor3 = THEME.section
-profileCard.BorderSizePixel = 0
-profileCard.AutoButtonColor = false
-profileCard.Text = ""
-profileCard.Parent = body
+local userProfileFrame = Instance.new("Frame")
+userProfileFrame.Name = "UserProfileFrame"
+userProfileFrame.Size = UDim2.new(0, 50, 1, -10)
+userProfileFrame.Position = UDim2.new(0, 5, 0, 5)
+userProfileFrame.BackgroundColor3 = THEME.section
+userProfileFrame.BorderSizePixel = 0
+userProfileFrame.Parent = body
 
 do
     local profileCorner = Instance.new("UICorner")
     profileCorner.CornerRadius = UDim.new(0, 8)
-    profileCorner.Parent = profileCard
+    profileCorner.Parent = userProfileFrame
 
     local profileStroke = Instance.new("UIStroke")
     profileStroke.Thickness = 1
     profileStroke.Color = THEME.stroke
-    profileStroke.Parent = profileCard
+    profileStroke.Parent = userProfileFrame
 
     local avatar = Instance.new("ImageLabel")
     avatar.Name = "Avatar"
     avatar.BackgroundColor3 = THEME.control
     avatar.BorderSizePixel = 0
-    avatar.Size = UDim2.new(0, 34, 0, 34)
-    avatar.Position = UDim2.new(0, 7, 0.5, -17)
-    avatar.Parent = profileCard
+    avatar.Size = UDim2.new(0, 40, 0, 40)
+    avatar.Position = UDim2.new(0.5, -20, 0, 5)
+    avatar.Parent = userProfileFrame
 
     local avatarCorner = Instance.new("UICorner")
     avatarCorner.CornerRadius = UDim.new(1, 0)
@@ -2331,44 +2167,31 @@ do
 
     local displayLabel = Instance.new("TextLabel")
     displayLabel.BackgroundTransparency = 1
-    displayLabel.Size = UDim2.new(1, -52, 0, 18)
-    displayLabel.Position = UDim2.new(0, 48, 0, 7)
-    displayLabel.TextXAlignment = Enum.TextXAlignment.Left
-    displayLabel.TextColor3 = THEME.topBarText
+    displayLabel.Size = UDim2.new(1, 0, 0, 16)
+    displayLabel.Position = UDim2.new(0, 0, 0, 50)
+    displayLabel.TextXAlignment = Enum.TextXAlignment.Center
+    displayLabel.TextColor3 = THEME.controlText
     displayLabel.Font = Enum.Font.GothamSemibold
-    displayLabel.TextSize = 12
+    displayLabel.TextSize = 10
     displayLabel.Text = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Player")
-    displayLabel.Parent = profileCard
+    displayLabel.Parent = userProfileFrame
 
     local usernameLabel = Instance.new("TextLabel")
     usernameLabel.BackgroundTransparency = 1
-    usernameLabel.Size = UDim2.new(1, -52, 0, 14)
-    usernameLabel.Position = UDim2.new(0, 48, 0, 24)
-    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    usernameLabel.Size = UDim2.new(1, 0, 0, 14)
+    usernameLabel.Position = UDim2.new(0, 0, 0, 66)
+    usernameLabel.TextXAlignment = Enum.TextXAlignment.Center
     usernameLabel.TextColor3 = THEME.subtleText
     usernameLabel.Font = Enum.Font.Gotham
-    usernameLabel.TextSize = 10
+    usernameLabel.TextSize = 9
     usernameLabel.Text = "@" .. tostring(LocalPlayer.Name or "player")
-    usernameLabel.Parent = profileCard
+    usernameLabel.Parent = userProfileFrame
 
     task.spawn(function()
         local headshot = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", true)
         if headshot then
             avatar.Image = headshot
         end
-    end)
-    
-    profileCard.MouseButton1Click:Connect(function()
-        setclipboard("https://www.roblox.com/users/" .. tostring(LocalPlayer.UserId) .. "/profile")
-        notify("Your Profile", "Profile URL copied to clipboard!", 3, "user-profile-copy", 1)
-    end)
-    
-    profileCard.MouseEnter:Connect(function()
-        profileCard.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    end)
-    
-    profileCard.MouseLeave:Connect(function()
-        profileCard.BackgroundColor3 = THEME.section
     end)
 end
 
@@ -3180,6 +3003,11 @@ settingHandlers = {
         settings.maxPlayerCount = maxVal
         saveSettings()
     end,
+    vcServerHopToggle = function(value)
+        if value then
+            requestServerHop("vc-hop", 8943844393)
+        end
+    end,
 }
 
 local handledClaimSlot
@@ -3926,6 +3754,13 @@ do
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
+
+    -- VC Server Hop
+    local vcService = game:GetService("VoiceChatService")
+    local vcEnabled = pcall(function() return vcService:IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId) end)
+    if vcEnabled then
+        createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+    end
 end
 
 end
