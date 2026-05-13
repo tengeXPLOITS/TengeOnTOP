@@ -682,6 +682,87 @@ local hopRetryTask
 local hopAttemptQueue = {}
 local hopAttemptPlaceId
 local hopAttemptActive = false
+local farmSessionStats = SharedEnv.PLS_DONO_FARM_SESSION
+if type(farmSessionStats) ~= "table" or tonumber(farmSessionStats.playerUserId) ~= tonumber(LocalPlayer.UserId) then
+    farmSessionStats = {
+        playerUserId = tonumber(LocalPlayer.UserId) or 0,
+        startedAt = os.time(),
+        successfulHops = 0,
+        botEvaded = 0,
+        modServers = 0,
+        lastSummaryHopCount = 0,
+    }
+    SharedEnv.PLS_DONO_FARM_SESSION = farmSessionStats
+end
+
+farmSessionStats.playerUserId = tonumber(LocalPlayer.UserId) or 0
+farmSessionStats.startedAt = tonumber(farmSessionStats.startedAt) or os.time()
+farmSessionStats.successfulHops = math.max(0, tonumber(farmSessionStats.successfulHops) or 0)
+farmSessionStats.botEvaded = math.max(0, tonumber(farmSessionStats.botEvaded) or 0)
+farmSessionStats.modServers = math.max(0, tonumber(farmSessionStats.modServers) or 0)
+farmSessionStats.lastSummaryHopCount = math.max(0, tonumber(farmSessionStats.lastSummaryHopCount) or 0)
+
+local pendingFarmSummaryHopCount
+
+local BOT_HOP_REASONS = {
+    ["bot-detection"] = true,
+    ["zero-donated-bot-server"] = true,
+}
+
+local function shouldTrackFarmHop(reason)
+    local normalizedReason = tostring(reason or "")
+    return normalizedReason ~= "" and normalizedReason ~= "manual-button" and normalizedReason ~= "vc-server-hop-toggle"
+end
+
+local function markPendingFarmHop(reason, placeId, targetServerId)
+    SharedEnv.PLS_DONO_PENDING_HOP = {
+        reason = tostring(reason or ""),
+        placeId = tonumber(placeId) or 0,
+        targetServerId = tostring(targetServerId or ""),
+        fromJobId = tostring(game.JobId or ""),
+        queuedAt = os.time(),
+    }
+end
+
+local function finalizeSuccessfulPendingFarmHop()
+    local pending = SharedEnv.PLS_DONO_PENDING_HOP
+    if type(pending) ~= "table" then
+        return nil
+    end
+
+    SharedEnv.PLS_DONO_PENDING_HOP = nil
+
+    local pendingReason = tostring(pending.reason or "")
+    local targetServerId = tostring(pending.targetServerId or "")
+    local fromJobId = tostring(pending.fromJobId or "")
+    local queuedAt = tonumber(pending.queuedAt) or 0
+    local isFresh = queuedAt <= 0 or (os.time() - queuedAt) <= 900
+    local landedOnExpectedServer = targetServerId == "" or targetServerId == tostring(game.JobId or "")
+    local changedServers = fromJobId ~= "" and fromJobId ~= tostring(game.JobId or "")
+
+    if not isFresh or not landedOnExpectedServer or not changedServers or not shouldTrackFarmHop(pendingReason) then
+        return nil
+    end
+
+    farmSessionStats.successfulHops += 1
+    if BOT_HOP_REASONS[pendingReason] then
+        farmSessionStats.botEvaded += 1
+    end
+    if pendingReason == "mod-detection" then
+        farmSessionStats.modServers += 1
+    end
+
+    if farmSessionStats.successfulHops > 0
+        and farmSessionStats.successfulHops % 100 == 0
+        and farmSessionStats.lastSummaryHopCount < farmSessionStats.successfulHops then
+        farmSessionStats.lastSummaryHopCount = farmSessionStats.successfulHops
+        return farmSessionStats.successfulHops
+    end
+
+    return nil
+end
+
+pendingFarmSummaryHopCount = finalizeSuccessfulPendingFarmHop()
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -983,6 +1064,67 @@ local function postWebhookJson(url, bodyTable)
         sent = response ~= nil or sent
     end)
     return sent
+end
+
+local function formatFarmDuration(totalSeconds)
+    local seconds = math.max(0, math.floor(tonumber(totalSeconds) or 0))
+    local days = math.floor(seconds / 86400)
+    seconds -= days * 86400
+    local hours = math.floor(seconds / 3600)
+    seconds -= hours * 3600
+    local minutes = math.floor(seconds / 60)
+    seconds -= minutes * 60
+
+    local parts = {}
+    if days > 0 then
+        table.insert(parts, ("%dd"):format(days))
+    end
+    if hours > 0 or #parts > 0 then
+        table.insert(parts, ("%dh"):format(hours))
+    end
+    if minutes > 0 or #parts > 0 then
+        table.insert(parts, ("%dm"):format(minutes))
+    end
+    table.insert(parts, ("%ds"):format(seconds))
+    return table.concat(parts, " ")
+end
+
+local function sendAutofarmSummaryWebhook(successfulHops)
+    if not settings.webhookToggle then
+        return
+    end
+
+    local url = tostring(settings.webhookBox or ""):match("%S+")
+    if not url or url == "" then
+        return
+    end
+
+    local startedAt = tonumber(farmSessionStats.startedAt) or os.time()
+    local elapsed = math.max(0, os.time() - startedAt)
+    local totalHops = math.max(0, tonumber(successfulHops) or tonumber(farmSessionStats.successfulHops) or 0)
+    local botEvaded = math.max(0, tonumber(farmSessionStats.botEvaded) or 0)
+    local modServers = math.max(0, tonumber(farmSessionStats.modServers) or 0)
+    local avatarUrl = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", false)
+    local durationText = formatFarmDuration(elapsed)
+
+    postWebhookJson(url, {
+        username = "PLS DONATE",
+        avatar_url = avatarUrl,
+        content = ("Your bot has been farming for %s."):format(durationText),
+        embeds = {{
+            color = 0x1E90FF,
+            title = "Autofarm Session Summary",
+            fields = {
+                {name = "Successful Hops", value = tostring(totalHops), inline = true},
+                {name = "Bot Servers Evaded", value = tostring(botEvaded), inline = true},
+                {name = "Servers With Mods", value = tostring(modServers), inline = true},
+                {name = "Farm Time", value = durationText, inline = false},
+                {name = "Hop Delay", value = ("%s minutes"):format(tostring(settings.serverHopDelay or 15)), inline = true},
+            },
+        }},
+    })
+
+    notify("Webhook", ("Farming summary sent after %d successful hops."):format(totalHops), 4, "farm-summary-webhook", 4)
 end
 
 getNearestPlayerInfo = function()
@@ -1302,6 +1444,13 @@ local function notifyWebhookAfterHop()
     -- Removed: webhookAfterSH setting no longer exists
 end
 
+if pendingFarmSummaryHopCount then
+    task.defer(function()
+        task.wait(4)
+        sendAutofarmSummaryWebhook(pendingFarmSummaryHopCount)
+    end)
+end
+
 local function resetHopTimer()
     hopTimerResetTick = tick()
     donatedSinceHopTimerReset = 0
@@ -1588,7 +1737,7 @@ local function choosePlaceId()
     end
 end
 
-serverHopNow = function()
+serverHopNow = function(reason)
     local placeId = choosePlaceId()
     local req = performHttpRequest({
         Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
@@ -1622,11 +1771,17 @@ serverHopNow = function()
     end
 
     local selectedServer = servers[math.random(1, #servers)]
+    local teleported = false
     pcall(function()
         TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+        teleported = true
     end)
-    
-    return true
+
+    if teleported then
+        markPendingFarmHop(reason, placeId, selectedServer.id)
+    end
+
+    return teleported
 end
 
 requestServerHop = function(reason)
@@ -1635,7 +1790,7 @@ requestServerHop = function(reason)
         return false
     end
     lastHopTick = now
-    return serverHopNow()
+    return serverHopNow(reason)
 end
 
 findOwnedBoothSlot = function(boothUiFolder)
@@ -2524,7 +2679,8 @@ local function triggerLandingExplosion(humanoid)
 end
 
 local currentIdleTask = nil
-local HELICOPTER_IDLE_SPIN_SPEED = 1.5
+local HELICOPTER_IDLE_SPIN_SPEED = 2
+local HELICOPTER_IDLE_PULSE_INTERVAL = 0.02
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
 local HELICOPTER_PLAZA_ROUTE = {
@@ -2596,11 +2752,11 @@ local function startHelicopterIdleMode()
     local idleSpeed = getHelicopterIdleAngularVelocity()
     stopHelicopterIdleTask()
 
-    -- Ramp BodyAngularVelocity from 0 up to idleSpeed faster than old.lua (2s vs 6s)
+    -- Ramp BodyAngularVelocity from 0 up to idleSpeed, then switch to a rapid
+    -- pulse pattern so the idle looks like a quick spin-pause-spin cycle.
     heliBody.AngularVelocity = Vector3.new(0, 0, 0)
     currentIdleTask = task.spawn(function()
-        -- Ramp up phase
-        local rampDuration = 2
+        local rampDuration = 0.7
         local rampStart = tick()
         while tick() - rampStart < rampDuration and settings.helicopterEnabled and root.Parent do
             local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
@@ -2614,15 +2770,17 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
+        local pulseActive = true
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
+                heliBody.AngularVelocity = pulseActive and Vector3.new(0, idleSpeed, 0) or Vector3.new(0, 0, 0)
             end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                root.AssemblyAngularVelocity = pulseActive and Vector3.new(0, idleSpeed, 0) or Vector3.new(0, 0, 0)
             end)
-            task.wait(0.08)
+            pulseActive = not pulseActive
+            task.wait(HELICOPTER_IDLE_PULSE_INTERVAL)
         end
     end)
 
@@ -3120,7 +3278,7 @@ settingHandlers = {
                 notify("VC Server Hop", "verified players can use this.", 4, "vc-hop-locked", 2)
                 return
             end
-            serverHopNow()
+            serverHopNow("vc-server-hop-toggle")
         end
     end,
 }
