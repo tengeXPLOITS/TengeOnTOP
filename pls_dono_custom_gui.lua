@@ -2643,10 +2643,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 end
 
                 local baseIdleSpeed = getHelicopterIdleAngularVelocity()
-                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed)
+                local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+                local donationSpinBoost = (amount / 3) * spinMultiplier
+                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
                 
-                -- Height scaling matches old.lua
-                local riseHeight = amount * 5
+                -- Improved height scaling for stability with large donations
+                -- Uses logarithmic scaling to handle 1-10000 R$ smoothly
+                local heightFactor = math.log(math.max(1, amount)) / math.log(100)
+                local riseHeight = math.max(8, math.min(120, 15 + (heightFactor * 35)))
                 
                 local riseDuration = 6
                 local fallDuration = 8
@@ -2824,6 +2828,9 @@ local function applySpinState()
         existing:Destroy()
     end
 end
+
+
+settingHandlers = {
     helicopterEnabled = function(value)
         if value then
             startHelicopterIdleMode()
@@ -2839,15 +2846,6 @@ end
         if settings.helicopterEnabled and not currentHelicopterSpinTask then
             stopHelicopterIdleTask()
             startHelicopterIdleMode()
-        end
-    end,
-    spinSet = function()
-        applySpinState()
-    end,
-    spinSpeedMultiplier = function()
-        local spin = getSpinMover()
-        if spin then
-            spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
         end
     end,
     textUpdateToggle = function(value)
@@ -2929,7 +2927,15 @@ end
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
-
+    spinSet = function()
+        applySpinState()
+    end,
+    spinSpeedMultiplier = function()
+        local spin = getSpinMover()
+        if spin then
+            spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+        end
+    end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
         donatedSinceHopTimerReset = 0
@@ -3737,8 +3743,6 @@ task.defer(function()
     end
 end)
 
-
-
 task.spawn(function()
     while task.wait(0.8) do
         local boothLocation = getBoothLocation()
@@ -3967,8 +3971,6 @@ task.spawn(function()
         end
     end
 end)
-
-
 
 task.spawn(function()
     while task.wait(0.4) do
