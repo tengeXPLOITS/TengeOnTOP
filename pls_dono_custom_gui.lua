@@ -2542,11 +2542,18 @@ local function getHelicopterFlightDuration(amount)
     if donation >= 100 then
         local clamped = math.min(10000, donation)
         local normalized = math.clamp((math.log10(clamped) - 2) / 2, 0, 1)
-        return 250 + (120 * normalized)
+        return 52 + (28 * normalized)
     end
 
     local normalized = math.clamp((donation - 1) / 99, 0, 1)
-    return 60 + (190 * (normalized ^ 0.8))
+    return 16 + (36 * (normalized ^ 0.72))
+end
+
+local function getHelicopterRiseHeight(amount, minRiseHeight)
+    local donation = math.max(1, tonumber(amount) or 1)
+    local minimum = math.max(0, tonumber(minRiseHeight) or 0)
+    local targetHeight = 22 + (math.sqrt(donation) * 8)
+    return math.clamp(math.max(minimum, targetHeight), 28, 105)
 end
 
 local function getHelicopterSpinSpeedForAmount(amount)
@@ -2687,12 +2694,12 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                 local baseIdleSpeed = getHelicopterIdleAngularVelocity()
                 local targetSpinSpeed = math.max(getHelicopterSpinSpeedForAmount(amount), tonumber(spinSpeed) or 25)
                 local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
-                local riseHeight = math.max(minRiseHeight, amount * 5)
-                local registerDelay = math.max(0.5, tonumber(config.registerDelay) or 2.4)
-                local prepDuration = math.max(0.35, tonumber(config.prepDuration) or 0.9)
-                local groundedSpinDuration = math.max(1.5, tonumber(config.groundedSpinDuration) or math.max(3.5, tonumber(spinDuration) or 3.5))
-                local ascentDuration = math.max(4, tonumber(config.ascentDuration) or 10)
-                local landingDuration = math.max(5, tonumber(config.landingDuration) or 8)
+                local riseHeight = getHelicopterRiseHeight(amount, minRiseHeight)
+                local registerDelay = math.max(0.35, tonumber(config.registerDelay) or 1.8)
+                local prepDuration = math.max(0.3, tonumber(config.prepDuration) or 0.75)
+                local groundedSpinDuration = math.max(1.2, tonumber(config.groundedSpinDuration) or math.max(2.5, tonumber(spinDuration) or 2.5))
+                local ascentDuration = math.max(3, tonumber(config.ascentDuration) or 6.5)
+                local landingDuration = math.max(3.5, tonumber(config.landingDuration) or 5.5)
                 local flightDuration = getHelicopterFlightDuration(amount)
 
                 stopHelicopterIdleTask()
@@ -2833,9 +2840,9 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     if pendingHelicopterRaisedAmount > 0 then
                         local bonusAmount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
                         pendingHelicopterRaisedAmount = 0
-                        flightDuration = math.min(370, flightDuration + math.max(20, getHelicopterFlightDuration(bonusAmount) * 0.35))
+                        flightDuration = math.min(130, flightDuration + math.max(8, getHelicopterFlightDuration(bonusAmount) * 0.25))
                         targetSpinSpeed = math.max(targetSpinSpeed, getHelicopterSpinSpeedForAmount(bonusAmount))
-                        riseHeight = math.max(riseHeight, bonusAmount * 5)
+                        riseHeight = math.max(riseHeight, getHelicopterRiseHeight(bonusAmount, minRiseHeight))
                     end
 
                     local nextIndex = (routeIndex % #HELICOPTER_PLAZA_ROUTE) + 1
@@ -2940,12 +2947,12 @@ end
 
 local function performHelicopterDonationSequence(raisedAmount)
     performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
-        registerDelay = math.random(20, 30) / 10,
-        prepDuration = 0.95,
-        groundedSpinDuration = 4,
-        minRiseHeight = 7,
-        ascentDuration = 10,
-        landingDuration = 8
+        registerDelay = math.random(14, 20) / 10,
+        prepDuration = 0.8,
+        groundedSpinDuration = 2.8,
+        minRiseHeight = 28,
+        ascentDuration = 6.5,
+        landingDuration = 5.5
     })
 end
 
