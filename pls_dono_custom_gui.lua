@@ -30,7 +30,6 @@ if not LocalPlayer then
 end
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-local TITLE_CHARACTER_IMAGE_PATH = "C:/Users/HP/Downloads/noFilter.webp"
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -674,14 +673,6 @@ local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
-local hopFileName = "PlsDonateServerHop-Temp"
-local visitedServerIds = {}
-local hopFileHour = os.date("!*t").hour
-local hopRetryConnection
-local hopRetryTask
-local hopAttemptQueue = {}
-local hopAttemptPlaceId
-local hopAttemptActive = false
 local farmSessionStats = SharedEnv.PLS_DONO_FARM_SESSION
 if type(farmSessionStats) ~= "table" or tonumber(farmSessionStats.playerUserId) ~= tonumber(LocalPlayer.UserId) then
     farmSessionStats = {
@@ -1208,44 +1199,6 @@ local function findDetectedModPlayer()
     return nil
 end
 
-local function resolveDonorUserId(donorInfo)
-    if type(donorInfo) == "table" then
-        local directUserId = tonumber(donorInfo.userId) or 0
-        if directUserId > 0 then
-            return directUserId
-        end
-    end
-
-    local donorName = tostring((type(donorInfo) == "table" and donorInfo.name) or donorInfo or "")
-    local donorDisplay = tostring((type(donorInfo) == "table" and donorInfo.displayName) or donorName or "")
-    local donorNameLower = donorName:lower()
-    local donorDisplayLower = donorDisplay:lower()
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer then
-            local playerName = tostring(pl.Name or ""):lower()
-            local playerDisplay = tostring(pl.DisplayName or ""):lower()
-            if (donorNameLower ~= "" and donorNameLower ~= "unknown" and playerName == donorNameLower)
-                or (donorDisplayLower ~= "" and donorDisplayLower ~= "unknown" and playerDisplay == donorDisplayLower)
-                or (donorDisplayLower ~= "" and donorDisplayLower ~= "unknown" and playerName == donorDisplayLower)
-                or (donorNameLower ~= "" and donorNameLower ~= "unknown" and playerDisplay == donorNameLower) then
-                return tonumber(pl.UserId) or 0
-            end
-        end
-    end
-
-    if donorName ~= "" and donorName ~= "Unknown" then
-        local okByName, resolvedByName = pcall(function()
-            return Players:GetUserIdFromNameAsync(donorName)
-        end)
-        if okByName and tonumber(resolvedByName) and tonumber(resolvedByName) > 0 then
-            return tonumber(resolvedByName)
-        end
-    end
-
-    return 0
-end
-
 local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
     userId = tonumber(userId) or 0
     if userId <= 0 then
@@ -1289,76 +1242,6 @@ local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
     return nil
 end
 
-local function getRobloxAvatarOutfitThumbnailUrl(userId, size)
-    userId = tonumber(userId) or 0
-    if userId <= 0 then
-        return nil
-    end
-
-    local cacheKey = table.concat({"outfit", tostring(userId), tostring(size or "420x420")}, ":")
-    if avatarThumbnailCache[cacheKey] then
-        return avatarThumbnailCache[cacheKey]
-    end
-
-    local thumbSize = tostring(size or "420x420")
-    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar?userIds=%d&size=%s&format=Png&isCircular=false"):format(
-        userId,
-        HttpService:UrlEncode(thumbSize)
-    )
-
-    local ok, imageUrl = pcall(function()
-        local body = httpGetBody(endpoint)
-        if type(body) ~= "string" or body == "" then
-            return nil
-        end
-
-        local decoded = HttpService:JSONDecode(body)
-        local items = decoded and decoded.data
-        local firstItem = type(items) == "table" and items[1] or nil
-        local resolved = firstItem and firstItem.imageUrl
-        if type(resolved) == "string" and resolved ~= "" then
-            return resolved
-        end
-        return nil
-    end)
-
-    if ok and imageUrl then
-        avatarThumbnailCache[cacheKey] = imageUrl
-        return imageUrl
-    end
-
-    return nil
-end
-
-local function resolveLocalImageAsset(path)
-    local normalizedPath = tostring(path or ""):gsub("\\", "/")
-    if normalizedPath == "" then
-        return nil
-    end
-
-    local resolvers = {}
-    if type(getcustomasset) == "function" then
-        table.insert(resolvers, getcustomasset)
-    end
-    if type(getsynasset) == "function" then
-        table.insert(resolvers, getsynasset)
-    end
-    if syn and type(syn.getcustomasset) == "function" then
-        table.insert(resolvers, syn.getcustomasset)
-    end
-
-    for _, resolver in ipairs(resolvers) do
-        if resolver then
-            local ok, asset = pcall(resolver, normalizedPath)
-            if ok and type(asset) == "string" and asset ~= "" then
-                return asset
-            end
-        end
-    end
-
-    return nil
-end
-
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
         return
@@ -1369,11 +1252,8 @@ local function sendDonationWebhook(amount, donorInfo)
         return
     end
 
+    local received = math.max(0, tonumber(amount) or 0)
     local taxed = math.floor((tonumber(amount) or 0) * 0.6)
-    local donorUserId = resolveDonorUserId(donorInfo)
-    local donorAvatarUrl = getRobloxAvatarThumbnailUrl(donorUserId, "150x150", false)
-    local donorOutfitUrl = getRobloxAvatarOutfitThumbnailUrl(donorUserId, "420x420")
-    local localAvatarUrl = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", false)
     local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
     local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
     local donorLabel
@@ -1384,64 +1264,19 @@ local function sendDonationWebhook(amount, donorInfo)
     else
         donorLabel = donorDisplay
     end
-    local donorProfileUrl = donorUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(donorUserId) or nil
-    local initialMessage = donorName ~= "Unknown"
-        and ("Donation received from %s. Gathering info to show stats..."):format(donorLabel)
-        or "Donation received. Gathering info to show stats..."
-
     postWebhookJson(url, {
         username = "PLS DONATE",
-        avatar_url = donorAvatarUrl or localAvatarUrl,
-        content = initialMessage,
-    })
-
-    task.spawn(function()
-        local latestUserId = donorUserId
-        local latestAvatarUrl = donorAvatarUrl
-        local latestOutfitUrl = donorOutfitUrl
-
-        if latestUserId <= 0 then
-            for _ = 1, 4 do
-                task.wait(1)
-                latestUserId = resolveDonorUserId(donorInfo)
-                if latestUserId > 0 then
-                    break
-                end
-            end
-        end
-
-        if latestUserId > 0 then
-            latestAvatarUrl = latestAvatarUrl or getRobloxAvatarThumbnailUrl(latestUserId, "150x150", false)
-            latestOutfitUrl = latestOutfitUrl or getRobloxAvatarOutfitThumbnailUrl(latestUserId, "420x420")
-        end
-
-        local embed = {
+        content = ("Donation received from %s"):format(donorLabel),
+        embeds = {{
             color = 0x1E90FF,
             title = "Donation Stats",
-            author = {
-                name = donorLabel,
-                url = latestUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(latestUserId) or donorProfileUrl,
-                icon_url = latestAvatarUrl or localAvatarUrl,
-            },
-            thumbnail = {
-                url = latestOutfitUrl or latestAvatarUrl or localAvatarUrl,
-            },
             fields = {
-                {name = "Robux Received", value = string.format("%d", tonumber(amount) or 0), inline = true},
+                {name = "Donor", value = donorLabel, inline = false},
+                {name = "Robux Received", value = string.format("%d", received), inline = true},
                 {name = "After Tax", value = string.format("%d", taxed), inline = true},
             },
-        }
-
-        postWebhookJson(url, {
-            username = "PLS DONATE",
-            avatar_url = latestAvatarUrl or localAvatarUrl,
-            embeds = {embed},
-        })
-    end)
-end
-
-local function notifyWebhookAfterHop()
-    -- Removed: webhookAfterSH setting no longer exists
+        }},
+    })
 end
 
 if pendingFarmSummaryHopCount then
@@ -1836,18 +1671,6 @@ local function collectUnclaimedBooths(boothUiFolder, interactionsFolder)
     end
 
     return unclaimed
-end
-
-local function getBoothStandingOffset()
-    local stand = tostring(settings.standingPosition or "Front")
-    if stand == "Left" then
-        return -6, 0
-    elseif stand == "Right" then
-        return 6, 0
-    elseif stand == "Behind" then
-        return 0, 6
-    end
-    return 0, -4
 end
 
 local function findBoothPartBySlot(slot)
@@ -2680,7 +2503,9 @@ end
 
 local currentIdleTask = nil
 local HELICOPTER_IDLE_SPIN_SPEED = 2
-local HELICOPTER_IDLE_PULSE_INTERVAL = 0.02
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
+local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.35
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
 local HELICOPTER_PLAZA_ROUTE = {
@@ -2770,17 +2595,28 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        local pulseActive = true
+        local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = pulseActive and Vector3.new(0, idleSpeed, 0) or Vector3.new(0, 0, 0)
+                heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
             end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = pulseActive and Vector3.new(0, idleSpeed, 0) or Vector3.new(0, 0, 0)
             end)
-            pulseActive = not pulseActive
-            task.wait(HELICOPTER_IDLE_PULSE_INTERVAL)
+            task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
+
+            if not settings.helicopterEnabled or not root.Parent then
+                break
+            end
+
+            if heliBody and heliBody.Parent then
+                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+            task.wait(HELICOPTER_IDLE_PULSE_PAUSE_DURATION)
         end
     end)
 
@@ -3097,10 +2933,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
             restoreIdleMode()
         end
     end)
-end
-
-local function performHelicopterSpin(spinDuration, spinSpeed)
-    performHelicopterBurst(1, spinSpeed, spinDuration)
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
