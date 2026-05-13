@@ -8,10 +8,6 @@ repeat
     task.wait()
 until game:IsLoaded()
 
-if game.PlaceId ~= 8737602449 and game.PlaceId ~= 8943844393 then
-    return
-end
-
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
@@ -30,6 +26,8 @@ if not LocalPlayer then
 end
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
+local VC_PLS_DONATE_PLACE_ID = 8943844393
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -323,8 +321,135 @@ local function resolveGuiParent()
     return nil
 end
 
+local function queueScriptOnTeleport()
+    local queueOnTeleport = (syn and syn.queue_on_teleport)
+        or queue_on_teleport
+        or queueonteleport
+        or (fluxus and fluxus.queue_on_teleport)
+    if not queueOnTeleport then
+        return false
+    end
+
+    if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
+        return pcall(function()
+            queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
+        end)
+    elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
+        local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
+        return pcall(function()
+            queueOnTeleport(source)
+        end)
+    end
+
+    return false
+end
+
 local GuiParent = resolveGuiParent()
 if not GuiParent then
+    return
+end
+
+if game.PlaceId ~= DEFAULT_PLS_DONATE_PLACE_ID and game.PlaceId ~= VC_PLS_DONATE_PLACE_ID then
+    local existingPrompt = GuiParent:FindFirstChild("PlsDonoExclusivePrompt")
+    if existingPrompt then
+        existingPrompt:Destroy()
+    end
+
+    local promptGui = Instance.new("ScreenGui")
+    promptGui.Name = "PlsDonoExclusivePrompt"
+    promptGui.ResetOnSpawn = false
+    promptGui.IgnoreGuiInset = true
+    promptGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    promptGui.DisplayOrder = 1000
+    promptGui.Parent = GuiParent
+
+    local overlay = Instance.new("Frame")
+    overlay.Size = UDim2.fromScale(1, 1)
+    overlay.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+    overlay.BackgroundTransparency = 0.25
+    overlay.BorderSizePixel = 0
+    overlay.Parent = promptGui
+
+    local modal = Instance.new("Frame")
+    modal.Size = UDim2.new(0, 360, 0, 190)
+    modal.AnchorPoint = Vector2.new(0.5, 0.5)
+    modal.Position = UDim2.fromScale(0.5, 0.5)
+    modal.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+    modal.BorderSizePixel = 0
+    modal.Parent = overlay
+
+    local modalCorner = Instance.new("UICorner")
+    modalCorner.CornerRadius = UDim.new(0, 10)
+    modalCorner.Parent = modal
+
+    local modalStroke = Instance.new("UIStroke")
+    modalStroke.Thickness = 1
+    modalStroke.Color = Color3.fromRGB(62, 62, 74)
+    modalStroke.Parent = modal
+
+    local messageBox = Instance.new("TextBox")
+    messageBox.Size = UDim2.new(1, -28, 0, 78)
+    messageBox.Position = UDim2.new(0, 14, 0, 18)
+    messageBox.BackgroundColor3 = Color3.fromRGB(34, 34, 42)
+    messageBox.TextColor3 = Color3.fromRGB(238, 238, 242)
+    messageBox.PlaceholderText = ""
+    messageBox.ClearTextOnFocus = false
+    messageBox.MultiLine = true
+    messageBox.TextWrapped = true
+    messageBox.TextEditable = false
+    messageBox.Font = Enum.Font.GothamSemibold
+    messageBox.TextSize = 16
+    messageBox.Text = "this script is exclusive for pls donate"
+    messageBox.Parent = modal
+
+    local messageCorner = Instance.new("UICorner")
+    messageCorner.CornerRadius = UDim.new(0, 8)
+    messageCorner.Parent = messageBox
+
+    local buttonHolder = Instance.new("Frame")
+    buttonHolder.BackgroundTransparency = 1
+    buttonHolder.Size = UDim2.new(1, -28, 0, 42)
+    buttonHolder.Position = UDim2.new(0, 14, 1, -58)
+    buttonHolder.Parent = modal
+
+    local buttonLayout = Instance.new("UIListLayout")
+    buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+    buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    buttonLayout.Padding = UDim.new(0, 12)
+    buttonLayout.Parent = buttonHolder
+
+    local function createPromptButton(text, backgroundColor)
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(0.5, -6, 1, 0)
+        button.BackgroundColor3 = backgroundColor
+        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.Font = Enum.Font.GothamSemibold
+        button.TextSize = 14
+        button.Text = text
+        button.AutoButtonColor = true
+        button.Parent = buttonHolder
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = button
+
+        return button
+    end
+
+    local joinButton = createPromptButton("join game", Color3.fromRGB(38, 118, 255))
+    local stayButton = createPromptButton("stay in current game", Color3.fromRGB(68, 68, 80))
+
+    joinButton.MouseButton1Click:Connect(function()
+        joinButton.Active = false
+        stayButton.Active = false
+        queueScriptOnTeleport()
+        TeleportService:Teleport(DEFAULT_PLS_DONATE_PLACE_ID, LocalPlayer)
+    end)
+
+    stayButton.MouseButton1Click:Connect(function()
+        promptGui:Destroy()
+    end)
+
     return
 end
 
@@ -1825,22 +1950,7 @@ local function claimBoothNow()
 end
 
 do
-    local queueOnTeleport = (syn and syn.queue_on_teleport)
-        or queue_on_teleport
-        or queueonteleport
-        or (fluxus and fluxus.queue_on_teleport)
-    if queueOnTeleport then
-        if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
-            pcall(function()
-                queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
-            end)
-        elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
-            local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
-            pcall(function()
-                queueOnTeleport(source)
-            end)
-        end
-    end
+    queueScriptOnTeleport()
 end
 
 do
@@ -2502,10 +2612,10 @@ local function triggerLandingExplosion(humanoid)
 end
 
 local currentIdleTask = nil
-local HELICOPTER_IDLE_SPIN_SPEED = 2
+local HELICOPTER_IDLE_SPIN_SPEED = 2.7
 local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
 local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
-local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.35
+local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
 local HELICOPTER_PLAZA_ROUTE = {
