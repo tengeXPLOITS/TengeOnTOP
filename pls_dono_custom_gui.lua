@@ -2659,15 +2659,18 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                 end
 
                 local baseIdleSpeed = getHelicopterIdleAngularVelocity()
-                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed)
-                local riseHeightScale = math.max(1, tonumber(config.riseHeightScale) or 2)
+                local targetSpinSpeed = math.max(baseIdleSpeed + 5, tonumber(spinSpeed) or baseIdleSpeed)
+                local riseHeightScale = math.max(1, tonumber(config.riseHeightScale) or 1.35)
                 local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
-                local maxRiseHeight = math.max(minRiseHeight, tonumber(config.maxRiseHeight) or 24)
+                local maxRiseHeight = math.max(minRiseHeight, tonumber(config.maxRiseHeight) or 16)
                 local riseHeight = math.clamp(math.max(minRiseHeight, amount * riseHeightScale), minRiseHeight, maxRiseHeight)
-                local launchDelay = math.max(0, tonumber(config.preLaunchDelay) or 0)
-                local riseDuration = math.max(1.5, tonumber(config.riseDuration) or 6)
-                local fallDuration = math.max(2.5, tonumber(config.fallDuration) or 8)
-                local totalDuration = riseDuration + fallDuration
+                local registerDelay = math.max(0.5, tonumber(config.registerDelay) or 2.4)
+                local prepDuration = math.max(0.35, tonumber(config.prepDuration) or 0.9)
+                local groundedSpinDuration = math.max(0.8, tonumber(config.groundedSpinDuration) or math.max(1.5, tonumber(spinDuration) or 1.8))
+                local ascentDuration = math.max(1.5, tonumber(config.ascentDuration) or 3.2)
+                local glideDuration = math.max(1.5, tonumber(config.glideDuration) or 2.4)
+                local departureDuration = math.max(1.5, tonumber(config.departureDuration) or 2.1)
+                local totalDuration = ascentDuration + glideDuration + departureDuration
 
                 stopHelicopterIdleTask()
 
@@ -2676,66 +2679,91 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     heliBody = Instance.new("BodyAngularVelocity")
                     heliBody.Name = "HL1__HELI"
                     heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
-                    heliBody.AngularVelocity = Vector3.new(0, getHelicopterIdleAngularVelocity(), 0)
+                    heliBody.AngularVelocity = Vector3.new(0, baseIdleSpeed, 0)
                     heliBody.Parent = root
                 end
 
+                local holdCF = root.CFrame
+                local holdStart = tick()
+                while tick() - holdStart < registerDelay and char.Parent and root.Parent do
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    root.CFrame = holdCF
+                    task.wait()
+                end
+
+                local prepTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or holdCF
                 if burstIndex == 1 then
-                    sendChatMessage("Enabling engines...")
+                    sendChatMessage("Preparing for takeoff...")
                 else
-                    sendChatMessage("Boosting flight...")
+                    sendChatMessage("Adjusting for departure...")
                 end
 
-                task.spawn(function()
-                    local rampStart = tick()
-                    local rampDuration = math.max(0.35, tonumber(spinDuration) or 1.8)
-                    local fromSpeed = heliBody.AngularVelocity.Y
-                    local toSpeed = math.max(baseIdleSpeed + 2, targetSpinSpeed)
-                    while tick() - rampStart < rampDuration and heliBody and heliBody.Parent do
-                        local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
-                        local easedT = t * t * t
-                        heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * easedT, 0)
-                        task.wait()
-                    end
+                local prepStart = tick()
+                while tick() - prepStart < prepDuration and char.Parent and root.Parent do
+                    local t = math.clamp((tick() - prepStart) / prepDuration, 0, 1)
+                    local easedT = 1 - ((1 - t) * (1 - t))
+                    root.CFrame = holdCF:Lerp(prepTargetCF, easedT)
                     if heliBody and heliBody.Parent then
-                        heliBody.AngularVelocity = Vector3.new(0, toSpeed, 0)
+                        local prepSpin = baseIdleSpeed + (1.25 * easedT)
+                        heliBody.AngularVelocity = Vector3.new(0, prepSpin, 0)
                     end
-                end)
-
-                local prepTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or nil
-                if prepTargetCF then
-                    root.CFrame = prepTargetCF
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    task.wait()
                 end
+                root.CFrame = prepTargetCF
 
-                local startPos = prepTargetCF and prepTargetCF.Position or root.Position
-                local startRot = (prepTargetCF and (prepTargetCF - prepTargetCF.Position)) or (root.CFrame - root.CFrame.Position)
+                local startPos = prepTargetCF.Position
+                local startRot = prepTargetCF - prepTargetCF.Position
+                local forwardDir = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
+                if forwardDir.Magnitude < 0.001 then
+                    forwardDir = Vector3.new(0, 0, -1)
+                end
+                forwardDir = forwardDir.Unit
+
+                local sideDir = Vector3.new(prepTargetCF.RightVector.X, 0, prepTargetCF.RightVector.Z)
+                if sideDir.Magnitude < 0.001 then
+                    sideDir = Vector3.new(1, 0, 0)
+                end
+                sideDir = sideDir.Unit * (((claimedBoothSlot or 1) % 2 == 0) and 1 or -1)
+
+                local outwardDistance = math.max(34, math.min(56, riseHeight * 3.2))
+                local ascentForwardDistance = outwardDistance * 0.16
+                local glideForwardDistance = outwardDistance * 0.46
+                local sidewaysLiftDistance = math.min(5.5, 2.5 + (amount * 0.12))
+                local sidewaysGlideDistance = sidewaysLiftDistance + math.min(5, 1.75 + (amount * 0.08))
+                local finalSideDistance = sidewaysGlideDistance + 2.5
+                local cruiseHeight = riseHeight + math.min(5, 2 + (amount * 0.1))
+                local exitHeight = cruiseHeight + 1.5
                 local yaw = 0
+                local lastSpinTick = tick()
 
-                if launchDelay > 0 then
-                    sendChatMessage(burstIndex == 1 and "Spooling up..." or "Holding for lift...")
-                    local launchStart = tick()
-                    local lastSpinTick = tick()
-                    while tick() - launchStart < launchDelay and char.Parent and root.Parent do
-                        local currentAngular = 0
-                        if heliBody and heliBody.Parent then
-                            currentAngular = heliBody.AngularVelocity.Y
-                        end
-                        local now = tick()
-                        local dt = now - lastSpinTick
-                        lastSpinTick = now
-                        yaw += currentAngular * dt
-                        pcall(function()
-                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                        end)
-                        root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
-                        task.wait()
+                sendChatMessage("Spooling up...")
+                local spoolStart = tick()
+                local spoolFromSpeed = math.max(0.35, baseIdleSpeed * 0.7)
+                while tick() - spoolStart < groundedSpinDuration and char.Parent and root.Parent do
+                    local now = tick()
+                    local dt = now - lastSpinTick
+                    lastSpinTick = now
+                    local t = math.clamp((now - spoolStart) / groundedSpinDuration, 0, 1)
+                    local spoolCurve = t * t * t
+                    local currentSpinSpeed = spoolFromSpeed + ((targetSpinSpeed - spoolFromSpeed) * spoolCurve)
+                    yaw += currentSpinSpeed * dt
+                    if heliBody and heliBody.Parent then
+                        heliBody.AngularVelocity = Vector3.new(0, currentSpinSpeed, 0)
                     end
-                elseif burstIndex > 1 then
-                    task.wait(0.35)
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
+                    task.wait()
                 end
-
-                local currentSpinSpeed = targetSpinSpeed
 
                 local existingHeli = root:FindFirstChild("HL1__HELI")
                 if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
@@ -2744,23 +2772,38 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 
                 local startTick = tick()
                 local lastFrameTick = startTick
+                local finalTargetPos = startPos
                 while tick() - startTick < totalDuration and char.Parent and root.Parent do
                     local now = tick()
                     local elapsed = now - startTick
                     local dt = now - lastFrameTick
                     lastFrameTick = now
-                    local yOffset
-                    local spinSpeedAtFrame = currentSpinSpeed
+                    local forwardOffset = 0
+                    local sideOffset = 0
+                    local heightOffset = 0
+                    local spinSpeedAtFrame = targetSpinSpeed
 
-                    if elapsed < riseDuration then
-                        local p = math.clamp(elapsed / riseDuration, 0, 1)
-                        local easedRise = p * p
-                        yOffset = riseHeight * easedRise
+                    if elapsed < ascentDuration then
+                        local p = math.clamp(elapsed / ascentDuration, 0, 1)
+                        local easedUp = p * p
+                        forwardOffset = ascentForwardDistance * easedUp
+                        sideOffset = sidewaysLiftDistance * easedUp
+                        heightOffset = riseHeight * easedUp
+                        spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * easedUp)
+                    elseif elapsed < (ascentDuration + glideDuration) then
+                        local p = math.clamp((elapsed - ascentDuration) / glideDuration, 0, 1)
+                        local smoothP = p * p * (3 - (2 * p))
+                        forwardOffset = ascentForwardDistance + ((glideForwardDistance - ascentForwardDistance) * smoothP)
+                        sideOffset = sidewaysLiftDistance + ((sidewaysGlideDistance - sidewaysLiftDistance) * smoothP)
+                        heightOffset = riseHeight + ((cruiseHeight - riseHeight) * smoothP)
+                        spinSpeedAtFrame = targetSpinSpeed + (1.5 * smoothP)
                     else
-                        local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
-                        local descentCurve = 1 - (p * p * (3 - (2 * p)))
-                        yOffset = riseHeight * descentCurve
-                        spinSpeedAtFrame = baseIdleSpeed + ((currentSpinSpeed - baseIdleSpeed) * descentCurve)
+                        local p = math.clamp((elapsed - ascentDuration - glideDuration) / departureDuration, 0, 1)
+                        local accelP = p * p
+                        forwardOffset = glideForwardDistance + ((outwardDistance - glideForwardDistance) * accelP)
+                        sideOffset = sidewaysGlideDistance + ((finalSideDistance - sidewaysGlideDistance) * accelP)
+                        heightOffset = cruiseHeight + ((exitHeight - cruiseHeight) * accelP)
+                        spinSpeedAtFrame = (targetSpinSpeed + 1.5) + (3 * accelP)
                     end
 
                     yaw += spinSpeedAtFrame * dt
@@ -2769,13 +2812,16 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                     end)
 
-                    local targetPos = Vector3.new(startPos.X, startPos.Y + yOffset, startPos.Z)
-                    root.CFrame = CFrame.new(targetPos) * startRot * CFrame.Angles(0, yaw, 0)
+                    finalTargetPos = startPos
+                        + (forwardDir * forwardOffset)
+                        + (sideDir * sideOffset)
+                        + Vector3.new(0, heightOffset, 0)
+                    root.CFrame = CFrame.new(finalTargetPos) * startRot * CFrame.Angles(0, yaw, 0)
                     task.wait()
                 end
 
                 if char.Parent and root.Parent then
-                    root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
+                    root.CFrame = CFrame.new(finalTargetPos) * startRot * CFrame.Angles(0, yaw, 0)
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -2814,12 +2860,15 @@ end
 
 local function performHelicopterDonationSequence(raisedAmount)
     performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
-        preLaunchDelay = math.random(30, 50) / 10,
-        riseHeightScale = 1.6,
-        minRiseHeight = 8,
-        maxRiseHeight = 18,
-        riseDuration = 6,
-        fallDuration = 7
+        registerDelay = math.random(20, 30) / 10,
+        prepDuration = 0.95,
+        groundedSpinDuration = 2.1,
+        riseHeightScale = 1.15,
+        minRiseHeight = 7,
+        maxRiseHeight = 14,
+        ascentDuration = 3.4,
+        glideDuration = 2.3,
+        departureDuration = 2.25
     })
 end
 
