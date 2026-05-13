@@ -373,10 +373,7 @@ local defaults = {
     maxPlayerCount = 24,
     AnonymousMode = false,
     vcServerHopToggle = false,
-    spinSet = false,
-    spinSpeedMultiplier = 1,
     helicopterEnabled = false,
-    helicopterSpeed = 1,
     helicopterDieAfterLanding = false,
     testDonationAmount = 6,
 }
@@ -445,6 +442,8 @@ local function migrateLegacySettings(data)
     data.animSpeedPerRobux = nil
     data.render = nil
     data.helicopterShowPlatform = nil
+    data.helicopterSpeed = nil
+    data.spinSpeedMultiplier = nil
     return data
 end
 
@@ -2511,10 +2510,12 @@ local function triggerLandingExplosion(humanoid)
 end
 
 local currentIdleTask = nil
+local HELICOPTER_IDLE_SPIN_SPEED = 1
+local HELICOPTER_TAKEOFF_SPIN_SPEED = 20
+local SPIN_DONATION_BASE_SPEED = 0.25
 
 local function getHelicopterIdleAngularVelocity()
-    local speedScale = math.max(0.5, tonumber(settings.helicopterSpeed) or 1)
-    return math.max(2, 4 * speedScale)
+    return HELICOPTER_IDLE_SPIN_SPEED
 end
 
 local function stopHelicopterIdleTask()
@@ -2583,7 +2584,7 @@ local function startHelicopterIdleMode()
     end)
 end
 
-local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
+local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, burstConfig)
     pendingHelicopterRaisedAmount += math.max(1, tonumber(raisedAmount) or 1)
     if currentHelicopterSpinTask then
         return
@@ -2591,6 +2592,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
 
     currentHelicopterSpinTask = task.spawn(function()
         local burstIndex = 0
+        local config = type(burstConfig) == "table" and burstConfig or {}
 
         local function restoreIdleMode()
             if settings.helicopterEnabled and not currentHelicopterSpinTask then
@@ -2643,17 +2645,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                 end
 
                 local baseIdleSpeed = getHelicopterIdleAngularVelocity()
-                local spinMultiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-                local donationSpinBoost = (amount / 3) * spinMultiplier
-                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed) + donationSpinBoost
-                
-                -- Improved height scaling for stability with large donations
-                -- Uses logarithmic scaling to handle 1-10000 R$ smoothly
-                local heightFactor = math.log(math.max(1, amount)) / math.log(100)
-                local riseHeight = math.max(8, math.min(120, 15 + (heightFactor * 35)))
-                
-                local riseDuration = 6
-                local fallDuration = 8
+                local targetSpinSpeed = math.max(baseIdleSpeed, tonumber(spinSpeed) or baseIdleSpeed)
+                local riseHeightScale = math.max(1, tonumber(config.riseHeightScale) or 3)
+                local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
+                local maxRiseHeight = math.max(minRiseHeight, tonumber(config.maxRiseHeight) or 36)
+                local riseHeight = math.clamp(math.max(minRiseHeight, amount * riseHeightScale), minRiseHeight, maxRiseHeight)
+                local launchDelay = math.max(0, tonumber(config.preLaunchDelay) or 0)
+                local riseDuration = math.max(1.5, tonumber(config.riseDuration) or 6)
+                local fallDuration = math.max(2.5, tonumber(config.fallDuration) or 8)
                 local totalDuration = riseDuration + fallDuration
 
                 stopHelicopterIdleTask()
@@ -2675,12 +2674,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
 
                 task.spawn(function()
                     local rampStart = tick()
-                    local rampDuration = math.max(1.2, tonumber(spinDuration) or 1.8)
+                    local rampDuration = math.max(0.35, tonumber(spinDuration) or 1.8)
                     local fromSpeed = heliBody.AngularVelocity.Y
                     local toSpeed = math.max(baseIdleSpeed + 2, targetSpinSpeed)
                     while tick() - rampStart < rampDuration and heliBody and heliBody.Parent do
                         local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
-                        heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * t, 0)
+                        local easedT = 1 - ((1 - t) * (1 - t) * (1 - t))
+                        heliBody.AngularVelocity = Vector3.new(0, fromSpeed + (toSpeed - fromSpeed) * easedT, 0)
                         task.wait()
                     end
                     if heliBody and heliBody.Parent then
@@ -2688,26 +2688,33 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                     end
                 end)
 
-                if burstIndex == 1 then
-                    task.wait(3)
-                    sendChatMessage("TAKE OFF IN 3")
-                    task.wait(1)
-                    sendChatMessage("2")
-                    task.wait(1)
-                    sendChatMessage("1")
-                    task.wait(1)
-                else
-                    task.wait(0.35)
-                end
-
                 local startPos = root.Position
                 local startRot = root.CFrame - root.CFrame.Position
                 local yaw = 0
+
+                if launchDelay > 0 then
+                    sendChatMessage(burstIndex == 1 and "Spooling up..." or "Holding for lift...")
+                    local launchStart = tick()
+                    while tick() - launchStart < launchDelay and char.Parent and root.Parent do
+                        local currentAngular = 0
+                        if heliBody and heliBody.Parent then
+                            currentAngular = heliBody.AngularVelocity.Y
+                        end
+                        yaw += currentAngular
+                        pcall(function()
+                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        end)
+                        root.CFrame = CFrame.new(startPos) * (startRot * CFrame.Angles(0, yaw, 0))
+                        task.wait()
+                    end
+                elseif burstIndex > 1 then
+                    task.wait(0.35)
+                end
+
                 local currentSpinSpeed = targetSpinSpeed
 
                 local existingHeli = root:FindFirstChild("HL1__HELI")
                 if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
-                    yaw = existingHeli.AngularVelocity.Y * 0.016
                     existingHeli:Destroy()
                 end
 
@@ -2718,17 +2725,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration)
                     local spinSpeedAtFrame = currentSpinSpeed
 
                     if elapsed < riseDuration then
-                        -- Rise phase with quadratic easing
                         local p = math.clamp(elapsed / riseDuration, 0, 1)
-                        yOffset = riseHeight * (p * p)
+                        local easedRise = 1 - ((1 - p) * (1 - p) * (1 - p))
+                        yOffset = riseHeight * easedRise
                     else
-                        -- Fall phase with smooth deceleration
                         local p = math.clamp((elapsed - riseDuration) / fallDuration, 0, 1)
-                        local inv = 1 - p
-                        yOffset = riseHeight * (inv * inv)
-                        
-                        -- Smooth spin speed deceleration during landing
-                        spinSpeedAtFrame = currentSpinSpeed * (inv * inv)
+                        local descentCurve = 1 - (p * p * (3 - (2 * p)))
+                        yOffset = riseHeight * descentCurve
+                        spinSpeedAtFrame = baseIdleSpeed + ((currentSpinSpeed - baseIdleSpeed) * descentCurve)
                     end
 
                     yaw += spinSpeedAtFrame
@@ -2781,9 +2785,14 @@ local function performHelicopterSpin(spinDuration, spinSpeed)
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
-    local speedScale = math.max(0.5, tonumber(settings.helicopterSpeed) or 1)
-    local spinSpeed = 0.55 * speedScale
-    performHelicopterBurst(raisedAmount, spinSpeed, 1.8)
+    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
+        preLaunchDelay = math.random(30, 50) / 10,
+        riseHeightScale = 2.5,
+        minRiseHeight = 10,
+        maxRiseHeight = 30,
+        riseDuration = 5,
+        fallDuration = 7
+    })
 end
 
 local function getCharacterHumanoidRoot()
@@ -2794,7 +2803,7 @@ local function getCharacterHumanoidRoot()
 end
 
 local function getSpinAngularVelocity()
-    return 0.25 * math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+    return SPIN_DONATION_BASE_SPEED
 end
 
 local function getSpinMover()
@@ -2838,14 +2847,6 @@ settingHandlers = {
             stopHelicopterIdleTask()
             stopHelicopterSpin()
             stopAstronautIdle()
-        end
-    end,
-    helicopterSpeed = function(value)
-        local parsed = math.max(0.5, tonumber(value) or 1)
-        settings.helicopterSpeed = parsed
-        if settings.helicopterEnabled and not currentHelicopterSpinTask then
-            stopHelicopterIdleTask()
-            startHelicopterIdleMode()
         end
     end,
     textUpdateToggle = function(value)
@@ -2929,12 +2930,6 @@ settingHandlers = {
     end,
     spinSet = function()
         applySpinState()
-    end,
-    spinSpeedMultiplier = function()
-        local spin = getSpinMover()
-        if spin then
-            spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
-        end
     end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
@@ -3661,10 +3656,8 @@ local function buildSettingsTabs()
     do
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
-        createTextBox(mainSection, "Helicopter Spin Speed", "helicopterSpeed", true)
         createToggle(mainSection, "Die After Landing", "helicopterDieAfterLanding")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
-        createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
@@ -3854,9 +3847,8 @@ task.spawn(function()
         if settings.spinSet then
             local spin = getSpinMover()
             if spin then
-                local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
                 local averageDelta = delta / 3
-                local nextVelocity = (averageDelta * multiplier) + spin.AngularVelocity.Y
+                local nextVelocity = averageDelta + spin.AngularVelocity.Y
                 spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
             else
                 applySpinState()
