@@ -399,7 +399,7 @@ local defaults = {
     testDonationAmount = 6,
 
     partModuleEnabled = false,
-    partModuleSource = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/part%20of%20pls%20dono.lua",
+    partModuleSource = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/main/part%20of%20pls%20dono.lua",
     boothMonitoringEnabled = false,
     boothAskIntervalMin = 200,
     boothAskIntervalMax = 400,
@@ -1142,7 +1142,15 @@ loadPartModule = function(source)
 
     local code = rawSource
     if rawSource:match("^https?://") then
-        local fetched = httpGetBody(rawSource)
+        local normalizedUrl = rawSource
+        if normalizedUrl:match("https?://raw%.githubusercontent%.com/.+/refs/heads/.+" ) then
+            normalizedUrl = normalizedUrl:gsub("/refs/heads/", "/")
+        end
+        if normalizedUrl:match("https?://github%.com/.+/.+/blob/.+") then
+            normalizedUrl = normalizedUrl:gsub("https?://github%.com/", "https://raw.githubusercontent.com/"):gsub("/blob/", "/")
+        end
+
+        local fetched = httpGetBody(normalizedUrl)
         if type(fetched) ~= "string" or fetched == "" then
             notify("Part Module", "Failed to fetch part module from URL.", 4, "part-module-fetch-fail", 5)
             return false
@@ -1151,7 +1159,7 @@ loadPartModule = function(source)
     end
 
     code = tostring(code or "")
-    code = code:gsub("^\s+", ""):gsub("\s+$", "")
+    code = code:gsub("^%s+", ""):gsub("%s+$", "")
     code = code:gsub("^\239\187\191", "")
 
     local loader = loadstring or load
@@ -2338,8 +2346,8 @@ end
 local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 0, 0, 30)
+    btn.AutomaticSize = Enum.AutomaticSize.None
+    btn.Size = UDim2.new(0, 110, 0, 32)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -2352,8 +2360,8 @@ local function createTab(name, buttonText)
     createCorner(btn, 8)
 
     local btnPadding = Instance.new("UIPadding")
-    btnPadding.PaddingLeft = UDim.new(0, 10)
-    btnPadding.PaddingRight = UDim.new(0, 10)
+    btnPadding.PaddingLeft = UDim.new(0, 12)
+    btnPadding.PaddingRight = UDim.new(0, 12)
     btnPadding.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
