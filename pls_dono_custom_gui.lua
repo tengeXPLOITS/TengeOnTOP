@@ -347,114 +347,6 @@ if not GuiParent then
     return
 end
 
-if game.PlaceId ~= DEFAULT_PLS_DONATE_PLACE_ID and game.PlaceId ~= VC_PLS_DONATE_PLACE_ID then
-    local existingPrompt = GuiParent:FindFirstChild("PlsDonoExclusivePrompt")
-    if existingPrompt then
-        existingPrompt:Destroy()
-    end
-
-    local promptGui = Instance.new("ScreenGui")
-    promptGui.Name = "PlsDonoExclusivePrompt"
-    promptGui.ResetOnSpawn = false
-    promptGui.IgnoreGuiInset = true
-    promptGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    promptGui.DisplayOrder = 1000
-    promptGui.Parent = GuiParent
-
-    local overlay = Instance.new("Frame")
-    overlay.Size = UDim2.fromScale(1, 1)
-    overlay.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-    overlay.BackgroundTransparency = 0.25
-    overlay.BorderSizePixel = 0
-    overlay.Parent = promptGui
-
-    local modal = Instance.new("Frame")
-    modal.Size = UDim2.new(0, 360, 0, 190)
-    modal.AnchorPoint = Vector2.new(0.5, 0.5)
-    modal.Position = UDim2.fromScale(0.5, 0.5)
-    modal.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
-    modal.BorderSizePixel = 0
-    modal.Parent = overlay
-
-    local modalCorner = Instance.new("UICorner")
-    modalCorner.CornerRadius = UDim.new(0, 2)
-    modalCorner.Parent = modal
-
-    local modalStroke = Instance.new("UIStroke")
-    modalStroke.Thickness = 1
-    modalStroke.Color = Color3.fromRGB(62, 62, 74)
-    modalStroke.Parent = modal
-
-    local messageBox = Instance.new("TextBox")
-    messageBox.Size = UDim2.new(1, -28, 0, 78)
-    messageBox.Position = UDim2.new(0, 14, 0, 18)
-    messageBox.BackgroundColor3 = Color3.fromRGB(34, 34, 42)
-    messageBox.TextColor3 = Color3.fromRGB(238, 238, 242)
-    messageBox.PlaceholderText = ""
-    messageBox.ClearTextOnFocus = false
-    messageBox.MultiLine = true
-    messageBox.TextWrapped = true
-    messageBox.TextEditable = false
-    messageBox.Font = Enum.Font.GothamSemibold
-    messageBox.TextSize = 16
-    messageBox.Text = "this script is exclusive for pls donate"
-    messageBox.Parent = modal
-    messageBox.TextStrokeColor3 = Color3.fromRGB(168, 255, 183)
-    messageBox.TextStrokeTransparency = 0.88
-
-    local messageCorner = Instance.new("UICorner")
-    messageCorner.CornerRadius = UDim.new(0, 2)
-    messageCorner.Parent = messageBox
-
-    local buttonHolder = Instance.new("Frame")
-    buttonHolder.BackgroundTransparency = 1
-    buttonHolder.Size = UDim2.new(1, -28, 0, 42)
-    buttonHolder.Position = UDim2.new(0, 14, 1, -58)
-    buttonHolder.Parent = modal
-
-    local buttonLayout = Instance.new("UIListLayout")
-    buttonLayout.FillDirection = Enum.FillDirection.Horizontal
-    buttonLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    buttonLayout.Padding = UDim.new(0, 12)
-    buttonLayout.Parent = buttonHolder
-
-    local function createPromptButton(text, backgroundColor)
-        local button = Instance.new("TextButton")
-        button.Size = UDim2.new(0.5, -6, 1, 0)
-        button.BackgroundColor3 = backgroundColor
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
-        button.Font = Enum.Font.GothamSemibold
-        button.TextSize = 14
-        button.Text = text
-        button.AutoButtonColor = true
-        button.Parent = buttonHolder
-        button.TextStrokeColor3 = Color3.fromRGB(168, 255, 183)
-        button.TextStrokeTransparency = 0.84
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 2)
-        corner.Parent = button
-
-        return button
-    end
-
-    local joinButton = createPromptButton("join game", Color3.fromRGB(38, 118, 255))
-    local stayButton = createPromptButton("stay in current game", Color3.fromRGB(68, 68, 80))
-
-    joinButton.MouseButton1Click:Connect(function()
-        joinButton.Active = false
-        stayButton.Active = false
-        queueScriptOnTeleport()
-        TeleportService:Teleport(DEFAULT_PLS_DONATE_PLACE_ID, LocalPlayer)
-    end)
-
-    stayButton.MouseButton1Click:Connect(function()
-        promptGui:Destroy()
-    end)
-
-    return
-end
-
 if SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED and GuiParent:FindFirstChild("PlsDonoCustomGui") then
     return
 end
@@ -2315,15 +2207,24 @@ local tabPages = {}
 local activeTab
 local settingHandlers
 
+local function setTabVisualState(btn, active)
+    if not btn then
+        return
+    end
+    btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
+    btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(205, 205, 210)
+    local activeBar = btn:FindFirstChild("ActiveBar")
+    if activeBar then
+        activeBar.Visible = active
+    end
+end
+
 local function activateTab(name)
     for tabName, page in pairs(tabPages) do
         local btn = tabButtons[tabName]
         local isActive = tabName == name
         page.Visible = isActive
-        if btn then
-            btn.BackgroundColor3 = isActive and THEME.tabActive or THEME.tabIdle
-            btn.TextColor3 = isActive and Color3.fromRGB(255, 255, 255) or THEME.controlText
-        end
+        setTabVisualState(btn, isActive)
     end
     activeTab = name
 end
@@ -2334,24 +2235,46 @@ local function createTab(name, buttonText)
     btn.AutomaticSize = Enum.AutomaticSize.X
     btn.Size = UDim2.new(0, 120, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
-    btn.TextColor3 = THEME.controlText
+    btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
+    btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
+    btn.AutoButtonColor = false
     btn.Parent = tabHolder
     applyTextGlow(btn, GLOW_COLOR, 0.86)
 
-    createCorner(btn, 2)
+    createCorner(btn, 8)
 
     local btnPadding = Instance.new("UIPadding")
-    btnPadding.PaddingLeft = UDim.new(0, 10)
-    btnPadding.PaddingRight = UDim.new(0, 10)
+    btnPadding.PaddingLeft = UDim.new(0, 12)
+    btnPadding.PaddingRight = UDim.new(0, 12)
     btnPadding.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
     btnStroke.Color = THEME.stroke
     btnStroke.Parent = btn
+
+    local activeBar = Instance.new("Frame")
+    activeBar.Name = "ActiveBar"
+    activeBar.Size = UDim2.new(1, 0, 0, 3)
+    activeBar.Position = UDim2.new(0, 0, 1, -3)
+    activeBar.BackgroundColor3 = THEME.accent
+    activeBar.BorderSizePixel = 0
+    activeBar.Visible = false
+    activeBar.Parent = btn
+
+    btn.MouseEnter:Connect(function()
+        if activeTab ~= name then
+            btn.BackgroundColor3 = Color3.fromRGB(84, 84, 90)
+        end
+    end)
+
+    btn.MouseLeave:Connect(function()
+        if activeTab ~= name then
+            btn.BackgroundColor3 = THEME.tabIdle
+        end
+    end)
 
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
