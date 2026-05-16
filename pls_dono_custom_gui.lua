@@ -2014,8 +2014,8 @@ local THEME = {
     topBar = Color3.fromRGB(28, 164, 52),
     topBarText = Color3.fromRGB(248, 255, 248),
     panel = Color3.fromRGB(23, 23, 25),
-    tabIdle = Color3.fromRGB(42, 42, 45),
-    tabActive = Color3.fromRGB(34, 139, 50),
+    tabIdle = Color3.fromRGB(72, 72, 76),
+    tabActive = Color3.fromRGB(96, 96, 102),
     section = Color3.fromRGB(18, 18, 20),
     control = Color3.fromRGB(31, 31, 34),
     controlText = Color3.fromRGB(238, 238, 238),
@@ -2026,15 +2026,16 @@ local THEME = {
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 520, 0, 340)
+main.Size = UDim2.new(0, 470, 0, 378)
 main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = false
 
-local expandedWidth = 680
-local expandedHeight = 420
+local TOP_BAR_HEIGHT = 38
+local expandedWidth = 470
+local expandedHeight = 378
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
@@ -2055,12 +2056,12 @@ end
 
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 30), 420, 540)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 300, 340)
+    expandedWidth = math.clamp(math.floor(viewport.X - 56), 410, 500)
+    expandedHeight = math.clamp(math.floor(viewport.Y - 44), 342, 388)
 
     if not UserInputService.TouchEnabled then
-        expandedWidth = math.max(expandedWidth, 480)
-        expandedHeight = math.max(expandedHeight, 320)
+        expandedWidth = math.max(expandedWidth, 430)
+        expandedHeight = math.max(expandedHeight, 360)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -2098,7 +2099,7 @@ end
 
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 46)
+topBar.Size = UDim2.new(1, 0, 0, TOP_BAR_HEIGHT)
 topBar.BackgroundColor3 = THEME.topBar
 topBar.BorderSizePixel = 0
 topBar.Parent = main
@@ -2119,54 +2120,59 @@ do
 end
 
 do
-    local titleImage = Instance.new("ImageLabel")
-    titleImage.Name = "TitleArtwork"
-    titleImage.BackgroundTransparency = 1
-    titleImage.Size = UDim2.new(0, 22, 0, 22)
-    titleImage.Position = UDim2.new(0, 10, 0.5, -11)
-    titleImage.ScaleType = Enum.ScaleType.Fit
-    titleImage.Parent = topBar
+    local titleBadge = Instance.new("TextLabel")
+    titleBadge.Name = "TitleBadge"
+    titleBadge.BackgroundColor3 = Color3.fromRGB(18, 133, 39)
+    titleBadge.Size = UDim2.new(0, 18, 0, 18)
+    titleBadge.Position = UDim2.new(0, 8, 0.5, -9)
+    titleBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleBadge.Font = Enum.Font.GothamBold
+    titleBadge.TextSize = 11
+    titleBadge.Text = "V"
+    titleBadge.Parent = topBar
+
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 4)
+    badgeCorner.Parent = titleBadge
+
+    local badgeStroke = Instance.new("UIStroke")
+    badgeStroke.Thickness = 1
+    badgeStroke.Color = Color3.fromRGB(214, 255, 222)
+    badgeStroke.Parent = titleBadge
 
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -130, 0, 18)
-    title.Position = UDim2.new(0, 38, 0, 4)
+    title.Size = UDim2.new(1, -96, 0, 16)
+    title.Position = UDim2.new(0, 32, 0, 3)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
-    title.TextSize = 14
-    title.Text = "PLS DONATE"
+    title.TextSize = 13
+    title.Text = "PLS DONATE ANIMOSITY"
     title.Parent = topBar
 
     local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -130, 0, 16)
-    subtitle.Position = UDim2.new(0, 38, 0, 21)
+    subtitle.Size = UDim2.new(1, -96, 0, 12)
+    subtitle.Position = UDim2.new(0, 32, 0, 19)
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 11
-    subtitle.Text = "custom gui"
+    subtitle.TextSize = 10
+    subtitle.Text = "developed by mattyB"
     subtitle.Parent = topBar
-
-    task.spawn(function()
-        local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
-        if creatorHeadshot then
-            titleImage.Image = creatorHeadshot
-        end
-    end)
 end
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
-minimizeBtn.Size = UDim2.new(0, 26, 0, 20)
-minimizeBtn.Position = UDim2.new(1, -33, 0.5, -10)
-minimizeBtn.BackgroundColor3 = THEME.accent
+minimizeBtn.Size = UDim2.new(0, 22, 0, 16)
+minimizeBtn.Position = UDim2.new(1, -28, 0.5, -8)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(61, 61, 66)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 14
+minimizeBtn.TextSize = 12
 minimizeBtn.Text = "-"
 minimizeBtn.AutoButtonColor = true
 minimizeBtn.Parent = topBar
@@ -2179,14 +2185,14 @@ end
 
 local body = Instance.new("Frame")
 body.Name = "Body"
-body.Size = UDim2.new(1, 0, 1, -46)
-body.Position = UDim2.new(0, 0, 0, 46)
+body.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
+body.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
 body.BackgroundTransparency = 1
 body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
-tabHolder.Size = UDim2.new(1, -12, 0, 32)
+tabHolder.Size = UDim2.new(1, -12, 0, 28)
 tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
@@ -2226,7 +2232,7 @@ do
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
     tabUnderline.Size = UDim2.new(1, -12, 0, 1)
-    tabUnderline.Position = UDim2.new(0, 6, 0, 40)
+    tabUnderline.Position = UDim2.new(0, 6, 0, 35)
     tabUnderline.BackgroundColor3 = THEME.stroke
     tabUnderline.BorderSizePixel = 0
     tabUnderline.Parent = body
@@ -2234,8 +2240,8 @@ end
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
-pages.Size = UDim2.new(1, -12, 1, -49)
-pages.Position = UDim2.new(0, 6, 0, 44)
+pages.Size = UDim2.new(1, -12, 1, -43)
+pages.Position = UDim2.new(0, 6, 0, 40)
 pages.BackgroundTransparency = 1
 pages.Parent = body
 
@@ -2314,9 +2320,9 @@ local function setMinimized(state)
         body.Visible = true
     end
 
-    local targetSize = state and UDim2.new(0, expandedWidth, 0, 46) or UDim2.new(0, expandedWidth, 0, expandedHeight)
+    local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = THEME.accent
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(61, 61, 66)
 
     minimizeTween = TweenService:Create(
         main,
@@ -2362,11 +2368,11 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 78, 0, 22)
+    btn.Size = UDim2.new(0, 78, 0, 20)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
+    btn.TextSize = 10
     btn.Text = tostring(buttonText or name)
     btn.Parent = tabHolder
 
