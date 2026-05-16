@@ -2,8 +2,6 @@
     PLS DONATE - Custom GUI Foundation
 ]]
 
-print("bipv's UI reworked - animosity layout")
-
 repeat
     task.wait()
 until game:IsLoaded()
@@ -16,7 +14,6 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-local Lighting = game:GetService("Lighting")
 local StarterGui = game:GetService("StarterGui")
 local LogService = game:GetService("LogService")
 
@@ -485,6 +482,9 @@ local defaults = {
 
     webhookToggle = false,
     webhookBox = "",
+    webhookAfterSH = false,
+    pingEveryone = false,
+    pingAboveDono = 1000,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -1086,8 +1086,7 @@ local function shouldHopForBots(scan)
                 local confirmBoothCount = tonumber(confirmScan.boothCount) or 0
                 notifyBotScanResult(confirmScan, false)
                 if confirmBoothCount >= threshold and settings.antiBotServers then
-                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero raised). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
-                        notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
+                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
                     requestServerHop("bot-detection")
                 end
                 antiBotPendingConfirmation = false
@@ -1207,11 +1206,13 @@ end
 
 local function sendAutofarmSummaryWebhook(successfulHops)
     if not settings.webhookToggle then
+        notify("Webhook", ("Reached %d successful hops, but webhook is disabled."):format(math.max(0, tonumber(successfulHops) or 0)), 5, "farm-summary-webhook-disabled", 4)
         return
     end
 
     local url = tostring(settings.webhookBox or ""):match("%S+")
     if not url or url == "" then
+        notify("Webhook", ("Reached %d successful hops, but no webhook URL is set."):format(math.max(0, tonumber(successfulHops) or 0)), 5, "farm-summary-webhook-missing-url", 4)
         return
     end
 
@@ -1241,6 +1242,38 @@ local function sendAutofarmSummaryWebhook(successfulHops)
     })
 
     notify("Webhook", ("Farming summary sent after %d successful hops."):format(totalHops), 4, "farm-summary-webhook", 4)
+end
+
+local function notifyWebhookAfterHop(reason)
+    if not settings.webhookAfterSH then
+        return
+    end
+
+    local url = tostring(settings.webhookBox or ""):match("%S+")
+    if not url or url == "" then
+        notify("Webhook", "Webhook After Serverhop is on, but no webhook URL is set.", 4, "serverhop-webhook-missing-url", 10)
+        return
+    end
+
+    local display = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Unknown")
+    local user = tostring(LocalPlayer.Name or "Unknown")
+    local hopReason = trimText(reason)
+    local msg
+    if display ~= user then
+        msg = ("%s (@%s) serverhopped"):format(display, user)
+    else
+        msg = ("@%s serverhopped"):format(user)
+    end
+    if hopReason ~= "" then
+        msg = ("%s [%s]"):format(msg, hopReason)
+    end
+
+    local sent = postWebhookJson(url, {content = msg})
+    if sent then
+        notify("Webhook", "Server hop webhook sent.", 3, "serverhop-webhook-sent", 3)
+    else
+        notify("Webhook", "Server hop webhook failed to send.", 4, "serverhop-webhook-failed", 6)
+    end
 end
 
 getNearestPlayerInfo = function()
@@ -1402,6 +1435,10 @@ local function sendDonationWebhook(amount, donorInfo)
             },
         }},
     })
+
+    if settings.pingEveryone and received >= math.max(0, tonumber(settings.pingAboveDono) or 1000) then
+        postWebhookJson(url, {content = "@everyone"})
+    end
 end
 
 if pendingFarmSummaryHopCount then
@@ -1743,6 +1780,7 @@ serverHopNow = function(reason)
 
     if teleported then
         markPendingFarmHop(reason, placeId, selectedServer.id)
+        notifyWebhookAfterHop(reason)
     end
 
     return teleported
@@ -1973,17 +2011,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(12, 40, 18),
-    topBarText = Color3.fromRGB(232, 250, 232),
-    panel = Color3.fromRGB(12, 12, 16),
-    tabIdle = Color3.fromRGB(22, 22, 26),
-    tabActive = Color3.fromRGB(34, 63, 33),
-    section = Color3.fromRGB(16, 16, 20),
-    control = Color3.fromRGB(18, 18, 24),
-    controlText = Color3.fromRGB(225, 225, 230),
-    subtleText = Color3.fromRGB(150, 190, 150),
-    accent = Color3.fromRGB(70, 180, 90),
-    stroke = Color3.fromRGB(46, 46, 50),
+    topBar = Color3.fromRGB(28, 164, 52),
+    topBarText = Color3.fromRGB(248, 255, 248),
+    panel = Color3.fromRGB(23, 23, 25),
+    tabIdle = Color3.fromRGB(42, 42, 45),
+    tabActive = Color3.fromRGB(34, 139, 50),
+    section = Color3.fromRGB(18, 18, 20),
+    control = Color3.fromRGB(31, 31, 34),
+    controlText = Color3.fromRGB(238, 238, 238),
+    subtleText = Color3.fromRGB(181, 191, 181),
+    accent = Color3.fromRGB(57, 196, 76),
+    stroke = Color3.fromRGB(66, 66, 71),
 }
 
 local main = Instance.new("Frame")
@@ -2051,9 +2089,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(35, 35, 40)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(26, 26, 31)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 22)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 34, 36)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 24, 26)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 20)),
     })
     gradient.Parent = main
 end
@@ -2073,9 +2111,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 45, 50)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(35, 35, 40)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(28, 28, 32)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
     })
     topGradient.Parent = topBar
 end
@@ -2084,33 +2122,33 @@ do
     local titleImage = Instance.new("ImageLabel")
     titleImage.Name = "TitleArtwork"
     titleImage.BackgroundTransparency = 1
-    titleImage.Size = UDim2.new(0, 28, 0, 28)
-    titleImage.Position = UDim2.new(0, 10, 0.5, -14)
+    titleImage.Size = UDim2.new(0, 22, 0, 22)
+    titleImage.Position = UDim2.new(0, 10, 0.5, -11)
     titleImage.ScaleType = Enum.ScaleType.Fit
     titleImage.Parent = topBar
 
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -130, 0, 20)
-    title.Position = UDim2.new(0, 46, 0, 5)
+    title.Size = UDim2.new(1, -130, 0, 18)
+    title.Position = UDim2.new(0, 38, 0, 4)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 14
-    title.Text = "Pls Donate Animosity"
+    title.Text = "PLS DONATE"
     title.Parent = topBar
 
     local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
     subtitle.Size = UDim2.new(1, -130, 0, 16)
-    subtitle.Position = UDim2.new(0, 46, 0, 23)
+    subtitle.Position = UDim2.new(0, 38, 0, 21)
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextSize = 11
-    subtitle.Text = "developed by buriedinplainview"
+    subtitle.Text = "custom gui"
     subtitle.Parent = topBar
 
     task.spawn(function()
@@ -2148,14 +2186,15 @@ body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
-tabHolder.Size = UDim2.new(0, 42, 1, -10)
+tabHolder.Size = UDim2.new(1, -12, 0, 32)
 tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
-tabHolder.ScrollBarThickness = 0
-tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
+tabHolder.ScrollBarThickness = 2
+tabHolder.ScrollBarImageColor3 = THEME.accent
+tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
-tabHolder.ScrollingDirection = Enum.ScrollingDirection.Y
+tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
 tabHolder.Parent = body
 
 do
@@ -2171,29 +2210,32 @@ end
 
 do
     local tabLayout = Instance.new("UIListLayout")
-    tabLayout.FillDirection = Enum.FillDirection.Vertical
-    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    tabLayout.FillDirection = Enum.FillDirection.Horizontal
+    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
     tabLayout.Padding = UDim.new(0, 6)
     tabLayout.Parent = tabHolder
 
     local tabPad = Instance.new("UIPadding")
-    tabPad.PaddingTop = UDim.new(0, 6)
-    tabPad.PaddingBottom = UDim.new(0, 6)
+    tabPad.PaddingTop = UDim.new(0, 4)
+    tabPad.PaddingBottom = UDim.new(0, 4)
+    tabPad.PaddingLeft = UDim.new(0, 6)
+    tabPad.PaddingRight = UDim.new(0, 6)
     tabPad.Parent = tabHolder
 
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
-    tabUnderline.Size = UDim2.new(0, 1, 1, -10)
-    tabUnderline.Position = UDim2.new(0, 54, 0, 5)
-    tabUnderline.BackgroundColor3 = THEME.accent
+    tabUnderline.Size = UDim2.new(1, -12, 0, 1)
+    tabUnderline.Position = UDim2.new(0, 6, 0, 40)
+    tabUnderline.BackgroundColor3 = THEME.stroke
     tabUnderline.BorderSizePixel = 0
     tabUnderline.Parent = body
 end
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
-pages.Size = UDim2.new(1, -60, 1, -64)
-pages.Position = UDim2.new(0, 60, 0, 5)
+pages.Size = UDim2.new(1, -12, 1, -49)
+pages.Position = UDim2.new(0, 6, 0, 44)
 pages.BackgroundTransparency = 1
 pages.Parent = body
 
@@ -2317,26 +2359,30 @@ local function activateTab(name)
 end
 
 local function createTab(name, buttonText)
-    local compactLabels = {
-        Booth = "B",
-        Main = "M",
-        Chat = "C",
-        Webhook = "W",
-        Server = "S",
-    }
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.Size = UDim2.new(1, -8, 0, 34)
+    btn.AutomaticSize = Enum.AutomaticSize.X
+    btn.Size = UDim2.new(0, 78, 0, 22)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 12
-    btn.Text = tostring(buttonText or compactLabels[name] or name:sub(1, 1):upper())
+    btn.TextSize = 11
+    btn.Text = tostring(buttonText or name)
     btn.Parent = tabHolder
 
     local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.CornerRadius = UDim.new(0, 4)
     btnCorner.Parent = btn
+
+    local btnPadding = Instance.new("UIPadding")
+    btnPadding.PaddingLeft = UDim.new(0, 10)
+    btnPadding.PaddingRight = UDim.new(0, 10)
+    btnPadding.Parent = btn
+
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Thickness = 1
+    btnStroke.Color = THEME.stroke
+    btnStroke.Parent = btn
 
     local page = Instance.new("ScrollingFrame")
     page.Name = name .. "Page"
@@ -3854,9 +3900,9 @@ local function buildSettingsTabs()
 
     local boothTab = createTab("Booth")
     local mainTab = createTab("Main")
-    local chatTab = createTab("Chat", hasRestrictedAccess and "C" or LOCK_ICON)
+    local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
-    local serverTab = createTab("Server")
+    local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
@@ -3946,10 +3992,13 @@ local function buildSettingsTabs()
         end
     end
 
-    do
+do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+    createToggle(webhookSection, "Webhook After Serverhop", "webhookAfterSH")
+    createToggle(webhookSection, "Ping Everyone", "pingEveryone")
+    createTextBox(webhookSection, "Ping Above Donation", "pingAboveDono", true)
 end
 
 do
