@@ -399,7 +399,7 @@ local defaults = {
     testDonationAmount = 6,
 
     partModuleEnabled = false,
-    partModuleSource = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/part%20of%20pls%20dono.txt",
+    partModuleSource = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/part%20of%20pls%20dono.lua",
     boothMonitoringEnabled = false,
     boothAskIntervalMin = 200,
     boothAskIntervalMax = 400,
@@ -2158,6 +2158,7 @@ tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 0
 tabHolder.ScrollBarImageTransparency = 1
+tabHolder.ScrollBarImageColor3 = THEME.section
 tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
 tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
@@ -2177,9 +2178,8 @@ end
     tabLayout.FillDirection = Enum.FillDirection.Horizontal
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
     tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    tabLayout.Padding = UDim.new(0, 2)
-    tabPad.PaddingRight = UDim.new(0, 6)
-    tabPad.Parent = tabHolder
+    tabLayout.Padding = UDim.new(0, 1)
+    tabLayout.Parent = tabHolder
 
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
@@ -2329,7 +2329,7 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 100, 0, 26)
+    btn.Size = UDim2.new(0, 0, 0, 26)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -2342,8 +2342,8 @@ local function createTab(name, buttonText)
     createCorner(btn, 8)
 
     local btnPadding = Instance.new("UIPadding")
-    btnPadding.PaddingLeft = UDim.new(0, 8)
-    btnPadding.PaddingRight = UDim.new(0, 8)
+    btnPadding.PaddingLeft = UDim.new(0, 6)
+    btnPadding.PaddingRight = UDim.new(0, 6)
     btnPadding.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
