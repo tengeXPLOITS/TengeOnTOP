@@ -158,6 +158,7 @@ local function recordDonationEvent(donorText, amountValue, recipientText)
     end
 
     local now = tick()
+    lastDonationTick = now
     pruneRecentDonationLogs(now)
     local normalizedDonor = normalizePlayerText(donorText)
     for _, entry in ipairs(recentDonationLogs) do
@@ -802,6 +803,8 @@ local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
+local lastDonationTick = 0
+local donationHopBlockSeconds = 3
 local farmSessionStats = SharedEnv.PLS_DONO_FARM_SESSION
 if type(farmSessionStats) ~= "table" or tonumber(farmSessionStats.playerUserId) ~= tonumber(LocalPlayer.UserId) then
     farmSessionStats = {
@@ -1245,7 +1248,7 @@ local function sendAutofarmSummaryWebhook(successfulHops)
         }},
     })
 
-    notify("Webhook", ("Farming summary sent after %d successful hops."):format(totalHops), 4, "farm-summary-webhook", 4)
+    -- Periodic hop notification removed per user request
 end
 
 local function notifyWebhookAfterHop(reason)
@@ -1795,6 +1798,9 @@ requestServerHop = function(reason)
     if now - lastHopTick < hopCooldownSeconds then
         return false
     end
+    if now - lastDonationTick < donationHopBlockSeconds then
+        return false
+    end
     lastHopTick = now
     return serverHopNow(reason)
 end
@@ -2049,7 +2055,7 @@ end
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 442, 0, 392)
+main.Size = UDim2.new(0, 430, 0, 360)
 main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
@@ -2057,8 +2063,8 @@ main.Parent = gui
 main.Visible = false
 
 local TOP_BAR_HEIGHT = 34
-local expandedWidth = 442
-local expandedHeight = 392
+local expandedWidth = 430
+local expandedHeight = 360
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
@@ -3982,9 +3988,7 @@ do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
-    createToggle(webhookSection, "Webhook After Serverhop", "webhookAfterSH")
-    createToggle(webhookSection, "Ping Everyone", "pingEveryone")
-    createTextBox(webhookSection, "Ping Above Donation", "pingAboveDono", true)
+    -- Donation Notifier feature only - other webhook options removed per user request
 end
 
 do
