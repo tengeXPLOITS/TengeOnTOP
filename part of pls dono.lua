@@ -78,6 +78,30 @@ local function isPlayerStandingStill(player)
     return vel.Magnitude < 1.5 or humanoid:GetState() == Enum.HumanoidStateType.Seated
 end
 
+local function isValidSocialTarget(player, myRoot)
+    if not player or player == LocalPlayer or not player.Character then
+        return false
+    end
+
+    local root = getHumanoidRootPart(player)
+    local humanoid = getHumanoid(player)
+    if not root or not humanoid then
+        return false
+    end
+
+    local stateType = humanoid:GetState()
+    if stateType == Enum.HumanoidStateType.Seated or stateType == Enum.HumanoidStateType.PlatformStanding then
+        return false
+    end
+
+    if wasTargetRecentlyMessaged(player) then
+        return false
+    end
+
+    local dist = (root.Position - myRoot.Position).Magnitude
+    return dist >= 10 and dist <= 32
+end
+
 local function getNearbySocialTargets(maxDistance)
     local myRoot = getHumanoidRootPart(LocalPlayer)
     if not myRoot then
@@ -86,10 +110,10 @@ local function getNearbySocialTargets(maxDistance)
 
     local candidates = {}
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and getHumanoidRootPart(player) then
+        if isValidSocialTarget(player, myRoot) then
             local root = getHumanoidRootPart(player)
             local dist = (root.Position - myRoot.Position).Magnitude
-            if dist <= maxDistance and dist >= 8 and not wasTargetRecentlyMessaged(player) and not isPlayerStandingStill(player) then
+            if dist <= maxDistance then
                 table.insert(candidates, {player = player, dist = dist})
             end
         end
@@ -101,7 +125,20 @@ local function getNearbySocialTargets(maxDistance)
     return candidates
 end
 
-local function computeRandomBoothPoint(radius)
+local function pruneRecentTargets()
+    local now = tick()
+    for userId, timestamp in pairs(state.recentTargets) do
+        if now - timestamp > 180 then
+            state.recentTargets[userId] = nil
+        end
+    end
+end
+
+local function shouldTrySocialize()
+    return tick() - state.lastChatTime >= 12
+end
+
+local function getNearbyBoothPoint(radius)
     if not state.startAnchor then
         local root = getHumanoidRootPart(LocalPlayer)
         if not root then
@@ -111,14 +148,18 @@ local function computeRandomBoothPoint(radius)
     end
 
     local angle = math.random() * math.pi * 2
-    local distance = 4 + math.random() * radius
+    local distance = 5 + math.random() * radius
     local offset = Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
     return state.startAnchor + offset
 end
 
 local function buildPath(destination)
-    local humanoid = getHumanoid(LocalPlayer)
-    if not humanoid or not destination then
+    if not destination or not LocalPlayer.Character then
+        return nil
+    end
+
+    local humanoidRoot = getHumanoidRootPart(LocalPlayer)
+    if not humanoidRoot then
         return nil
     end
 
@@ -129,7 +170,7 @@ local function buildPath(destination)
         AgentMaxSlope = 45,
     })
 
-    path:ComputeAsync(getHumanoidRootPart(LocalPlayer).Position, destination)
+    path:ComputeAsync(humanoidRoot.Position, destination)
     if path.Status == Enum.PathStatus.Success then
         return path
     end
@@ -152,10 +193,10 @@ local function followPath(path, timeout)
         if waypoint.Action == Enum.PathWaypointAction.Jump then
             humanoid.Jump = true
         end
+
         humanoid:MoveTo(waypoint.Position)
         local reached = false
         local connection
-
         connection = humanoid.MoveToFinished:Connect(function(success)
             reached = success
         end)
@@ -176,37 +217,77 @@ local function followPath(path, timeout)
     return true
 end
 
-local function antiSitCheck()
+local function moveToPosition(position, timeout)
+    if not position or not LocalPlayer.Character then
+        return false
+    end
+
     local humanoid = getHumanoid(LocalPlayer)
     if not humanoid then
-        return
+        return false
     end
 
-    local stateType = humanoid:GetState()
-    if stateType == Enum.HumanoidStateType.Seated or stateType == Enum.HumanoidStateType.PlatformStanding then
-        humanoid.Jump = true
+    local target = Vector3.new(position.X, position.Y, position.Z)
+    local reached = false
+    local connection = humanoid.MoveToFinished:Connect(function(success)
+        reached = success
+    end)
+
+    humanoid:MoveTo(target)
+    local deadline = tick() + (timeout or 12)
+    while tick() < deadline and not reached do
+        task.wait(0.1)
     end
+
+    if connection then
+        connection:Disconnect()
+    end
+
+    return reached
 end
 
-local function randomSocialMessage()
+local function isInBoothZone()
+    if not state.startAnchor or not LocalPlayer.Character then
+        return false
+    end
+    local root = getHumanoidRootPart(LocalPlayer)
+    if not root then
+        return false
+    end
+    return (root.Position - state.startAnchor).Magnitude <= 20
+end
+
+local function randomSocialMessage(target)
+    local display = tostring((target and target.DisplayName) or (target and target.Name) or "there")
     local messages = {
-        "Hey! If you have a sec, swing by my booth!",
-        "Thanks for stopping by — I've got a new booth you might like.",
-        "Feel free to check out my booth if you're nearby!",
-        "I'm hanging around my booth, come say hi if you can.",
-        "If you're exploring, my booth is open and looking good!",
+        "Hey " .. display .. ", my booth is nearby if you want to check it out!",
+        "Hi " .. display .. ", I'm pacing around my booth if you want to stop by.",
+        "If you're free, " .. display .. ", come over — my booth is open.",
+        "My booth is looking good today, " .. display .. ". Come take a look when you can.",
+        "I'm over by my booth, " .. display .. ". Feel free to drop by!",
     }
     return messages[math.random(1, #messages)]
 end
 
-local function chatSocialMessage()
+local function chatSocialMessage(target)
     if tick() - state.lastChatTime < 20 then
         return
     end
     state.lastChatTime = tick()
     pcall(function()
-        Players:Chat(randomSocialMessage())
+        Players:Chat(randomSocialMessage(target))
     end)
+end
+
+local function buildApproachPoint(player)
+    local root = getHumanoidRootPart(player)
+    if not root then
+        return nil
+    end
+
+    local direction = root.CFrame.LookVector
+    local offset = Vector3.new(math.random(-1, 1), 0, math.random(-1, 1))
+    return root.Position - direction * 4 + offset
 end
 
 local function attemptSocializeWithPlayer(player)
@@ -218,26 +299,48 @@ local function attemptSocializeWithPlayer(player)
         return false
     end
 
-    local targetRoot = getHumanoidRootPart(player)
-    local approachPoint = targetRoot.Position - (targetRoot.CFrame.LookVector * 4)
+    local approachPoint = buildApproachPoint(player)
     if not approachPoint then
         return false
     end
 
     local path = buildPath(approachPoint)
-    if path and followPath(path, 12) then
-        noteTargetChat(player)
-        chatSocialMessage()
-        return true
+    local arrived = false
+    if path and followPath(path, 14) then
+        arrived = true
+    else
+        arrived = moveToPosition(approachPoint, 12)
     end
 
-    return false
+    if not arrived then
+        return false
+    end
+
+    task.wait(0.8 + math.random() * 1.2)
+    noteTargetChat(player)
+    chatSocialMessage(player)
+    return true
 end
 
-local function getNextPatrolPoint()
+local function getPatrolPoint()
     local settings = getSettings()
     local radius = clamp(settings.boothAskIntervalMax or 12, 8, 18)
-    return computeRandomBoothPoint(radius)
+    return getNearbyBoothPoint(radius)
+end
+
+local function runBoothPatrol()
+    local targetPoint = getPatrolPoint()
+    if not targetPoint then
+        return
+    end
+
+    local path = buildPath(targetPoint)
+    if path and followPath(path, 12) then
+        task.wait(1 + math.random() * 1.4)
+        return
+    end
+
+    moveToPosition(targetPoint, 10)
 end
 
 local function runBoothMonitorLoop()
@@ -249,32 +352,29 @@ local function runBoothMonitorLoop()
         end
 
         antiSitCheck()
+        pruneRecentTargets()
 
         local intervalMin = clamp(settings.boothAskIntervalMin or 10, 5, 120)
         local intervalMax = clamp(settings.boothAskIntervalMax or 20, intervalMin, 180)
         local waitTime = intervalMin + math.random() * (intervalMax - intervalMin)
 
-        if settings.approachPeopleEnabled then
-            local nearby = getNearbySocialTargets(24)
-            if #nearby > 0 then
-                for _, entry in ipairs(nearby) do
-                    if attemptSocializeWithPlayer(entry.player) then
-                        break
-                    end
+        if settings.approachPeopleEnabled and shouldTrySocialize() then
+            local nearby = getNearbySocialTargets(28)
+            local attempts = clamp(settings.approachAttempts or 1, 1, 4)
+            local used = 0
+            for _, entry in ipairs(nearby) do
+                if used >= attempts then
+                    break
                 end
+                if attemptSocializeWithPlayer(entry.player) then
+                    break
+                end
+                used = used + 1
             end
         end
 
-        if settings.boothMonitoringEnabled then
-            local patrolPoint = getNextPatrolPoint()
-            if patrolPoint then
-                local path = buildPath(patrolPoint)
-                if path then
-                    followPath(path, 10)
-                else
-                    moveToPosition(patrolPoint, 8)
-                end
-            end
+        if settings.boothMonitoringEnabled and isInBoothZone() then
+            runBoothPatrol()
         end
 
         if not settings.boothMonitoringEnabled and not settings.approachPeopleEnabled then
