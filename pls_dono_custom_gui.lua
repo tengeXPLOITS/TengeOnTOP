@@ -1973,23 +1973,23 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(31, 31, 36),
-    topBarText = Color3.fromRGB(238, 238, 242),
-    panel = Color3.fromRGB(23, 23, 28),
-    tabIdle = Color3.fromRGB(37, 37, 42),
-    tabActive = Color3.fromRGB(62, 62, 70),
-    section = Color3.fromRGB(29, 29, 34),
-    control = Color3.fromRGB(35, 35, 40),
-    controlText = Color3.fromRGB(227, 227, 232),
-    subtleText = Color3.fromRGB(156, 156, 164),
-    accent = Color3.fromRGB(98, 98, 110),
-    stroke = Color3.fromRGB(58, 58, 66),
+    topBar = Color3.fromRGB(12, 40, 18),
+    topBarText = Color3.fromRGB(232, 250, 232),
+    panel = Color3.fromRGB(12, 12, 16),
+    tabIdle = Color3.fromRGB(22, 22, 26),
+    tabActive = Color3.fromRGB(34, 63, 33),
+    section = Color3.fromRGB(16, 16, 20),
+    control = Color3.fromRGB(18, 18, 24),
+    controlText = Color3.fromRGB(225, 225, 230),
+    subtleText = Color3.fromRGB(150, 190, 150),
+    accent = Color3.fromRGB(70, 180, 90),
+    stroke = Color3.fromRGB(46, 46, 50),
 }
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 680, 0, 420)
-main.Position = UDim2.fromOffset(220, 120)
+main.Size = UDim2.new(0, 520, 0, 340)
+main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -2006,14 +2006,23 @@ local function getViewportSize()
     return Vector2.new(1920, 1080)
 end
 
+local function getBottomRightPosition(sizeY)
+    local viewport = getViewportSize()
+    local width = expandedWidth
+    local height = tonumber(sizeY) or expandedHeight
+    local x = math.max(12, viewport.X - width - 18)
+    local y = math.max(12, viewport.Y - height - 18)
+    return UDim2.fromOffset(x, y)
+end
+
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 30), 420, 680)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 300, 420)
+    expandedWidth = math.clamp(math.floor(viewport.X - 30), 420, 540)
+    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 300, 340)
 
     if not UserInputService.TouchEnabled then
-        expandedWidth = math.max(expandedWidth, 500)
-        expandedHeight = math.max(expandedHeight, 330)
+        expandedWidth = math.max(expandedWidth, 480)
+        expandedHeight = math.max(expandedHeight, 320)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -2022,10 +2031,12 @@ local function applyResponsiveSize(centerOnApply)
         local centeredX = math.floor((viewport.X - expandedWidth) * 0.5)
         local centeredY = math.floor((viewport.Y - expandedHeight) * 0.5)
         main.Position = UDim2.fromOffset(math.max(0, centeredX), math.max(0, centeredY))
+    else
+        main.Position = getBottomRightPosition(expandedHeight)
     end
 end
 
-applyResponsiveSize(true)
+applyResponsiveSize(false)
 
 do
     local corner = Instance.new("UICorner")
@@ -2090,7 +2101,7 @@ do
     title.Text = "Pls Donate Animosity"
     title.Parent = topBar
 
-    local subtitle = Instance.new("TextButton")
+    local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
     subtitle.Size = UDim2.new(1, -130, 0, 16)
@@ -2099,23 +2110,8 @@ do
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextSize = 11
-    subtitle.Text = "developed by @buriedinplainview"
+    subtitle.Text = "developed by buriedinplainview"
     subtitle.Parent = topBar
-    
-    subtitle.MouseButton1Click:Connect(function()
-        setclipboard("https://www.roblox.com/users/1230653127/profile")
-        notify("Creator Profile", "Profile URL copied to clipboard!", 3, "creator-profile-copy", 1)
-    end)
-    
-    subtitle.MouseEnter:Connect(function()
-        subtitle.TextColor3 = Color3.fromRGB(98, 98, 110)
-    end)
-    
-    subtitle.MouseLeave:Connect(function()
-        subtitle.TextColor3 = THEME.subtleText
-    end)
-    
-    subtitle.AutoButtonColor = false
 
     task.spawn(function()
         local creatorHeadshot = getRobloxAvatarThumbnailUrl(1230653127, "150x150", true)
@@ -2129,8 +2125,8 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 26, 0, 20)
 minimizeBtn.Position = UDim2.new(1, -33, 0.5, -10)
-minimizeBtn.BackgroundColor3 = THEME.topBar
-minimizeBtn.TextColor3 = THEME.topBarText
+minimizeBtn.BackgroundColor3 = THEME.accent
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 14
 minimizeBtn.Text = "-"
@@ -2262,7 +2258,7 @@ makeDraggable(main, topBar)
 local minimized = false
 local minimizeTween
 local function setMinimized(state)
-    local MINIMIZE_TWEEN_TIME = 0.16
+    local MINIMIZE_TWEEN_TIME = 0.2
     if state == minimized and not minimizeTween then
         return
     end
@@ -2278,7 +2274,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, 46) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = THEME.topBar
+    minimizeBtn.BackgroundColor3 = THEME.accent
 
     minimizeTween = TweenService:Create(
         main,
@@ -3257,7 +3253,7 @@ local function onBoothClaimDetected(slot)
         revealedAfterClaim = true
     end
 
-    setMinimized(false)
+    setMinimized(true)
 
 end
 
@@ -4267,7 +4263,9 @@ RunService.Heartbeat:Connect(function()
     local viewport = getViewportSize()
     if viewport ~= lastViewport then
         lastViewport = viewport
-        if not minimized then
+        if minimized then
+            main.Position = getBottomRightPosition(46)
+        else
             applyResponsiveSize(false)
         end
     end
