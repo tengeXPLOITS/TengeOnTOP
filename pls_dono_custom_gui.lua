@@ -1211,46 +1211,6 @@ local function formatFarmDuration(totalSeconds)
     return table.concat(parts, " ")
 end
 
-local function sendAutofarmSummaryWebhook(successfulHops)
-    if not settings.webhookToggle then
-        notify("Webhook", ("Reached %d successful hops, but webhook is disabled."):format(math.max(0, tonumber(successfulHops) or 0)), 5, "farm-summary-webhook-disabled", 4)
-        return
-    end
-
-    local url = tostring(settings.webhookBox or ""):match("%S+")
-    if not url or url == "" then
-        notify("Webhook", ("Reached %d successful hops, but no webhook URL is set."):format(math.max(0, tonumber(successfulHops) or 0)), 5, "farm-summary-webhook-missing-url", 4)
-        return
-    end
-
-    local startedAt = tonumber(farmSessionStats.startedAt) or os.time()
-    local elapsed = math.max(0, os.time() - startedAt)
-    local totalHops = math.max(0, tonumber(successfulHops) or tonumber(farmSessionStats.successfulHops) or 0)
-    local botEvaded = math.max(0, tonumber(farmSessionStats.botEvaded) or 0)
-    local modServers = math.max(0, tonumber(farmSessionStats.modServers) or 0)
-    local avatarUrl = getRobloxAvatarThumbnailUrl(LocalPlayer.UserId, "150x150", false)
-    local durationText = formatFarmDuration(elapsed)
-
-    postWebhookJson(url, {
-        username = "PLS DONATE",
-        avatar_url = avatarUrl,
-        content = ("Your bot has been farming for %s."):format(durationText),
-        embeds = {{
-            color = 0x1E90FF,
-            title = "Autofarm Session Summary",
-            fields = {
-                {name = "Successful Hops", value = tostring(totalHops), inline = true},
-                {name = "Bot Servers Evaded", value = tostring(botEvaded), inline = true},
-                {name = "Servers With Mods", value = tostring(modServers), inline = true},
-                {name = "Farm Time", value = durationText, inline = false},
-                {name = "Hop Delay", value = ("%s minutes"):format(tostring(settings.serverHopDelay or 15)), inline = true},
-            },
-        }},
-    })
-
-    -- Periodic hop notification removed per user request
-end
-
 local function notifyWebhookAfterHop(reason)
     if not settings.webhookAfterSH then
         return
@@ -1448,12 +1408,7 @@ local function sendDonationWebhook(amount, donorInfo)
     end
 end
 
-if pendingFarmSummaryHopCount then
-    task.defer(function()
-        task.wait(4)
-        sendAutofarmSummaryWebhook(pendingFarmSummaryHopCount)
-    end)
-end
+
 
 local function resetHopTimer()
     hopTimerResetTick = tick()
@@ -2034,8 +1989,8 @@ local THEME = {
     stroke = Color3.fromRGB(66, 66, 71),
 }
 
-local SHELL_CORNER_RADIUS = 2
-local CONTROL_CORNER_RADIUS = 2
+local SHELL_CORNER_RADIUS = 8
+local CONTROL_CORNER_RADIUS = 6
 local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
 local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
 local GLOW_TRANSPARENCY = 0.84
@@ -2055,7 +2010,7 @@ end
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 430, 0, 360)
+main.Size = UDim2.new(0, 380, 0, 360)
 main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
@@ -2063,7 +2018,7 @@ main.Parent = gui
 main.Visible = false
 
 local TOP_BAR_HEIGHT = 34
-local expandedWidth = 430
+local expandedWidth = 380
 local expandedHeight = 360
 
 local function getViewportSize()
@@ -2085,12 +2040,12 @@ end
 
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 72), 392, 468)
+    expandedWidth = math.clamp(math.floor(viewport.X - 72), 340, 400)
     expandedHeight = math.clamp(math.floor(viewport.Y - 40), 360, 412)
 
     if not UserInputService.TouchEnabled then
-        expandedWidth = math.max(expandedWidth, 430)
-        expandedHeight = math.max(expandedHeight, 388)
+        expandedWidth = math.max(expandedWidth, 380)
+        expandedHeight = math.max(expandedHeight, 360)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -2377,16 +2332,16 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 78, 0, 20)
+    btn.Size = UDim2.new(0, 120, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 10
+    btn.TextSize = 11
     btn.Text = tostring(buttonText or name)
     btn.Parent = tabHolder
     applyTextGlow(btn, GLOW_COLOR, 0.86)
 
-    createCorner(btn, CONTROL_CORNER_RADIUS)
+    createCorner(btn, 2)
 
     local btnPadding = Instance.new("UIPadding")
     btnPadding.PaddingLeft = UDim.new(0, 10)
@@ -4170,44 +4125,7 @@ task.spawn(function()
     end)
 end)
 
-local antiSitConnections = {}
-
-local function clearAntiSitConnections()
-    for _, connection in ipairs(antiSitConnections) do
-        if connection then
-            connection:Disconnect()
-        end
-    end
-    table.clear(antiSitConnections)
-end
-
-local function enableAntiSit(character)
-    clearAntiSitConnections()
-
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-        return
-    end
-
-    humanoid.Sit = false
-
-    table.insert(antiSitConnections, humanoid:GetPropertyChangedSignal("Sit"):Connect(function()
-        if humanoid.Sit then
-            humanoid.Sit = false
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end))
-
-    table.insert(antiSitConnections, humanoid.Seated:Connect(function(isSeated)
-        if isSeated then
-            humanoid.Sit = false
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end))
-end
-
 if LocalPlayer.Character then
-    enableAntiSit(LocalPlayer.Character)
     if settings.helicopterEnabled then
         task.delay(1.5, startHelicopterIdleMode)
     end
@@ -4217,7 +4135,8 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.delay(1.5, function()
         local character = LocalPlayer.Character
         if character then
-            enableAntiSit(character)
+            task.spawn(function())
+            end
         end
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
