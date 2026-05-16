@@ -1718,9 +1718,13 @@ serverHopNow = function(reason)
         return false
     end
 
+    local minPlayers = math.max(1, tonumber(settings.minPlayerCount) or 23)
+    local maxPlayers = math.max(minPlayers, tonumber(settings.maxPlayerCount) or minPlayers)
+
     local servers = {}
     for _, server in ipairs(body.data) do
-        if server.playing > 12 and server.playing < 25 and server.id ~= game.JobId then
+        local playing = tonumber(server.playing or 0) or 0
+        if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
             table.insert(servers, server)
         end
     end
