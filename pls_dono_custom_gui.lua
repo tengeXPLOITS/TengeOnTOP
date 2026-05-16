@@ -1150,7 +1150,17 @@ loadPartModule = function(source)
         code = fetched
     end
 
-    local fn, err = loadstring(code)
+    code = tostring(code or "")
+    code = code:gsub("^\s+", ""):gsub("\s+$", "")
+    code = code:gsub("^\239\187\191", "")
+
+    local loader = loadstring or load
+    if type(loader) ~= "function" then
+        notify("Part Module", "No code loader available.", 4, "part-module-no-loader", 8)
+        return false
+    end
+
+    local fn, err = loader(code)
     if not fn then
         notify("Part Module", "Loadstring parse failed: " .. tostring(err), 4, "part-module-parse-fail", 8)
         return false
@@ -2152,8 +2162,8 @@ body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
-tabHolder.Size = UDim2.new(1, -12, 0, 28)
-tabHolder.Position = UDim2.new(0, 6, 0, 5)
+tabHolder.Size = UDim2.new(1, -12, 0, 34)
+tabHolder.Position = UDim2.new(0, 6, 0, 3)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 0
@@ -2329,11 +2339,11 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 0, 0, 26)
+    btn.Size = UDim2.new(0, 0, 0, 30)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
+    btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
     btn.Parent = tabHolder
@@ -2342,8 +2352,8 @@ local function createTab(name, buttonText)
     createCorner(btn, 8)
 
     local btnPadding = Instance.new("UIPadding")
-    btnPadding.PaddingLeft = UDim.new(0, 6)
-    btnPadding.PaddingRight = UDim.new(0, 6)
+    btnPadding.PaddingLeft = UDim.new(0, 10)
+    btnPadding.PaddingRight = UDim.new(0, 10)
     btnPadding.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
