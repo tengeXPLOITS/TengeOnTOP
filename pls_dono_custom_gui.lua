@@ -376,7 +376,7 @@ if game.PlaceId ~= DEFAULT_PLS_DONATE_PLACE_ID and game.PlaceId ~= VC_PLS_DONATE
     modal.Parent = overlay
 
     local modalCorner = Instance.new("UICorner")
-    modalCorner.CornerRadius = UDim.new(0, 10)
+    modalCorner.CornerRadius = UDim.new(0, 2)
     modalCorner.Parent = modal
 
     local modalStroke = Instance.new("UIStroke")
@@ -398,9 +398,11 @@ if game.PlaceId ~= DEFAULT_PLS_DONATE_PLACE_ID and game.PlaceId ~= VC_PLS_DONATE
     messageBox.TextSize = 16
     messageBox.Text = "this script is exclusive for pls donate"
     messageBox.Parent = modal
+    messageBox.TextStrokeColor3 = Color3.fromRGB(168, 255, 183)
+    messageBox.TextStrokeTransparency = 0.88
 
     local messageCorner = Instance.new("UICorner")
-    messageCorner.CornerRadius = UDim.new(0, 8)
+    messageCorner.CornerRadius = UDim.new(0, 2)
     messageCorner.Parent = messageBox
 
     local buttonHolder = Instance.new("Frame")
@@ -425,9 +427,11 @@ if game.PlaceId ~= DEFAULT_PLS_DONATE_PLACE_ID and game.PlaceId ~= VC_PLS_DONATE
         button.Text = text
         button.AutoButtonColor = true
         button.Parent = buttonHolder
+        button.TextStrokeColor3 = Color3.fromRGB(168, 255, 183)
+        button.TextStrokeTransparency = 0.84
 
         local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 8)
+        corner.CornerRadius = UDim.new(0, 2)
         corner.Parent = button
 
         return button
@@ -2024,18 +2028,37 @@ local THEME = {
     stroke = Color3.fromRGB(66, 66, 71),
 }
 
+local SHELL_CORNER_RADIUS = 2
+local CONTROL_CORNER_RADIUS = 2
+local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
+local GLOW_TRANSPARENCY = 0.84
+local SUBTLE_GLOW_TRANSPARENCY = 0.9
+
+local function createCorner(target, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or CONTROL_CORNER_RADIUS)
+    corner.Parent = target
+    return corner
+end
+
+local function applyTextGlow(target, color, transparency)
+    target.TextStrokeColor3 = color or GLOW_COLOR
+    target.TextStrokeTransparency = transparency or GLOW_TRANSPARENCY
+end
+
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 470, 0, 378)
+main.Size = UDim2.new(0, 442, 0, 392)
 main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = false
 
-local TOP_BAR_HEIGHT = 38
-local expandedWidth = 470
-local expandedHeight = 378
+local TOP_BAR_HEIGHT = 34
+local expandedWidth = 442
+local expandedHeight = 392
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
@@ -2056,12 +2079,12 @@ end
 
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 56), 410, 500)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 44), 342, 388)
+    expandedWidth = math.clamp(math.floor(viewport.X - 72), 392, 468)
+    expandedHeight = math.clamp(math.floor(viewport.Y - 40), 360, 412)
 
     if not UserInputService.TouchEnabled then
         expandedWidth = math.max(expandedWidth, 430)
-        expandedHeight = math.max(expandedHeight, 360)
+        expandedHeight = math.max(expandedHeight, 388)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -2078,9 +2101,7 @@ end
 applyResponsiveSize(false)
 
 do
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 11)
-    corner.Parent = main
+    createCorner(main, SHELL_CORNER_RADIUS)
 
     local stroke = Instance.new("UIStroke")
     stroke.Color = THEME.stroke
@@ -2105,9 +2126,7 @@ topBar.BorderSizePixel = 0
 topBar.Parent = main
 
 do
-    local topCorner = Instance.new("UICorner")
-    topCorner.CornerRadius = UDim.new(0, 11)
-    topCorner.Parent = topBar
+    createCorner(topBar, SHELL_CORNER_RADIUS)
 
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
@@ -2120,67 +2139,53 @@ do
 end
 
 do
-    local titleBadge = Instance.new("TextLabel")
-    titleBadge.Name = "TitleBadge"
-    titleBadge.BackgroundColor3 = Color3.fromRGB(18, 133, 39)
-    titleBadge.Size = UDim2.new(0, 18, 0, 18)
-    titleBadge.Position = UDim2.new(0, 8, 0.5, -9)
-    titleBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleBadge.Font = Enum.Font.GothamBold
-    titleBadge.TextSize = 11
-    titleBadge.Text = "V"
-    titleBadge.Parent = topBar
-
-    local badgeCorner = Instance.new("UICorner")
-    badgeCorner.CornerRadius = UDim.new(0, 4)
-    badgeCorner.Parent = titleBadge
-
-    local badgeStroke = Instance.new("UIStroke")
-    badgeStroke.Thickness = 1
-    badgeStroke.Color = Color3.fromRGB(214, 255, 222)
-    badgeStroke.Parent = titleBadge
-
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -96, 0, 16)
-    title.Position = UDim2.new(0, 32, 0, 3)
+    title.Size = UDim2.new(1, -48, 0, 15)
+    title.Position = UDim2.new(0, 32, 0, 2)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
     title.Text = "PLS DONATE ANIMOSITY"
     title.Parent = topBar
+    applyTextGlow(title, GLOW_COLOR, 0.78)
 
     local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -96, 0, 12)
-    subtitle.Position = UDim2.new(0, 32, 0, 19)
+    subtitle.Size = UDim2.new(1, -48, 0, 11)
+    subtitle.Position = UDim2.new(0, 32, 0, 18)
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextSize = 10
     subtitle.Text = "developed by mattyB"
     subtitle.Parent = topBar
+    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
-minimizeBtn.Size = UDim2.new(0, 22, 0, 16)
-minimizeBtn.Position = UDim2.new(1, -28, 0.5, -8)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(61, 61, 66)
+minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
+minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 12
+minimizeBtn.TextSize = 13
 minimizeBtn.Text = "-"
 minimizeBtn.AutoButtonColor = true
 minimizeBtn.Parent = topBar
+applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
 
 do
-    local miniCorner = Instance.new("UICorner")
-    miniCorner.CornerRadius = UDim.new(0, 5)
-    miniCorner.Parent = minimizeBtn
+    createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
+
+    local miniStroke = Instance.new("UIStroke")
+    miniStroke.Thickness = 1
+    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Parent = minimizeBtn
 end
 
 local body = Instance.new("Frame")
@@ -2204,9 +2209,7 @@ tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
 tabHolder.Parent = body
 
 do
-    local tabCorner = Instance.new("UICorner")
-    tabCorner.CornerRadius = UDim.new(0, 8)
-    tabCorner.Parent = tabHolder
+    createCorner(tabHolder, CONTROL_CORNER_RADIUS)
 
     local tabStroke = Instance.new("UIStroke")
     tabStroke.Thickness = 1
@@ -2322,7 +2325,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(61, 61, 66)
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
 
     minimizeTween = TweenService:Create(
         main,
@@ -2375,10 +2378,9 @@ local function createTab(name, buttonText)
     btn.TextSize = 10
     btn.Text = tostring(buttonText or name)
     btn.Parent = tabHolder
+    applyTextGlow(btn, GLOW_COLOR, 0.86)
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnPadding = Instance.new("UIPadding")
     btnPadding.PaddingLeft = UDim.new(0, 10)
@@ -2401,9 +2403,7 @@ local function createTab(name, buttonText)
     page.CanvasSize = UDim2.new(0, 0, 0, 0)
     page.Parent = pages
 
-    local pageCorner = Instance.new("UICorner")
-    pageCorner.CornerRadius = UDim.new(0, 8)
-    pageCorner.Parent = page
+    createCorner(page, CONTROL_CORNER_RADIUS)
 
     local content = Instance.new("Frame")
     content.Name = "Content"
@@ -2435,9 +2435,7 @@ local function createSection(parent, titleText)
     section.AutomaticSize = Enum.AutomaticSize.Y
     section.Parent = parent
 
-    local corner2 = Instance.new("UICorner")
-    corner2.CornerRadius = UDim.new(0, 8)
-    corner2.Parent = section
+    createCorner(section, CONTROL_CORNER_RADIUS)
 
     local titleLabel = Instance.new("TextLabel")
     titleLabel.BackgroundTransparency = 1
@@ -2449,6 +2447,7 @@ local function createSection(parent, titleText)
     titleLabel.TextColor3 = THEME.subtleText
     titleLabel.Text = titleText
     titleLabel.Parent = section
+    applyTextGlow(titleLabel, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 
     local holder = Instance.new("Frame")
     holder.BackgroundTransparency = 1
@@ -2471,9 +2470,7 @@ local function createLockedTabNotice(parent)
     holder.Size = UDim2.new(1, 0, 0, 54)
     holder.Parent = parent
 
-    local holderCorner = Instance.new("UICorner")
-    holderCorner.CornerRadius = UDim.new(0, 8)
-    holderCorner.Parent = holder
+    createCorner(holder, CONTROL_CORNER_RADIUS)
 
     local label = Instance.new("TextLabel")
     label.BackgroundTransparency = 1
@@ -2485,6 +2482,7 @@ local function createLockedTabNotice(parent)
     label.TextColor3 = THEME.subtleText
     label.Text = "verified players can use this."
     label.Parent = holder
+    applyTextGlow(label, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local function createLockedToggleRow(parent, text)
@@ -2502,6 +2500,7 @@ local function createLockedToggleRow(parent, text)
     label.TextColor3 = THEME.controlText
     label.Text = LOCK_ICON .. " " .. tostring(text or "")
     label.Parent = row
+    applyTextGlow(label, GLOW_COLOR, 0.88)
 
     local info = Instance.new("TextLabel")
     info.BackgroundTransparency = 1
@@ -2514,6 +2513,7 @@ local function createLockedToggleRow(parent, text)
     info.TextWrapped = true
     info.Text = "verified players can use this."
     info.Parent = row
+    applyTextGlow(info, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local function createToggle(parent, text, key)
@@ -2529,9 +2529,7 @@ local function createToggle(parent, text, key)
     btn.TextSize = 11
     btn.Parent = row
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
@@ -2548,6 +2546,7 @@ local function createToggle(parent, text, key)
     label.TextColor3 = THEME.controlText
     label.Text = text
     label.Parent = row
+    applyTextGlow(label, GLOW_COLOR, 0.88)
 
     local function applyState()
         local enabled = settings[key] == true
@@ -3331,10 +3330,9 @@ local function createTextBox(parent, text, key, numeric)
     local prefix = text .. ": "
     box.Text = prefix .. tostring(settings[key])
     box.Parent = row
+    applyTextGlow(box, GLOW_COLOR, 0.88)
 
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 4)
-    boxCorner.Parent = box
+    createCorner(box, CONTROL_CORNER_RADIUS)
 
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Thickness = 1
@@ -3393,15 +3391,14 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     box.PlaceholderText = placeholder
     box.Text = tostring(settings[key] or "")
     box.Parent = row
+    applyTextGlow(box, GLOW_COLOR, 0.88)
 
     local boxPadding = Instance.new("UIPadding")
     boxPadding.PaddingLeft = UDim.new(0, 8)
     boxPadding.PaddingRight = UDim.new(0, 8)
     boxPadding.Parent = box
 
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 4)
-    boxCorner.Parent = box
+    createCorner(box, CONTROL_CORNER_RADIUS)
 
     local boxStroke = Instance.new("UIStroke")
     boxStroke.Thickness = 1
@@ -3464,10 +3461,9 @@ local function createDropdown(parent, text, key, options)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
     btn.Parent = row
+    applyTextGlow(btn, GLOW_COLOR, 0.88)
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
@@ -3483,9 +3479,7 @@ local function createDropdown(parent, text, key, options)
     listFrame.ZIndex = 20
     listFrame.Parent = row
 
-    local listCorner = Instance.new("UICorner")
-    listCorner.CornerRadius = UDim.new(0, 4)
-    listCorner.Parent = listFrame
+    createCorner(listFrame, CONTROL_CORNER_RADIUS)
 
     local listStroke = Instance.new("UIStroke")
     listStroke.Thickness = 1
@@ -3538,10 +3532,9 @@ local function createDropdown(parent, text, key, options)
         optionBtn.Text = tostring(v)
         optionBtn.ZIndex = 21
         optionBtn.Parent = listFrame
+        applyTextGlow(optionBtn, GLOW_COLOR, 0.9)
 
-        local optionCorner = Instance.new("UICorner")
-        optionCorner.CornerRadius = UDim.new(0, 4)
-        optionCorner.Parent = optionBtn
+        createCorner(optionBtn, CONTROL_CORNER_RADIUS)
 
         optionBtn.MouseButton1Click:Connect(function()
             idx = i
@@ -3589,10 +3582,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     btn.TextSize = 12
     btn.Text = text
     btn.Parent = row
+    applyTextGlow(btn, GLOW_COLOR, 0.88)
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
@@ -3607,9 +3599,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     content.Size = UDim2.new(1, 0, 0, contentHeight)
     content.Parent = row
 
-    local contentCorner = Instance.new("UICorner")
-    contentCorner.CornerRadius = UDim.new(0, 4)
-    contentCorner.Parent = content
+    createCorner(content, CONTROL_CORNER_RADIUS)
 
     local contentStroke = Instance.new("UIStroke")
     contentStroke.Thickness = 1
@@ -3637,6 +3627,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     editor.TextWrapped = false
     editor.PlaceholderText = "One message per line (no limit)"
     editor.Parent = content
+    applyTextGlow(editor, GLOW_COLOR, 0.9)
 
     local editorPad = Instance.new("UIPadding")
     editorPad.PaddingTop = UDim.new(0, 6)
@@ -3645,9 +3636,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     editorPad.PaddingRight = UDim.new(0, 8)
     editorPad.Parent = editor
 
-    local editorCorner = Instance.new("UICorner")
-    editorCorner.CornerRadius = UDim.new(0, 4)
-    editorCorner.Parent = editor
+    createCorner(editor, CONTROL_CORNER_RADIUS)
 
     local editorStroke = Instance.new("UIStroke")
     editorStroke.Thickness = 1
@@ -3663,10 +3652,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     saveBtn.TextSize = 11
     saveBtn.Text = "Save"
     saveBtn.Parent = content
+    applyTextGlow(saveBtn, GLOW_COLOR, 0.84)
 
-    local saveCorner = Instance.new("UICorner")
-    saveCorner.CornerRadius = UDim.new(0, 4)
-    saveCorner.Parent = saveBtn
+    createCorner(saveBtn, CONTROL_CORNER_RADIUS)
 
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
@@ -3677,10 +3665,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     closeBtn.TextSize = 11
     closeBtn.Text = "Close"
     closeBtn.Parent = content
+    applyTextGlow(closeBtn, GLOW_COLOR, 0.88)
 
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 4)
-    closeCorner.Parent = closeBtn
+    createCorner(closeBtn, CONTROL_CORNER_RADIUS)
 
     local nextLineBtn = Instance.new("TextButton")
     nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
@@ -3691,10 +3678,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     nextLineBtn.TextSize = 11
     nextLineBtn.Text = "Skip To Next Line"
     nextLineBtn.Parent = content
+    applyTextGlow(nextLineBtn, GLOW_COLOR, 0.88)
 
-    local nextLineCorner = Instance.new("UICorner")
-    nextLineCorner.CornerRadius = UDim.new(0, 4)
-    nextLineCorner.Parent = nextLineBtn
+    createCorner(nextLineBtn, CONTROL_CORNER_RADIUS)
 
     local currentList = normalizeMessageList(settings[key], defaults[key])
     settings[key] = currentList
@@ -3764,10 +3750,9 @@ local function createButton(parent, text, callback)
     btn.TextSize = 11
     btn.Text = text
     btn.Parent = parent
+    applyTextGlow(btn, GLOW_COLOR, 0.84)
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     btn.MouseButton1Click:Connect(function()
         local ok, err = pcall(callback)
@@ -3792,6 +3777,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextColor3 = THEME.controlText
     lbl.Parent = row
+    applyTextGlow(lbl, GLOW_COLOR, 0.88)
 
     local track = Instance.new("Frame")
     track.Size = UDim2.new(1, 0, 0, 8)
@@ -3800,9 +3786,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     track.BorderSizePixel = 0
     track.Parent = row
 
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0, 4)
-    trackCorner.Parent = track
+    createCorner(track, CONTROL_CORNER_RADIUS)
 
     local trackStroke = Instance.new("UIStroke")
     trackStroke.Thickness = 1
@@ -3815,9 +3799,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     fill.BorderSizePixel = 0
     fill.Parent = track
 
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 4)
-    fillCorner.Parent = fill
+    createCorner(fill, CONTROL_CORNER_RADIUS)
 
     local thumb = Instance.new("Frame")
     thumb.Size = UDim2.new(0, 14, 0, 14)
@@ -3828,9 +3810,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     thumb.ZIndex = 5
     thumb.Parent = track
 
-    local thumbCorner = Instance.new("UICorner")
-    thumbCorner.CornerRadius = UDim.new(1, 0)
-    thumbCorner.Parent = thumb
+    createCorner(thumb, 2)
 
     local function updateVisuals(val)
         val = math.clamp(tonumber(val) or minVal, minVal, maxVal)
