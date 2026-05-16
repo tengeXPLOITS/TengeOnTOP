@@ -4135,8 +4135,8 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.delay(1.5, function()
         local character = LocalPlayer.Character
         if character then
-            task.spawn(function())
-            end
+            task.spawn(function()
+            end)
         end
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
