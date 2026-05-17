@@ -397,15 +397,6 @@ local defaults = {
     helicopterEnabled = false,
     helicopterDieAfterLanding = false,
     testDonationAmount = 6,
-
-    partModuleEnabled = false,
-    partModuleSource = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/main/part%20of%20pls%20dono.lua",
-    boothMonitoringEnabled = false,
-    boothAskIntervalMin = 200,
-    boothAskIntervalMax = 400,
-    approachPeopleEnabled = false,
-    approachAttempts = 1,
-    returnWhenRejected = true,
 }
 
 local boothFontOptions = {"SciFi"}
@@ -423,7 +414,6 @@ do
 end
 
 local settings = {}
-local loadPartModule
 
 local function deepCopy(tbl)
     local out = {}
@@ -603,14 +593,6 @@ settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.t
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
 saveSettings()
 SharedEnv.plsdonoSettings = settings
-SharedEnv.plsdonoPartModule = SharedEnv.plsdonoPartModule or {}
-SharedEnv.plsdonoPartModule.settings = settings
-SharedEnv.plsdonoPartModule.load = function(source)
-    if type(loadPartModule) == "function" then
-        return loadPartModule(source)
-    end
-    return false
-end
 
 local boothScanAnchor = Vector3.new(165.161, 0, 311.636)
 local claimedBoothSlot
@@ -709,56 +691,6 @@ local antiBotLastNotifiedCount = -1
 local antiBotPendingConfirmation = false
 local antiBotNotifyCooldown = 30
 local antiBotConfirmationDelay = 10
-local ANTI_BOT_IDLE_SECONDS = 30
-local ANTI_BOT_IDLE_POSITION_TOLERANCE = 0.5
-local antiBotIdleStates = {}
-
-local function isIdleOrJumpingInPlace(player)
-    if not player or not player.Character then
-        return false
-    end
-
-    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not humanoid or not rootPart then
-        antiBotIdleStates[player.UserId] = nil
-        return false
-    end
-
-    local now = tick()
-    local state = antiBotIdleStates[player.UserId] or {}
-    local currentState = humanoid:GetState()
-    local currentXZ = Vector3.new(rootPart.Position.X, 0, rootPart.Position.Z)
-    local lastXZ = state.lastXZ or currentXZ
-    local distanceXZ = (currentXZ - lastXZ).Magnitude
-    local sameXZ = distanceXZ <= ANTI_BOT_IDLE_POSITION_TOLERANCE
-
-    local jumpedInPlace = false
-    if sameXZ and (currentState == Enum.HumanoidStateType.Jumping or currentState == Enum.HumanoidStateType.Freefall) then
-        if state.lastState and state.lastState ~= currentState then
-            jumpedInPlace = true
-        end
-    end
-
-    if sameXZ then
-        if not state.idleSince then
-            state.idleSince = now
-        end
-    else
-        state.idleSince = nil
-    end
-
-    state.lastXZ = currentXZ
-    state.lastState = currentState
-    antiBotIdleStates[player.UserId] = state
-
-    if jumpedInPlace then
-        return true
-    end
-
-    return state.idleSince and (now - state.idleSince) >= ANTI_BOT_IDLE_SECONDS
-end
-
 local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
@@ -1008,7 +940,7 @@ local function notifyBotScanResult(scan, manual)
     local threshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
     if manual then
         if count > 0 then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated or idle: %d"):format(count, boothCount, zeroCount), 5, nil, nil)
+            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 5, nil, nil)
         else
             notify("Bot Scan", "No suspicious booths found.", 4, nil, nil)
         end
@@ -1029,7 +961,7 @@ local function notifyBotScanResult(scan, manual)
         notify("Bot Detection", "Bot signal dropped below threshold.", 4, "bot-cross-down", 10)
         antiBotLastNotifyTick = now
     elseif changed and count > 0 and (now - antiBotLastNotifyTick) >= antiBotNotifyCooldown then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated or idle: %d"):format(count, boothCount, zeroCount), 4, "bot-periodic", 20)
+            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 4, "bot-periodic", 20)
         antiBotLastNotifyTick = now
     end
 
@@ -1131,57 +1063,6 @@ local function httpGetBody(url)
     end
 
     return nil
-end
-
-loadPartModule = function(source)
-    local rawSource = tostring(source or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if rawSource == "" then
-        notify("Part Module", "No part module source provided.", 4, "part-module-missing", 5)
-        return false
-    end
-
-    local code = rawSource
-    if rawSource:match("^https?://") then
-        local normalizedUrl = rawSource
-        if normalizedUrl:match("https?://raw%.githubusercontent%.com/.+/refs/heads/.+" ) then
-            normalizedUrl = normalizedUrl:gsub("/refs/heads/", "/")
-        end
-        if normalizedUrl:match("https?://github%.com/.+/.+/blob/.+") then
-            normalizedUrl = normalizedUrl:gsub("https?://github%.com/", "https://raw.githubusercontent.com/"):gsub("/blob/", "/")
-        end
-
-        local fetched = httpGetBody(normalizedUrl)
-        if type(fetched) ~= "string" or fetched == "" then
-            notify("Part Module", "Failed to fetch part module from URL.", 4, "part-module-fetch-fail", 5)
-            return false
-        end
-        code = fetched
-    end
-
-    code = tostring(code or "")
-    code = code:gsub("^%s+", ""):gsub("%s+$", "")
-    code = code:gsub("^\239\187\191", "")
-
-    local loader = loadstring or load
-    if type(loader) ~= "function" then
-        notify("Part Module", "No code loader available.", 4, "part-module-no-loader", 8)
-        return false
-    end
-
-    local fn, err = loader(code)
-    if not fn then
-        notify("Part Module", "Loadstring parse failed: " .. tostring(err), 4, "part-module-parse-fail", 8)
-        return false
-    end
-
-    local ok, result = pcall(fn)
-    if not ok then
-        notify("Part Module", "Part module runtime error: " .. tostring(result), 4, "part-module-runtime-fail", 8)
-        return false
-    end
-
-    notify("Part Module", "Part module loaded successfully.", 3, "part-module-loaded", 5)
-    return true
 end
 
 local function postWebhookJson(url, bodyTable)
@@ -1542,8 +1423,7 @@ countZeroDonatedPlayers = function()
         local ls = pl:FindFirstChild("leaderstats")
         local donatedObj = ls and ls:FindFirstChild("Donated")
         local donated = tonumber(donatedObj and donatedObj.Value) or 0
-        local idleBot = pl ~= LocalPlayer and isIdleOrJumpingInPlace(pl)
-        if donated <= 0 or idleBot then
+        if donated <= 0 then
             count += 1
         end
     end
@@ -1716,7 +1596,7 @@ serverHopNow = function(reason)
     })
     
     if not req or not req.Body then
-        notify("Server", "Failed to fetch servers.", 4, "server-hop-fail", 5)
+        notify("Server Hop", "Failed to fetch servers.", 4, "server-hop-fail", 5)
         return false
     end
 
@@ -1725,7 +1605,7 @@ serverHopNow = function(reason)
     end)
 
     if not ok or not body or not body.data then
-        notify("Server", "Failed to parse servers.", 4, "server-hop-fail", 5)
+        notify("Server Hop", "Failed to parse servers.", 4, "server-hop-fail", 5)
         return false
     end
 
@@ -1741,7 +1621,7 @@ serverHopNow = function(reason)
     end
 
     if #servers == 0 then
-        notify("Server", "No different server found right now.", 4, "server-hop-fail", 5)
+        notify("Server Hop", "No different server found right now.", 4, "server-hop-fail", 5)
         return false
     end
 
@@ -2170,19 +2050,18 @@ body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
-tabHolder.Size = UDim2.new(1, -12, 0, 34)
-tabHolder.Position = UDim2.new(0, 6, 0, 3)
+tabHolder.Size = UDim2.new(1, -12, 0, 28)
+tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
-tabHolder.ScrollBarThickness = 0
-tabHolder.ScrollBarImageTransparency = 1
-tabHolder.ScrollBarImageColor3 = THEME.section
+tabHolder.ScrollBarThickness = 2
+tabHolder.ScrollBarImageColor3 = THEME.accent
 tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
 tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
 tabHolder.Parent = body
 
-    do
+do
     createCorner(tabHolder, CONTROL_CORNER_RADIUS)
 
     local tabStroke = Instance.new("UIStroke")
@@ -2191,13 +2070,20 @@ tabHolder.Parent = body
     tabStroke.Parent = tabHolder
 end
 
-    do
+do
     local tabLayout = Instance.new("UIListLayout")
     tabLayout.FillDirection = Enum.FillDirection.Horizontal
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
     tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    tabLayout.Padding = UDim.new(0, 1)
+    tabLayout.Padding = UDim.new(0, 6)
     tabLayout.Parent = tabHolder
+
+    local tabPad = Instance.new("UIPadding")
+    tabPad.PaddingTop = UDim.new(0, 4)
+    tabPad.PaddingBottom = UDim.new(0, 4)
+    tabPad.PaddingLeft = UDim.new(0, 6)
+    tabPad.PaddingRight = UDim.new(0, 6)
+    tabPad.Parent = tabHolder
 
     local tabUnderline = Instance.new("Frame")
     tabUnderline.Name = "TabUnderline"
@@ -2346,8 +2232,8 @@ end
 local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 110, 0, 32)
+    btn.AutomaticSize = Enum.AutomaticSize.X
+    btn.Size = UDim2.new(0, 120, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -3886,7 +3772,7 @@ local function buildSettingsTabs()
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
-    local serverTab = createTab("Server")
+    local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
@@ -3960,19 +3846,6 @@ local function buildSettingsTabs()
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
             end
         end)
-        createToggle(mainSection, "Part Module Enabled", "partModuleEnabled")
-        createPlainTextBox(mainSection, "Paste part module URL or loadstring here...", "partModuleSource", 40, true)
-        createButton(mainSection, "Load Part Module", function()
-            if loadPartModule then
-                loadPartModule(settings.partModuleSource)
-            end
-        end)
-        createToggle(mainSection, "Booth Monitoring", "boothMonitoringEnabled")
-        createTextBox(mainSection, "Booth Ask Interval Min (S)", "boothAskIntervalMin", true)
-        createTextBox(mainSection, "Booth Ask Interval Max (S)", "boothAskIntervalMax", true)
-        createToggle(mainSection, "Approach People", "approachPeopleEnabled")
-        createTextBox(mainSection, "Approach Attempts", "approachAttempts", true)
-        createToggle(mainSection, "Return After Rejection", "returnWhenRejected")
     end
 
     do
@@ -3997,21 +3870,21 @@ do
 end
 
 do
-    local serverSection = createSection(serverTab, "Server Settings")
-    createToggle(serverSection, "Auto Server", "serverHopToggle")
-    createTextBox(serverSection, "Server Delay (Minutes)", "serverHopDelay", true)
+    local serverSection = createSection(serverTab, "Serverhop Settings")
+    createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
+    createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-    createToggle(serverSection, "Anti Bot Servers", "antiBotServers")
+    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
     createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
     createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
     createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
     createToggle(serverSection, "Mod Evader", "modEvader")
-    createButton(serverSection, "Scan Bot Servers Now", function()
+    createButton(serverSection, "Scan Bot Booths Now", function()
         local scan = runBotDetectionScan()
         notifyBotScanResult(scan, true)
     end)
-    createButton(serverSection, "Change Server Now", function()
+    createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
 
@@ -4026,12 +3899,6 @@ end
 end
 
 buildSettingsTabs()
-
-if settings.partModuleEnabled and tostring(settings.partModuleSource or "") ~= "" then
-    task.spawn(function()
-        loadPartModule(settings.partModuleSource)
-    end)
-end
 
 task.spawn(function()
     task.wait(2)
@@ -4089,7 +3956,7 @@ task.spawn(function()
         local threshold = 15
         if playerCount < threshold and (tick() - lastPopulationHopTick) > 10 then
             lastPopulationHopTick = tick()
-            notify("Server", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
+            notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
             requestServerHop("population-hop")
         end
     end
