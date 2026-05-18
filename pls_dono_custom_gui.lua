@@ -1886,7 +1886,13 @@ local function executeUiSource(source)
         return nil
     end
 
-    local tempGlobals = {
+    local chunk, err = loadstring(source)
+    if not chunk then
+        notify("UI Compile Failed", tostring(err), 8, "ui-compile-fail")
+        return nil
+    end
+
+    local env = setmetatable({
         LocalPlayer = LocalPlayer,
         GuiParent = GuiParent,
         settings = settings,
@@ -1910,56 +1916,42 @@ local function executeUiSource(source)
         applyResponsiveSize = applyResponsiveSize,
         cloneRef = cloneRef,
         formatFarmDuration = formatFarmDuration,
-    }
+        math = math,
+        string = string,
+        table = table,
+        pairs = pairs,
+        ipairs = ipairs,
+        next = next,
+        tostring = tostring,
+        tonumber = tonumber,
+        type = type,
+        pcall = pcall,
+        xpcall = xpcall,
+        warn = warn,
+        error = error,
+    }, { __index = _G })
 
-    local env = setmetatable(tempGlobals, { __index = _G })
-    local chunk, err
-
-    if type(load) == "function" then
-        local success, res = pcall(load, source, "UIChunk", "t", env)
-        if success and type(res) == "function" then
-            chunk = res
-        else
-            err = res
-        end
-    end
-
-    if not chunk and type(loadstring) == "function" then
-        chunk, err = loadstring(source)
-        if chunk and type(setfenv) == "function" then
-            setfenv(chunk, env)
-        end
-    end
-
-    if not chunk and type(loadstring) == "function" then
-        chunk, err = loadstring(source)
-    end
-
-    if not chunk then
-        notify("UI Compile Failed", tostring(err), 8, "ui-compile-fail")
-        return nil
-    end
-
-    local restoreGlobals = nil
-    if type(setfenv) ~= "function" then
+    if type(setfenv) == "function" then
+        setfenv(chunk, env)
+    else
         local previousGlobals = {}
-        for key, value in pairs(tempGlobals) do
+        for key, value in pairs(env) do
             previousGlobals[key] = _G[key]
             _G[key] = value
         end
-        restoreGlobals = function()
-            for key, value in pairs(previousGlobals) do
-                _G[key] = value
-            end
+        local ok2, result = pcall(chunk)
+        for key, value in pairs(previousGlobals) do
+            _G[key] = value
         end
+
+        if not ok2 then
+            notify("UI Init Failed", tostring(result), 8, "ui-init-fail")
+            return nil
+        end
+        return result
     end
 
     local ok2, result = pcall(chunk)
-
-    if restoreGlobals then
-        restoreGlobals()
-    end
-
     if not ok2 then
         notify("UI Init Failed", tostring(result), 8, "ui-init-fail")
         return nil
