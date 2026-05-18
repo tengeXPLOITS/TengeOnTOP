@@ -1892,7 +1892,7 @@ local function executeUiSource(source)
         return nil
     end
 
-    local env = setmetatable({
+    local tempGlobals = {
         LocalPlayer = LocalPlayer,
         GuiParent = GuiParent,
         settings = settings,
@@ -1916,30 +1916,20 @@ local function executeUiSource(source)
         applyResponsiveSize = applyResponsiveSize,
         cloneRef = cloneRef,
         formatFarmDuration = formatFarmDuration,
-        math = math,
-        string = string,
-        table = table,
-        ipairs = ipairs,
-        pairs = pairs,
-        next = next,
-        tostring = tostring,
-        tonumber = tonumber,
-        type = type,
-        pcall = pcall,
-        xpcall = xpcall,
-        warn = warn,
-        error = error,
-    }, { __index = _G })
+    }
 
-    if type(setfenv) == "function" then
-        setfenv(chunk, env)
-    else
-        for k, v in pairs(env) do
-            _G[k] = v
-        end
+    local previousGlobals = {}
+    for key, value in pairs(tempGlobals) do
+        previousGlobals[key] = _G[key]
+        _G[key] = value
     end
 
     local ok2, result = pcall(chunk)
+
+    for key, value in pairs(previousGlobals) do
+        _G[key] = value
+    end
+
     if not ok2 then
         notify("UI Init Failed", tostring(result), 8, "ui-init-fail")
         return nil
