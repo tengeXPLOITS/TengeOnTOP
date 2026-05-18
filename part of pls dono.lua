@@ -2290,3 +2290,5 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
+return gui
