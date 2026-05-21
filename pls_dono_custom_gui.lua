@@ -3925,7 +3925,6 @@ task.spawn(function()
 end)
 
 activateTab("Main")
-setMinimized(true)
 
 RunService.RenderStepped:Connect(function()
     local viewport = getViewportSize()
