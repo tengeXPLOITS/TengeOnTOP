@@ -639,8 +639,9 @@ local antiBotLastNotifiedCount = -1
 local antiBotPendingConfirmation = false
 local antiBotNotifyCooldown = 30
 local antiBotConfirmationDelay = 10
-local hopCooldownSeconds = 4
+local hopCooldownSeconds = 1
 local lastHopTick = 0
+local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
 local lastDonationTick = 0
@@ -1498,8 +1499,13 @@ local function choosePlaceId()
 end
 
 serverHopNow = function(reason)
+    if serverHopIsActive then
+        return true
+    end
+
+    serverHopIsActive = true
     task.spawn(function()
-        while task.wait(1.5) do
+        while true do
             local placeId = choosePlaceId()
             local minPlayers = tonumber(settings.minPlayerCount) or 23
             local maxPlayers = tonumber(settings.maxPlayerCount) or 24
@@ -1530,12 +1536,21 @@ serverHopNow = function(reason)
 
                 if #servers > 0 then
                     local selectedServer = servers[math.random(1, #servers)]
+                    local teleported = false
                     pcall(function()
                         TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                        markPendingFarmHop(reason, placeId, selectedServer.id)
+                        teleported = true
                     end)
+
+                    if teleported then
+                        markPendingFarmHop(reason, placeId, selectedServer.id)
+                        serverHopIsActive = false
+                        return
+                    end
                 end
             end
+
+            task.wait(0.35)
         end
     end)
     return true
@@ -3026,8 +3041,6 @@ local function onBoothClaimDetected(slot)
         end)
     end
 
-    setMinimized(true)
-
 end
 
 local dropdownCloseFns = {}
@@ -3756,6 +3769,32 @@ task.spawn(function()
             lastPopulationHopTick = tick()
             notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
             requestServerHop("population-hop")
+        end
+    end
+end)
+
+task.spawn(function()
+    local tutorialHopTriggered = false
+    while task.wait(0.5) do
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            local tutorialActive = false
+            for _, guiObject in ipairs(playerGui:GetDescendants()) do
+                local objectName = tostring(guiObject.Name or ""):lower()
+                if objectName:find("tutorial") then
+                    tutorialActive = true
+                    break
+                end
+            end
+
+            if tutorialActive then
+                if not tutorialHopTriggered then
+                    tutorialHopTriggered = true
+                    requestServerHop("tutorial-gui")
+                end
+            else
+                tutorialHopTriggered = false
+            end
         end
     end
 end)
