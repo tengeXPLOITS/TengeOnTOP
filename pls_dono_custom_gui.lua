@@ -1498,52 +1498,47 @@ local function choosePlaceId()
 end
 
 serverHopNow = function(reason)
-    local placeId = choosePlaceId()
-    local minPlayers = math.max(1, tonumber(settings.minPlayerCount) or 23)
-    local maxPlayers = math.max(minPlayers, tonumber(settings.maxPlayerCount) or minPlayers)
+    task.spawn(function()
+        while task.wait(1.5) do
+            local placeId = choosePlaceId()
+            local minPlayers = tonumber(settings.minPlayerCount) or 23
+            local maxPlayers = tonumber(settings.maxPlayerCount) or 24
 
-    while true do
-        local req = performHttpRequest({
-            Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
-            Method = "GET"
-        })
+            local req = performHttpRequest({
+                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
+                Method = "GET"
+            })
 
-        local body = nil
-        if req and type(req.Body) == "string" and req.Body ~= "" then
-            local ok, decoded = pcall(function()
-                return HttpService:JSONDecode(req.Body)
-            end)
-            if ok and decoded and type(decoded.data) == "table" then
-                body = decoded
-            end
-        end
-
-        if body then
-            local servers = {}
-            for _, server in ipairs(body.data) do
-                local playing = tonumber(server.playing or 0) or 0
-                if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
-                    table.insert(servers, server)
-                end
-            end
-
-            if #servers > 0 then
-                local selectedServer = servers[math.random(1, #servers)]
-                local teleported = false
-                pcall(function()
-                    TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                    teleported = true
+            local body = nil
+            if req and type(req.Body) == "string" and req.Body ~= "" then
+                local ok, decoded = pcall(function()
+                    return HttpService:JSONDecode(req.Body)
                 end)
+                if ok and decoded and type(decoded.data) == "table" then
+                    body = decoded
+                end
+            end
 
-                if teleported then
-                    markPendingFarmHop(reason, placeId, selectedServer.id)
-                    return true
+            if body then
+                local servers = {}
+                for _, server in ipairs(body.data) do
+                    local playing = tonumber(server.playing or 0) or 0
+                    if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
+                        table.insert(servers, server)
+                    end
+                end
+
+                if #servers > 0 then
+                    local selectedServer = servers[math.random(1, #servers)]
+                    pcall(function()
+                        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                        markPendingFarmHop(reason, placeId, selectedServer.id)
+                    end)
                 end
             end
         end
-
-        task.wait(1)
-    end
+    end)
+    return true
 end
 
 requestServerHop = function(reason)
@@ -1807,28 +1802,12 @@ local function applyTextGlow(target, color, transparency)
 end
 
 local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
-    btn.BackgroundTransparency = 1
-    btn.AutoButtonColor = false
-    btn.BorderSizePixel = 0
+    btn.BackgroundColor3 = backgroundColor or THEME.control
     btn.TextColor3 = textColor or THEME.controlText
     btn.Font = font or Enum.Font.GothamSemibold
     btn.TextSize = textSize or 11
-
-    local bg = Instance.new("ImageLabel")
-    bg.Name = "ButtonBackground"
-    bg.AnchorPoint = Vector2.new(0, 0)
-    bg.Position = UDim2.new(0, 0, 0, 0)
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundTransparency = 1
-    bg.BorderSizePixel = 0
-    bg.Image = "rbxassetid://2851929490"
-    bg.ImageColor3 = backgroundColor or THEME.control
-    bg.ScaleType = Enum.ScaleType.Slice
-    bg.SliceCenter = Rect.new(4, 4, 4, 4)
-    bg.ZIndex = math.max(0, (btn.ZIndex or 1) - 1)
-    bg.Parent = btn
-
-    createCorner(bg, CONTROL_CORNER_RADIUS)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
 end
 
 local main = Instance.new("Frame")
@@ -2163,8 +2142,8 @@ end
 local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 120, 0, 28)
+    btn.AutomaticSize = Enum.AutomaticSize.None
+    btn.Size = UDim2.new(0, 80, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -2175,11 +2154,6 @@ local function createTab(name, buttonText)
     applyTextGlow(btn, GLOW_COLOR, 0.86)
 
     createCorner(btn, 8)
-
-    local btnPadding = Instance.new("UIPadding")
-    btnPadding.PaddingLeft = UDim.new(0, 12)
-    btnPadding.PaddingRight = UDim.new(0, 12)
-    btnPadding.Parent = btn
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
