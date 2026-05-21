@@ -379,9 +379,6 @@ local defaults = {
 
     webhookToggle = false,
     webhookBox = "",
-    webhookAfterSH = false,
-    pingEveryone = false,
-    pingAboveDono = 1000,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -395,7 +392,6 @@ local defaults = {
     AnonymousMode = false,
     vcServerHopToggle = false,
     helicopterEnabled = false,
-    helicopterDieAfterLanding = false,
     testDonationAmount = 6,
 }
 
@@ -486,54 +482,6 @@ local function saveSettings()
     end)
 end
 
-local restrictedAccessCacheUntil = 0
-local restrictedAccessEnabled = false
-local LOCK_ICON = utf8.char(0x1F512)
-
-local function hasVerifiedRestrictedFeatureAccess()
-    local now = tick()
-    if now < restrictedAccessCacheUntil then
-        return restrictedAccessEnabled
-    end
-
-    restrictedAccessCacheUntil = now + 3
-
-    local chatUiShowsUnlock = false
-    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if playerGui then
-        for _, guiObject in ipairs(playerGui:GetDescendants()) do
-            if guiObject:IsA("TextLabel") or guiObject:IsA("TextButton") then
-                local text = tostring(guiObject.Text or ""):lower():gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-                if text == "unlock chat" or text:find("you can only view system messages here", 1, true) or text:find("get an age check to chat", 1, true) then
-                    chatUiShowsUnlock = true
-                    break
-                end
-            end
-        end
-    end
-
-    if chatUiShowsUnlock then
-        restrictedAccessEnabled = false
-        return false
-    end
-
-    local chatOk, canChat = pcall(function()
-        return TextChatService:CanUserChatAsync(LocalPlayer.UserId)
-    end)
-    if chatOk then
-        restrictedAccessEnabled = canChat == true
-        return restrictedAccessEnabled
-    end
-
-    -- Fall back to voice eligibility if Roblox doesn't answer the local
-    -- text-chat permission check for this session.
-    local voiceOk, voiceEnabled = pcall(function()
-        return game:GetService("VoiceChatService"):IsVoiceEnabledForUserIdAsync(LocalPlayer.UserId)
-    end)
-
-    restrictedAccessEnabled = voiceOk and voiceEnabled == true
-    return restrictedAccessEnabled
-end
 
 local function loadSettings()
     settings = deepCopy(defaults)
@@ -1003,10 +951,6 @@ local function sendChatMessage(message)
         return
     end
 
-    if not hasVerifiedRestrictedFeatureAccess() then
-        return
-    end
-
     local ok = pcall(function()
         local channels = TextChatService:FindFirstChild("TextChannels")
         local general = channels and channels:FindFirstChild("RBXGeneral")
@@ -1103,37 +1047,6 @@ local function formatFarmDuration(totalSeconds)
     return table.concat(parts, " ")
 end
 
-local function notifyWebhookAfterHop(reason)
-    if not settings.webhookAfterSH then
-        return
-    end
-
-    local url = tostring(settings.webhookBox or ""):match("%S+")
-    if not url or url == "" then
-        notify("Webhook", "Webhook After Serverhop is on, but no webhook URL is set.", 4, "serverhop-webhook-missing-url", 10)
-        return
-    end
-
-    local display = tostring(LocalPlayer.DisplayName or LocalPlayer.Name or "Unknown")
-    local user = tostring(LocalPlayer.Name or "Unknown")
-    local hopReason = trimText(reason)
-    local msg
-    if display ~= user then
-        msg = ("%s (@%s) serverhopped"):format(display, user)
-    else
-        msg = ("@%s serverhopped"):format(user)
-    end
-    if hopReason ~= "" then
-        msg = ("%s [%s]"):format(msg, hopReason)
-    end
-
-    local sent = postWebhookJson(url, {content = msg})
-    if sent then
-        notify("Webhook", "Server hop webhook sent.", 3, "serverhop-webhook-sent", 3)
-    else
-        notify("Webhook", "Server hop webhook failed to send.", 4, "serverhop-webhook-failed", 6)
-    end
-end
 
 getNearestPlayerInfo = function()
     local myCharacter = LocalPlayer.Character
@@ -1294,10 +1207,6 @@ local function sendDonationWebhook(amount, donorInfo)
             },
         }},
     })
-
-    if settings.pingEveryone and received >= math.max(0, tonumber(settings.pingAboveDono) or 1000) then
-        postWebhookJson(url, {content = "@everyone"})
-    end
 end
 
 
@@ -1581,7 +1490,7 @@ updateBoothTextNow = function()
 end
 
 local function choosePlaceId()
-    if hasVerifiedRestrictedFeatureAccess() and settings.vcServerHopToggle then
+    if settings.vcServerHopToggle then
         return 8943844393
     else
         return 8737602449
@@ -1590,54 +1499,51 @@ end
 
 serverHopNow = function(reason)
     local placeId = choosePlaceId()
-    local req = performHttpRequest({
-        Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
-        Method = "GET"
-    })
-    
-    if not req or not req.Body then
-        notify("Server Hop", "Failed to fetch servers.", 4, "server-hop-fail", 5)
-        return false
-    end
-
-    local ok, body = pcall(function()
-        return HttpService:JSONDecode(req.Body)
-    end)
-
-    if not ok or not body or not body.data then
-        notify("Server Hop", "Failed to parse servers.", 4, "server-hop-fail", 5)
-        return false
-    end
-
     local minPlayers = math.max(1, tonumber(settings.minPlayerCount) or 23)
     local maxPlayers = math.max(minPlayers, tonumber(settings.maxPlayerCount) or minPlayers)
 
-    local servers = {}
-    for _, server in ipairs(body.data) do
-        local playing = tonumber(server.playing or 0) or 0
-        if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
-            table.insert(servers, server)
+    while true do
+        local req = performHttpRequest({
+            Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
+            Method = "GET"
+        })
+
+        local body = nil
+        if req and type(req.Body) == "string" and req.Body ~= "" then
+            local ok, decoded = pcall(function()
+                return HttpService:JSONDecode(req.Body)
+            end)
+            if ok and decoded and type(decoded.data) == "table" then
+                body = decoded
+            end
         end
+
+        if body then
+            local servers = {}
+            for _, server in ipairs(body.data) do
+                local playing = tonumber(server.playing or 0) or 0
+                if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
+                    table.insert(servers, server)
+                end
+            end
+
+            if #servers > 0 then
+                local selectedServer = servers[math.random(1, #servers)]
+                local teleported = false
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                    teleported = true
+                end)
+
+                if teleported then
+                    markPendingFarmHop(reason, placeId, selectedServer.id)
+                    return true
+                end
+            end
+        end
+
+        task.wait(1)
     end
-
-    if #servers == 0 then
-        notify("Server Hop", "No different server found right now.", 4, "server-hop-fail", 5)
-        return false
-    end
-
-    local selectedServer = servers[math.random(1, #servers)]
-    local teleported = false
-    pcall(function()
-        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-        teleported = true
-    end)
-
-    if teleported then
-        markPendingFarmHop(reason, placeId, selectedServer.id)
-        notifyWebhookAfterHop(reason)
-    end
-
-    return teleported
 end
 
 requestServerHop = function(reason)
@@ -1898,6 +1804,31 @@ end
 local function applyTextGlow(target, color, transparency)
     target.TextStrokeColor3 = color or GLOW_COLOR
     target.TextStrokeTransparency = transparency or GLOW_TRANSPARENCY
+end
+
+local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
+    btn.BackgroundTransparency = 1
+    btn.AutoButtonColor = false
+    btn.BorderSizePixel = 0
+    btn.TextColor3 = textColor or THEME.controlText
+    btn.Font = font or Enum.Font.GothamSemibold
+    btn.TextSize = textSize or 11
+
+    local bg = Instance.new("ImageLabel")
+    bg.Name = "ButtonBackground"
+    bg.AnchorPoint = Vector2.new(0, 0)
+    bg.Position = UDim2.new(0, 0, 0, 0)
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundTransparency = 1
+    bg.BorderSizePixel = 0
+    bg.Image = "rbxassetid://2851929490"
+    bg.ImageColor3 = backgroundColor or THEME.control
+    bg.ScaleType = Enum.ScaleType.Slice
+    bg.SliceCenter = Rect.new(4, 4, 4, 4)
+    bg.ZIndex = math.max(0, (btn.ZIndex or 1) - 1)
+    bg.Parent = btn
+
+    createCorner(bg, CONTROL_CORNER_RADIUS)
 end
 
 local main = Instance.new("Frame")
@@ -2347,58 +2278,6 @@ local function createSection(parent, titleText)
     return holder
 end
 
-local function createLockedTabNotice(parent)
-    local holder = Instance.new("Frame")
-    holder.BackgroundColor3 = THEME.section
-    holder.BorderSizePixel = 0
-    holder.Size = UDim2.new(1, 0, 0, 54)
-    holder.Parent = parent
-
-    createCorner(holder, CONTROL_CORNER_RADIUS)
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, -20, 1, -20)
-    label.Position = UDim2.new(0, 10, 0, 10)
-    label.Font = Enum.Font.GothamSemibold
-    label.TextSize = 12
-    label.TextWrapped = true
-    label.TextColor3 = THEME.subtleText
-    label.Text = "verified players can use this."
-    label.Parent = holder
-    applyTextGlow(label, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
-end
-
-local function createLockedToggleRow(parent, text)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 42)
-    row.Parent = parent
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.new(1, 0, 0, 24)
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextColor3 = THEME.controlText
-    label.Text = LOCK_ICON .. " " .. tostring(text or "")
-    label.Parent = row
-    applyTextGlow(label, GLOW_COLOR, 0.88)
-
-    local info = Instance.new("TextLabel")
-    info.BackgroundTransparency = 1
-    info.Size = UDim2.new(1, 0, 0, 16)
-    info.Position = UDim2.new(0, 0, 0, 24)
-    info.Font = Enum.Font.Gotham
-    info.TextSize = 12
-    info.TextXAlignment = Enum.TextXAlignment.Left
-    info.TextColor3 = THEME.subtleText
-    info.TextWrapped = true
-    info.Text = "verified players can use this."
-    info.Parent = row
-    applyTextGlow(info, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
-end
 
 local function createToggle(parent, text, key)
     local row = Instance.new("Frame")
@@ -2970,11 +2849,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
-        if settings.helicopterDieAfterLanding and currentHum and currentHum.Parent then
-            task.delay(0.15, function()
-                triggerLandingExplosion(currentHum)
-            end)
-        else
+        if currentHum and currentHum.Parent then
             restoreIdleMode()
         end
     end)
@@ -3149,12 +3024,6 @@ settingHandlers = {
     end,
     vcServerHopToggle = function(value)
         if value then
-            if not hasVerifiedRestrictedFeatureAccess() then
-                settings.vcServerHopToggle = false
-                saveSettings()
-                notify("VC Server Hop", "verified players can use this.", 4, "vc-hop-locked", 2)
-                return
-            end
             serverHopNow("vc-server-hop-toggle")
         end
     end,
@@ -3340,14 +3209,9 @@ local function createDropdown(parent, text, key, options)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
-    btn.BackgroundColor3 = THEME.control
-    btn.TextColor3 = THEME.controlText
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
     btn.Parent = row
+    styleTextButton(btn, THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
     applyTextGlow(btn, GLOW_COLOR, 0.88)
-
-    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
@@ -3409,16 +3273,11 @@ local function createDropdown(parent, text, key, options)
     for i, v in ipairs(options) do
         local optionBtn = Instance.new("TextButton")
         optionBtn.Size = UDim2.new(1, 0, 0, optionHeight)
-        optionBtn.BackgroundColor3 = THEME.section
-        optionBtn.TextColor3 = THEME.controlText
-        optionBtn.Font = Enum.Font.Gotham
-        optionBtn.TextSize = 12
         optionBtn.Text = tostring(v)
         optionBtn.ZIndex = 21
         optionBtn.Parent = listFrame
+        styleTextButton(optionBtn, THEME.section, THEME.controlText, 12, Enum.Font.Gotham)
         applyTextGlow(optionBtn, GLOW_COLOR, 0.9)
-
-        createCorner(optionBtn, CONTROL_CORNER_RADIUS)
 
         optionBtn.MouseButton1Click:Connect(function()
             idx = i
@@ -3460,15 +3319,10 @@ local function createMessageDropdown(parent, text, key, fallback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 24)
     btn.Position = UDim2.new(0, 0, 0.5, -12)
-    btn.BackgroundColor3 = THEME.control
-    btn.TextColor3 = THEME.controlText
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
     btn.Text = text
     btn.Parent = row
+    styleTextButton(btn, THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
     applyTextGlow(btn, GLOW_COLOR, 0.88)
-
-    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 1
@@ -3530,12 +3384,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     local saveBtn = Instance.new("TextButton")
     saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
     saveBtn.Position = UDim2.new(0, 0, 0, 146)
-    saveBtn.BackgroundColor3 = THEME.topBar
-    saveBtn.TextColor3 = THEME.topBarText
-    saveBtn.Font = Enum.Font.GothamSemibold
-    saveBtn.TextSize = 11
     saveBtn.Text = "Save"
     saveBtn.Parent = content
+    styleTextButton(saveBtn, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
     applyTextGlow(saveBtn, GLOW_COLOR, 0.84)
 
     createCorner(saveBtn, CONTROL_CORNER_RADIUS)
@@ -3543,12 +3394,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
     closeBtn.Position = UDim2.new(0.5, 3, 0, 146)
-    closeBtn.BackgroundColor3 = THEME.section
-    closeBtn.TextColor3 = THEME.controlText
-    closeBtn.Font = Enum.Font.GothamSemibold
-    closeBtn.TextSize = 11
     closeBtn.Text = "Close"
     closeBtn.Parent = content
+    styleTextButton(closeBtn, THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
     applyTextGlow(closeBtn, GLOW_COLOR, 0.88)
 
     createCorner(closeBtn, CONTROL_CORNER_RADIUS)
@@ -3556,12 +3404,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     local nextLineBtn = Instance.new("TextButton")
     nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
     nextLineBtn.Position = UDim2.new(0, 0, 0, 174)
-    nextLineBtn.BackgroundColor3 = THEME.control
-    nextLineBtn.TextColor3 = THEME.controlText
-    nextLineBtn.Font = Enum.Font.GothamSemibold
-    nextLineBtn.TextSize = 11
     nextLineBtn.Text = "Skip To Next Line"
     nextLineBtn.Parent = content
+    styleTextButton(nextLineBtn, THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
     applyTextGlow(nextLineBtn, GLOW_COLOR, 0.88)
 
     createCorner(nextLineBtn, CONTROL_CORNER_RADIUS)
@@ -3628,15 +3473,10 @@ end
 local function createButton(parent, text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 104, 0, 23)
-    btn.BackgroundColor3 = THEME.topBar
-    btn.TextColor3 = THEME.topBarText
-    btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
     btn.Text = text
     btn.Parent = parent
+    styleTextButton(btn, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
     applyTextGlow(btn, GLOW_COLOR, 0.84)
-
-    createCorner(btn, CONTROL_CORNER_RADIUS)
 
     btn.MouseButton1Click:Connect(function()
         local ok, err = pcall(callback)
@@ -3766,8 +3606,6 @@ local function createInfoLabel(parent, text)
 end
 
 local function buildSettingsTabs()
-    local hasRestrictedAccess = hasVerifiedRestrictedFeatureAccess()
-
     local boothTab = createTab("Booth")
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
@@ -3833,7 +3671,6 @@ local function buildSettingsTabs()
     do
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
-        createToggle(mainSection, "Die After Landing", "helicopterDieAfterLanding")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
@@ -3849,17 +3686,13 @@ local function buildSettingsTabs()
     end
 
     do
-        if hasRestrictedAccess then
-            local chatSection = createSection(chatTab, "Chat Settings")
-            createToggle(chatSection, "Auto Thank You", "autoThanks")
-            createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
-            createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
-            createToggle(chatSection, "Auto Beg", "autoBeg")
-            createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
-            createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
-        else
-            createLockedTabNotice(chatTab)
-        end
+        local chatSection = createSection(chatTab, "Chat Settings")
+        createToggle(chatSection, "Auto Thank You", "autoThanks")
+        createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
+        createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
+        createToggle(chatSection, "Auto Beg", "autoBeg")
+        createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
+        createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
 do
@@ -3889,11 +3722,7 @@ do
     end)
 
     -- VC Server Hop
-    if hasRestrictedAccess then
-        createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
-    else
-        createLockedToggleRow(serverSection, "VC Server Hop (All Servers)")
-    end
+    createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
 end
 
 end
