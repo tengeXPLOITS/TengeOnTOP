@@ -451,16 +451,6 @@ local function migrateLegacySettings(data)
     end
 
     data.hexBox = nil
-    data.boothMoveMode = nil
-    data.antiLag = nil
-    data.catalogEmote = nil
-    data.animSpeedSetting = nil
-    data.animSpeedMultiplier = nil
-    data.animSpeedPerRobux = nil
-    data.render = nil
-    data.helicopterShowPlatform = nil
-    data.helicopterSpeed = nil
-    data.spinSpeedMultiplier = nil
     return data
 end
 
@@ -1825,6 +1815,37 @@ local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
     btn.AutoButtonColor = false
 end
 
+local function styleTextBox(box, alignment, multiline)
+    box.BackgroundColor3 = THEME.control
+    box.TextColor3 = THEME.controlText
+    box.PlaceholderColor3 = THEME.subtleText
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.ClearTextOnFocus = false
+    box.TextXAlignment = alignment or Enum.TextXAlignment.Center
+    box.TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
+    box.MultiLine = multiline == true
+    box.TextWrapped = multiline == true
+end
+
+local function createStyledButton(parent, text, size, position, backgroundColor, textColor, textSize, font)
+    local btn = Instance.new("TextButton")
+    btn.Size = size or UDim2.new(0, 104, 0, 23)
+    btn.Position = position or UDim2.new(0, 0, 0, 0)
+    btn.Text = tostring(text or "")
+    styleTextButton(btn, backgroundColor, textColor, textSize, font)
+    btn.Parent = parent
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.Color = THEME.stroke
+    stroke.Parent = btn
+
+    createCorner(btn, CONTROL_CORNER_RADIUS)
+    applyTextGlow(btn, GLOW_COLOR, 0.88)
+    return btn
+end
+
 local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = UDim2.new(0, 380, 0, 360)
@@ -3055,13 +3076,7 @@ local function createTextBox(parent, text, key, numeric)
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1, 0, 0, 24)
     box.Position = UDim2.new(0, 0, 0.5, -12)
-    box.BackgroundColor3 = THEME.control
-    box.TextColor3 = THEME.controlText
-    box.PlaceholderColor3 = THEME.subtleText
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 12
-    box.ClearTextOnFocus = false
-    box.TextXAlignment = Enum.TextXAlignment.Center
+    styleTextBox(box, Enum.TextXAlignment.Center, false)
     local prefix = text .. ": "
     box.Text = prefix .. tostring(settings[key])
     box.Parent = row
@@ -3113,16 +3128,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1, 0, 0, boxHeight)
     box.Position = UDim2.new(0, 0, 0, 3)
-    box.BackgroundColor3 = THEME.control
-    box.TextColor3 = THEME.controlText
-    box.PlaceholderColor3 = THEME.subtleText
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 12
-    box.ClearTextOnFocus = false
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
-    box.MultiLine = multiline == true
-    box.TextWrapped = multiline == true
+    styleTextBox(box, Enum.TextXAlignment.Left, multiline)
     box.PlaceholderText = placeholder
     box.Text = tostring(settings[key] or "")
     box.Parent = row
@@ -3188,17 +3194,7 @@ local function createDropdown(parent, text, key, options)
     local optionHeight = 22
     local optionsHeight = (#options * optionHeight) + 6
 
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 24)
-    btn.Position = UDim2.new(0, 0, 0.5, -12)
-    btn.Parent = row
-    styleTextButton(btn, THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
-    applyTextGlow(btn, GLOW_COLOR, 0.88)
-
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 1
-    btnStroke.Color = THEME.stroke
-    btnStroke.Parent = btn
+    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
@@ -3253,13 +3249,8 @@ local function createDropdown(parent, text, key, options)
     end
 
     for i, v in ipairs(options) do
-        local optionBtn = Instance.new("TextButton")
-        optionBtn.Size = UDim2.new(1, 0, 0, optionHeight)
-        optionBtn.Text = tostring(v)
+        local optionBtn = createStyledButton(listFrame, tostring(v), UDim2.new(1, 0, 0, optionHeight), nil, THEME.section, THEME.controlText, 12, Enum.Font.Gotham)
         optionBtn.ZIndex = 21
-        optionBtn.Parent = listFrame
-        styleTextButton(optionBtn, THEME.section, THEME.controlText, 12, Enum.Font.Gotham)
-        applyTextGlow(optionBtn, GLOW_COLOR, 0.9)
 
         optionBtn.MouseButton1Click:Connect(function()
             idx = i
@@ -3298,18 +3289,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     local baseHeight = 30
     local contentHeight = 216
 
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 24)
-    btn.Position = UDim2.new(0, 0, 0.5, -12)
-    btn.Text = text
-    btn.Parent = row
-    styleTextButton(btn, THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
-    applyTextGlow(btn, GLOW_COLOR, 0.88)
-
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 1
-    btnStroke.Color = THEME.stroke
-    btnStroke.Parent = btn
+    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
 
     local content = Instance.new("Frame")
     content.Visible = false
@@ -3363,35 +3343,9 @@ local function createMessageDropdown(parent, text, key, fallback)
     editorStroke.Color = THEME.stroke
     editorStroke.Parent = editor
 
-    local saveBtn = Instance.new("TextButton")
-    saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
-    saveBtn.Position = UDim2.new(0, 0, 0, 146)
-    saveBtn.Text = "Save"
-    saveBtn.Parent = content
-    styleTextButton(saveBtn, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
-    applyTextGlow(saveBtn, GLOW_COLOR, 0.84)
-
-    createCorner(saveBtn, CONTROL_CORNER_RADIUS)
-
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
-    closeBtn.Position = UDim2.new(0.5, 3, 0, 146)
-    closeBtn.Text = "Close"
-    closeBtn.Parent = content
-    styleTextButton(closeBtn, THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
-    applyTextGlow(closeBtn, GLOW_COLOR, 0.88)
-
-    createCorner(closeBtn, CONTROL_CORNER_RADIUS)
-
-    local nextLineBtn = Instance.new("TextButton")
-    nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
-    nextLineBtn.Position = UDim2.new(0, 0, 0, 174)
-    nextLineBtn.Text = "Skip To Next Line"
-    nextLineBtn.Parent = content
-    styleTextButton(nextLineBtn, THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
-    applyTextGlow(nextLineBtn, GLOW_COLOR, 0.88)
-
-    createCorner(nextLineBtn, CONTROL_CORNER_RADIUS)
+    local saveBtn = createStyledButton(content, "Save", UDim2.new(0.5, -3, 0, 24), UDim2.new(0, 0, 0, 146), THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
+    local closeBtn = createStyledButton(content, "Close", UDim2.new(0.5, -3, 0, 24), UDim2.new(0.5, 3, 0, 146), THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
+    local nextLineBtn = createStyledButton(content, "Skip To Next Line", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 174), THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
 
     local currentList = normalizeMessageList(settings[key], defaults[key])
     settings[key] = currentList
@@ -3453,12 +3407,7 @@ local function createMessageDropdown(parent, text, key, fallback)
 end
 
 local function createButton(parent, text, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 104, 0, 23)
-    btn.Text = text
-    btn.Parent = parent
-    styleTextButton(btn, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
-    applyTextGlow(btn, GLOW_COLOR, 0.84)
+    local btn = createStyledButton(parent, text, UDim2.new(0, 104, 0, 23), nil, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
 
     btn.MouseButton1Click:Connect(function()
         local ok, err = pcall(callback)
@@ -3769,32 +3718,6 @@ task.spawn(function()
             lastPopulationHopTick = tick()
             notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
             requestServerHop("population-hop")
-        end
-    end
-end)
-
-task.spawn(function()
-    local tutorialHopTriggered = false
-    while task.wait(0.5) do
-        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        if playerGui then
-            local tutorialActive = false
-            for _, guiObject in ipairs(playerGui:GetDescendants()) do
-                local objectName = tostring(guiObject.Name or ""):lower()
-                if objectName:find("tutorial") then
-                    tutorialActive = true
-                    break
-                end
-            end
-
-            if tutorialActive then
-                if not tutorialHopTriggered then
-                    tutorialHopTriggered = true
-                    requestServerHop("tutorial-gui")
-                end
-            else
-                tutorialHopTriggered = false
-            end
         end
     end
 end)
