@@ -1817,7 +1817,7 @@ main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
 main.Parent = gui
-main.Visible = false
+main.Visible = true
 
 local TOP_BAR_HEIGHT = 34
 local expandedWidth = 380
@@ -3024,11 +3024,6 @@ local function onBoothClaimDetected(slot)
                 updateBoothTextNow()
             end)
         end)
-    end
-
-    if not revealedAfterClaim then
-        main.Visible = true
-        revealedAfterClaim = true
     end
 
     setMinimized(true)
