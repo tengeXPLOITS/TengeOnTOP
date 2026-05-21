@@ -368,6 +368,7 @@ local defaults = {
     goalBarColor = "blue",
     fontFace = "SciFi",
     standingPosition = "Front",
+    boothPosition = 3,
 
     autoThanks = true,
     thanksDelay = 3,
@@ -388,6 +389,7 @@ local defaults = {
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
+    AnonymousMode = false,
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
@@ -2338,24 +2340,6 @@ local function createToggle(parent, text, key)
     end)
 end
 
-local function buildSettingsSection(parent, title, entries)
-    local section = createSection(parent, title)
-    for _, entry in ipairs(entries) do
-        if entry.type == "toggle" then
-            createToggle(section, entry.label, entry.key)
-        elseif entry.type == "text" then
-            createTextBox(section, entry.label, entry.key, entry.numeric)
-        elseif entry.type == "dropdown" then
-            createDropdown(section, entry.label, entry.key, entry.options or {})
-        elseif entry.type == "message" then
-            createMessageDropdown(section, entry.label, entry.key, entry.fallback)
-        elseif entry.type == "button" then
-            createButton(section, entry.label, entry.callback)
-        end
-    end
-    return section
-end
-
 local function escapePattern(str)
     return (str:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 end
@@ -3016,6 +3000,13 @@ settingHandlers = {
         end
     end,
     standingPosition = function(value)
+        local positionMap = {
+            Front = 3,
+            Left = -6,
+            Right = 6,
+            Behind = -5.5,
+        }
+        settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
     spinSet = function()
@@ -3608,11 +3599,12 @@ local function buildSettingsTabs()
     end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
 
-    buildSettingsSection(mainTab, "Main Settings", {
-        {type = "toggle", label = "Helicopter On-Donation", key = "helicopterEnabled"},
-        {type = "toggle", label = "1R$= +1 Spin Speed", key = "spinSet"},
-        {type = "text", label = "Test Donation Amount (R$)", key = "testDonationAmount", numeric = true},
-        {type = "button", label = "Test Donation", callback = function()
+    do
+        local mainSection = createSection(mainTab, "Main Settings")
+        createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
+        createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
+        createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
+        createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
             local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
             if stat and type(stat.Value) == "number" then
@@ -3621,44 +3613,49 @@ local function buildSettingsTabs()
             else
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
             end
-        end},
-    })
-
-    buildSettingsSection(chatTab, "Chat Settings", {
-        {type = "toggle", label = "Auto Thank You", key = "autoThanks"},
-        {type = "text", label = "Thanks Delay (S)", key = "thanksDelay", numeric = true},
-        {type = "message", label = "Thank You Messages", key = "thanksMessage", fallback = "Thank you"},
-        {type = "toggle", label = "Auto Beg", key = "autoBeg"},
-        {type = "text", label = "Beg Delay (S)", key = "begDelay", numeric = true},
-        {type = "message", label = "Begging Messages", key = "begMessage", fallback = "Please donate"},
-    })
-
-    do
-        local webhookSection = createSection(webhookTab, "Webhook Settings")
-        createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
-        createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
-        -- Donation Notifier feature only - other webhook options removed per user request
+        end)
     end
 
-    buildSettingsSection(serverTab, "Serverhop Settings", {
-        {type = "toggle", label = "Auto Server Hop", key = "serverHopToggle"},
-        {type = "text", label = "Server Hop Delay (Minutes)", key = "serverHopDelay", numeric = true},
-        {type = "text", label = "Min Players in Server", key = "minPlayerCount", numeric = true},
-        {type = "text", label = "Max Players in Server", key = "maxPlayerCount", numeric = true},
-        {type = "toggle", label = "Anti Bot Booths [BETA]", key = "antiBotServers"},
-        {type = "text", label = "Bot Booth Threshold", key = "antiBotThreshold", numeric = true},
-        {type = "text", label = "Bot Scan Interval (S)", key = "antiBotInterval", numeric = true},
-        {type = "text", label = "Zero Donated Bot Threshold", key = "zeroDonatedBotThreshold", numeric = true},
-        {type = "toggle", label = "Mod Evader", key = "modEvader"},
-        {type = "button", label = "Scan Bot Booths Now", callback = function()
-            local scan = runBotDetectionScan()
-            notifyBotScanResult(scan, true)
-        end},
-        {type = "button", label = "Server Hop Now", callback = function()
-            requestServerHop("manual-button")
-        end},
-        {type = "toggle", label = "VC Server Hop (All Servers)", key = "vcServerHopToggle"},
-    })
+    do
+        local chatSection = createSection(chatTab, "Chat Settings")
+        createToggle(chatSection, "Auto Thank You", "autoThanks")
+        createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
+        createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
+        createToggle(chatSection, "Auto Beg", "autoBeg")
+        createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
+        createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
+    end
+
+do
+    local webhookSection = createSection(webhookTab, "Webhook Settings")
+    createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
+    createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+    -- Donation Notifier feature only - other webhook options removed per user request
+end
+
+do
+    local serverSection = createSection(serverTab, "Serverhop Settings")
+    createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
+    createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+    createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
+    createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
+    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
+    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
+    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
+    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
+    createToggle(serverSection, "Mod Evader", "modEvader")
+    createButton(serverSection, "Scan Bot Booths Now", function()
+        local scan = runBotDetectionScan()
+        notifyBotScanResult(scan, true)
+    end)
+    createButton(serverSection, "Server Hop Now", function()
+        requestServerHop("manual-button")
+    end)
+
+    -- VC Server Hop
+    createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+end
+
 end
 
 buildSettingsTabs()
