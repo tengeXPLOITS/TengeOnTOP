@@ -12,11 +12,10 @@ local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
-local TextChatService = game:GetService("TextChatService")
+local LogService = game:GetService("LogService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -28,21 +27,19 @@ local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
-
-local function buildAutoexecSource(url)
-    local resolvedUrl = tostring(url or DEFAULT_AUTOEXEC_URL or "")
-    if resolvedUrl == "" then
-        resolvedUrl = DEFAULT_AUTOEXEC_URL
-    end
-    return "loadstring(game:HttpGet(\"" .. resolvedUrl .. "\"))()"
-end
-
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
     SharedEnv.PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
 end
-SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = buildAutoexecSource(SharedEnv.PLS_DONO_AUTOEXEC_URL)
+if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_SOURCE == "" then
+    SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
+end
 
+local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
+local avatarThumbnailCache = {}
+local recentDonationLogs = {}
+local getNearestPlayerInfo
+local observedDonationChatChannels = {}
 
 local function notify(title, text, duration, dedupeKey, cooldown)
     local now = tick()
@@ -90,6 +87,215 @@ local function normalizeMessageList(value, fallback)
     return normalized
 end
 
+local function normalizePlayerText(value)
+    return trimText(value):gsub("^@", ""):lower()
+end
+
+local function textMatchesLocalPlayer(value)
+    local normalized = normalizePlayerText(value)
+    if normalized == "" then
+        return false
+    end
+
+    local localName = normalizePlayerText(LocalPlayer.Name)
+    local localDisplayName = normalizePlayerText(LocalPlayer.DisplayName)
+    return normalized == localName or normalized == localDisplayName
+end
+
+local function resolvePlayerInfoFromText(value)
+    local normalized = normalizePlayerText(value)
+    if normalized == "" then
+        return nil
+    end
+
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and normalizePlayerText(pl.Name) == normalized then
+            return {
+                name = tostring(pl.Name or "Unknown"),
+                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
+                userId = tonumber(pl.UserId) or 0,
+            }
+        end
+    end
+
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and normalizePlayerText(pl.DisplayName) == normalized then
+            return {
+                name = tostring(pl.Name or "Unknown"),
+                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
+                userId = tonumber(pl.UserId) or 0,
+            }
+        end
+    end
+
+    return {
+        name = trimText(value),
+        displayName = trimText(value),
+        userId = 0,
+    }
+end
+
+local function pruneRecentDonationLogs(now)
+    now = tonumber(now) or tick()
+    for index = #recentDonationLogs, 1, -1 do
+        local entry = recentDonationLogs[index]
+        if not entry or (now - (tonumber(entry.time) or 0)) > 15 then
+            table.remove(recentDonationLogs, index)
+        end
+    end
+end
+
+local function recordDonationEvent(donorText, amountValue, recipientText)
+    donorText = trimText(donorText)
+    recipientText = trimText(recipientText):gsub("[!%.:,;]+$", "")
+    local amount = tonumber(amountValue) or 0
+    if donorText == "" or recipientText == "" or amount <= 0 then
+        return
+    end
+
+    if not textMatchesLocalPlayer(recipientText) then
+        return
+    end
+
+    local now = tick()
+    lastDonationTick = now
+    pruneRecentDonationLogs(now)
+    local normalizedDonor = normalizePlayerText(donorText)
+    for _, entry in ipairs(recentDonationLogs) do
+        local entryDonor = entry and entry.donorInfo and entry.donorInfo.name or ""
+        if entry
+            and tonumber(entry.amount) == amount
+            and normalizePlayerText(entryDonor) == normalizedDonor
+            and (now - (tonumber(entry.time) or 0)) <= 2 then
+            return
+        end
+    end
+
+    table.insert(recentDonationLogs, {
+        amount = amount,
+        donorInfo = resolvePlayerInfoFromText(donorText),
+        time = now,
+    })
+
+    while #recentDonationLogs > 20 do
+        table.remove(recentDonationLogs, 1)
+    end
+end
+
+local function parseDonationMessageText(message)
+    local cleaned = tostring(message or "")
+    if cleaned == "" then
+        return nil
+    end
+
+    cleaned = cleaned:gsub("<[^>]->", "")
+    cleaned = cleaned:gsub("%s+", " ")
+    cleaned = trimText(cleaned)
+
+    local donorText, amountText, recipientText = cleaned:match("^%s*(.-)%s+[Tt][Ii][Pp][Pp][Ee][Dd]%s+([%d,]+)%s+[Tt][Oo]%s+(.+)%s*$")
+    if donorText and amountText and recipientText then
+        return donorText, tonumber((amountText:gsub(",", ""))) or 0, recipientText
+    end
+
+    donorText, amountText, recipientText = cleaned:match("^%s*(.-)%s+[Dd][Oo][Nn][Aa][Tt][Ee][Dd]%s*[^%d]*([%d,]+)%s+[Tt][Oo]%s+(.+)%s*$")
+    if donorText and amountText and recipientText then
+        return donorText, tonumber((amountText:gsub(",", ""))) or 0, recipientText
+    end
+
+    return nil
+end
+
+local function recordDonationLogMessage(message)
+    local donorText, amount, recipientText = parseDonationMessageText(message)
+    if donorText and amount and recipientText then
+        recordDonationEvent(donorText, amount, recipientText)
+    end
+end
+
+local function consumeRecentDonationDonorInfo(amount)
+    pruneRecentDonationLogs()
+
+    local targetAmount = tonumber(amount) or 0
+    if targetAmount > 0 then
+        for index = 1, #recentDonationLogs do
+            local entry = recentDonationLogs[index]
+            if entry and tonumber(entry.amount) == targetAmount then
+                table.remove(recentDonationLogs, index)
+                return entry.donorInfo
+            end
+        end
+    end
+
+    return getNearestPlayerInfo()
+end
+
+pcall(function()
+    LogService.MessageOut:Connect(function(message)
+        recordDonationLogMessage(message)
+    end)
+end)
+
+local function recordDonationChatMessage(message)
+    local text = ""
+    local prefixText = ""
+
+    pcall(function()
+        text = tostring(message.Text or "")
+    end)
+    pcall(function()
+        prefixText = tostring(message.PrefixText or "")
+    end)
+
+    local donorText, amount, recipientText = parseDonationMessageText(text)
+    if donorText and amount and recipientText then
+        recordDonationEvent(donorText, amount, recipientText)
+        return
+    end
+
+    if prefixText ~= "" then
+        donorText, amount, recipientText = parseDonationMessageText(prefixText .. " " .. text)
+        if donorText and amount and recipientText then
+            recordDonationEvent(donorText, amount, recipientText)
+        end
+    end
+end
+
+local function watchDonationChatChannel(channel)
+    if not channel or observedDonationChatChannels[channel] then
+        return
+    end
+
+    local isTextChannel = false
+    pcall(function()
+        isTextChannel = channel:IsA("TextChannel")
+    end)
+    if not isTextChannel then
+        return
+    end
+
+    observedDonationChatChannels[channel] = true
+    pcall(function()
+        channel.MessageReceived:Connect(function(message)
+            recordDonationChatMessage(message)
+        end)
+    end)
+end
+
+pcall(function()
+    local channels = TextChatService:FindFirstChild("TextChannels") or TextChatService:WaitForChild("TextChannels", 10)
+    if not channels then
+        return
+    end
+
+    for _, channel in ipairs(channels:GetChildren()) do
+        watchDonationChatChannel(channel)
+    end
+
+    channels.ChildAdded:Connect(function(channel)
+        watchDonationChatChannel(channel)
+    end)
+end)
+
 local function cloneRef(v)
     if type(cloneref) == "function" then
         return cloneref(v)
@@ -122,12 +328,18 @@ local function queueScriptOnTeleport()
         return false
     end
 
-    local source = buildAutoexecSource(SharedEnv.PLS_DONO_AUTOEXEC_URL)
-    SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = source
+    if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
+        return pcall(function()
+            queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
+        end)
+    elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
+        local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
+        return pcall(function()
+            queueOnTeleport(source)
+        end)
+    end
 
-    return pcall(function()
-        queueOnTeleport(source)
-    end)
+    return false
 end
 
 local GuiParent = resolveGuiParent()
@@ -158,15 +370,15 @@ local defaults = {
     standingPosition = "Front",
     boothPosition = 3,
 
+    autoThanks = true,
+    thanksDelay = 3,
+    thanksMessage = {"Thank you", "Thankss!", "ty"},
+    autoBeg = true,
+    begDelay = 300,
+    begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
+
     webhookToggle = false,
     webhookBox = "",
-
-    autoThanksToggle = false,
-    autoThanksPreset = "Custom",
-    autoThanksMessage = "Thank you for donating!",
-
-    boothMonitoringToggle = false,
-    boothMonitorRadius = 10,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -179,8 +391,23 @@ local defaults = {
     maxPlayerCount = 24,
     AnonymousMode = false,
     vcServerHopToggle = false,
+    helicopterEnabled = false,
     testDonationAmount = 6,
 }
+
+local boothFontOptions = {"SciFi"}
+do
+    local ok, enumItems = pcall(function()
+        return Enum.Font:GetEnumItems()
+    end)
+    if ok and type(enumItems) == "table" and #enumItems > 0 then
+        boothFontOptions = {}
+        for _, fontItem in ipairs(enumItems) do
+            table.insert(boothFontOptions, fontItem.Name)
+        end
+        table.sort(boothFontOptions)
+    end
+end
 
 local settings = {}
 
@@ -221,20 +448,6 @@ local function migrateLegacySettings(data)
 
     if data.textColor == nil and data.hexBox ~= nil then
         data.textColor = data.hexBox
-    end
-
-    local normalizedTextColor = tostring(data.textColor or ""):lower()
-    if normalizedTextColor == "grey" or normalizedTextColor == "gray" or normalizedTextColor == "#7a7a7a" then
-        data.textColor = "#32CD32"
-    end
-
-    local normalizedGoalBarColor = tostring(data.goalBarColor or ""):lower()
-    if normalizedGoalBarColor == "grey" or normalizedGoalBarColor == "gray" then
-        data.goalBarColor = "blue"
-    end
-
-    if data.autoThanksPreset == nil then
-        data.autoThanksPreset = "Custom"
     end
 
     data.hexBox = nil
@@ -314,6 +527,8 @@ local function loadSettings()
 end
 
 loadSettings()
+settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
+settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
 saveSettings()
 SharedEnv.plsdonoSettings = settings
 
@@ -416,9 +631,6 @@ local antiBotNotifyCooldown = 30
 local antiBotConfirmationDelay = 10
 local hopCooldownSeconds = 1
 local lastHopTick = 0
-local nextBoothMonitorRun = 0
-local lastAutoThanksMessage = ""
-local boothReactionToken = 0
 local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
@@ -724,6 +936,29 @@ local function shouldHopForBots(scan)
     return false
 end
 
+local function sendChatMessage(message)
+    local text = tostring(message or "")
+    if text == "" then
+        return
+    end
+
+    local ok = pcall(function()
+        local channels = TextChatService:FindFirstChild("TextChannels")
+        local general = channels and channels:FindFirstChild("RBXGeneral")
+        if general and general.SendAsync then
+            general:SendAsync(text)
+            return
+        end
+        Players:Chat(text)
+    end)
+
+    if not ok then
+        pcall(function()
+            Players:Chat(text)
+        end)
+    end
+end
+
 local function performHttpRequest(options)
     if syn and syn.request then
         return syn.request(options)
@@ -803,6 +1038,61 @@ local function formatFarmDuration(totalSeconds)
     return table.concat(parts, " ")
 end
 
+
+getNearestPlayerInfo = function()
+    local myCharacter = LocalPlayer.Character
+    local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
+    local myRoot = myHumanoid and myHumanoid.RootPart
+    if not myRoot then
+        return {
+            name = "Unknown",
+            displayName = "Unknown",
+            userId = 0,
+        }
+    end
+
+    local nearestPlayer = nil
+    local nearestDistance = math.huge
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and pl.Character then
+            local hum = pl.Character:FindFirstChildOfClass("Humanoid")
+            local root = hum and hum.RootPart
+            if root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if dist < nearestDistance then
+                    nearestDistance = dist
+                    nearestPlayer = pl
+                end
+            end
+        end
+    end
+
+    if nearestPlayer then
+        return {
+            name = tostring(nearestPlayer.Name or "Unknown"),
+            displayName = tostring(nearestPlayer.DisplayName or nearestPlayer.Name or "Unknown"),
+            userId = tonumber(nearestPlayer.UserId) or 0,
+        }
+    end
+
+    -- Fallback: if no one is near, just pick the first other player in the server
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer then
+            return {
+                name = tostring(pl.Name or "Unknown"),
+                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
+                userId = tonumber(pl.UserId) or 0,
+            }
+        end
+    end
+
+    return {
+        name = "Unknown",
+        displayName = "Unknown",
+        userId = 0,
+    }
+end
+
 local function getCurrentRaisedAmount()
     local raised = 0
     local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
@@ -830,7 +1120,50 @@ local function findDetectedModPlayer()
     return nil
 end
 
-local function sendDonationWebhook()
+local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
+    userId = tonumber(userId) or 0
+    if userId <= 0 then
+        return nil
+    end
+
+    local cacheKey = table.concat({tostring(userId), tostring(size or "420x420"), tostring(isCircular == true)}, ":")
+    if avatarThumbnailCache[cacheKey] then
+        return avatarThumbnailCache[cacheKey]
+    end
+
+    local thumbSize = tostring(size or "420x420")
+    local circleFlag = isCircular == true and "true" or "false"
+    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=%s&format=Png&isCircular=%s"):format(
+        userId,
+        HttpService:UrlEncode(thumbSize),
+        circleFlag
+    )
+
+    local ok, imageUrl = pcall(function()
+        local body = httpGetBody(endpoint)
+        if type(body) ~= "string" or body == "" then
+            return nil
+        end
+
+        local decoded = HttpService:JSONDecode(body)
+        local items = decoded and decoded.data
+        local firstItem = type(items) == "table" and items[1] or nil
+        local resolved = firstItem and firstItem.imageUrl
+        if type(resolved) == "string" and resolved ~= "" then
+            return resolved
+        end
+        return nil
+    end)
+
+    if ok and imageUrl then
+        avatarThumbnailCache[cacheKey] = imageUrl
+        return imageUrl
+    end
+
+    return nil
+end
+
+local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
         return
     end
@@ -840,73 +1173,34 @@ local function sendDonationWebhook()
         return
     end
 
+    local received = math.max(0, tonumber(amount) or 0)
+    local taxed = math.floor((tonumber(amount) or 0) * 0.6)
+    local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
+    local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
+    local donorLabel
+    if donorName ~= "Unknown" and donorDisplay ~= donorName then
+        donorLabel = donorDisplay .. " (@" .. donorName .. ")"
+    elseif donorName ~= "Unknown" then
+        donorLabel = "@" .. donorName
+    else
+        donorLabel = donorDisplay
+    end
     postWebhookJson(url, {
-        content = "donation received. Check raised stat in-game, or check transactions/roblox.com 👀",
+        username = "PLS DONATE",
+        content = ("Donation received from %s"):format(donorLabel),
+        embeds = {{
+            color = 0x1E90FF,
+            title = "Donation Stats",
+            fields = {
+                {name = "Donor", value = donorLabel, inline = false},
+                {name = "Robux Received", value = string.format("%d", received), inline = true},
+                {name = "After Tax", value = string.format("%d", taxed), inline = true},
+            },
+        }},
     })
 end
 
-local function getAutoThanksMessages()
-    local raw = tostring(settings.autoThanksMessage or "")
-    local messages = {}
 
-    for line in raw:gmatch("[^\n]+") do
-    end
-
-    if #messages == 0 then
-        table.insert(messages, "Thank you for donating!")
-    end
-
-    return messages
-end
-
-local function chooseAutoThanksMessage()
-    local messages = getAutoThanksMessages()
-    if #messages == 1 then
-        return messages[1]
-    end
-
-    local candidate = messages[math.random(1, #messages)]
-    local attempts = 0
-    while candidate == lastAutoThanksMessage and attempts < 8 do
-        candidate = messages[math.random(1, #messages)]
-        attempts += 1
-    end
-
-    lastAutoThanksMessage = candidate
-    return candidate
-end
-
-local function sendAutoThanksMessage()
-    if not settings.autoThanksToggle then
-        return false
-    end
-
-    local message = chooseAutoThanksMessage()
-    local sent = false
-
-    pcall(function()
-        local channel = TextChatService and TextChatService.TextChannels and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
-        if channel and channel.SendAsync then
-            channel:SendAsync(message)
-            sent = true
-        end
-    end)
-
-    if sent then
-        return true
-    end
-
-    pcall(function()
-        local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-        local sayMessageRequest = chatEvents and chatEvents:FindFirstChild("SayMessageRequest")
-        if sayMessageRequest and sayMessageRequest.FireServer then
-            sayMessageRequest:FireServer(message, "All")
-            sent = true
-        end
-    end)
-
-    return sent
-end
 
 local function resetHopTimer()
     hopTimerResetTick = tick()
@@ -916,6 +1210,14 @@ end
 local function markDonationForHopTimer(delta)
     hopTimerResetTick = tick()
     donatedSinceHopTimerReset += math.max(0, tonumber(delta) or 0)
+end
+
+local function pickRandomMessage(list, fallback)
+    if type(list) == "table" and #list > 0 then
+        local index = math.random(1, #list)
+        return tostring(list[index] or fallback or "")
+    end
+    return tostring(fallback or "")
 end
 
 local function getRaisedStatObject()
@@ -1006,7 +1308,7 @@ local function buildGoalProgressBar()
 
     local emptySegments = math.max(0, totalSegments - filledSegments)
     local namedColors = getNamedTextColorMap()
-    local filledColor = namedColors[getGoalBarColorName()] or namedColors.grey
+    local filledColor = namedColors[getGoalBarColorName()] or namedColors.blue
     return string.format(
         "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
         color3ToRgbText(filledColor),
@@ -1097,8 +1399,8 @@ updateBoothTextNow = function()
         textColor = hexToColor3(settings.textColor),
         buttonStrokeColor = Color3.new(0, 0, 0),
         buttonTextColor = Color3.new(1, 1, 1),
-        buttonColor = Color3.fromRGB(92, 92, 98),
-        buttonHoverColor = Color3.fromRGB(110, 110, 116),
+        buttonColor = Color3.new(98 / 255, 1, 0),
+        buttonHoverColor = Color3.new(98 / 255, 1, 0),
         buttonLayout = "",
     }
 
@@ -1349,110 +1651,30 @@ local function getClaimedBoothTargetCFrame(slot)
     return getBoothTargetCFrameForStand(slot)
 end
 
-local function pathfindToPosition(targetPosition, walkSpeed, goalTolerance)
-    local character, humanoid, root = getCharacterHumanoidRoot()
-    if not humanoid or not root then
-        return false, "missing-character"
-    end
-
-    local tolerance = tonumber(goalTolerance) or 2.5
-    if (root.Position - targetPosition).Magnitude <= tolerance then
-        return true, "already-there"
-    end
-
-    humanoid.WalkSpeed = tonumber(walkSpeed) or 6
-
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2.2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-    })
-
-    local computeOk, computeStatus = pcall(function()
-        return path:ComputeAsync(root.Position, targetPosition)
-    end)
-
-    if not computeOk or path.Status ~= Enum.PathStatus.Success then
-        humanoid:MoveTo(targetPosition)
-        return true, "fallback-move"
-    end
-
-    local waypoints = path:GetWaypoints()
-    for _, waypoint in ipairs(waypoints) do
-        if waypoint.Action == Enum.PathWaypointAction.Jump then
-            humanoid.Jump = true
-        end
-
-        humanoid:MoveTo(waypoint.Position)
-        local startedAt = tick()
-        while tick() - startedAt < 2.4 do
-            task.wait(0.05)
-            if (root.Position - waypoint.Position).Magnitude <= 2.2 then
-                break
-            end
-        end
-
-        if (root.Position - targetPosition).Magnitude <= tolerance then
-            return true, "arrived"
-        end
-    end
-
-    humanoid:MoveTo(targetPosition)
-    return true, "path-complete"
-end
-
 local function moveToClaimedBooth(slot)
     local targetCF, err = getClaimedBoothTargetCFrame(slot)
     if not targetCF then
         return false, err or "missing-booth-part"
     end
 
-    return pathfindToPosition(targetCF.Position, 6, 2.2)
-end
-
-local function getBoothMonitoringTarget(slot)
-    local boothPart = findBoothPartBySlot(slot)
-    if not boothPart then
-        return nil
+    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then
+        return false, "missing-character"
     end
 
-    local radius = math.clamp(math.floor(tonumber(settings.boothMonitorRadius) or 10), 9, 12)
-    local angle = math.random() * math.pi * 2
-    local offsetDistance = radius + (math.random() * 1.5)
-    local targetPosition = boothPart.Position + Vector3.new(math.cos(angle) * offsetDistance, 0, math.sin(angle) * offsetDistance)
-    targetPosition = Vector3.new(targetPosition.X, boothPart.Position.Y + 1.25, targetPosition.Z)
-    return targetPosition
-end
-
-local function navigateToBoothMonitoringPoint(targetPosition)
-    return pathfindToPosition(targetPosition, 6, 2.4)
-end
-
-local function ensureBoothMonitoringSlot()
-    local boothLocation = getBoothLocation()
-    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-    local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
-    if ownedSlot then
-        claimedBoothSlot = ownedSlot
-        return ownedSlot
+    local function applyFacing()
+        hrp.CFrame = targetCF
+        task.delay(0.15, function()
+            if hrp and hrp.Parent then
+                hrp.CFrame = targetCF
+            end
+        end)
     end
 
-    local claimed, info = claimBoothNow()
-    if claimed then
-        onBoothClaimDetected(info)
-        return info
-    end
-
-    return nil
-end
-
-local function performBoothMonitoringCycle(slot)
-    local targetPosition = getBoothMonitoringTarget(slot)
-    if not targetPosition then
-        return false, "missing-target"
-    end
-
-    return navigateToBoothMonitoringPoint(targetPosition)
+    applyFacing()
+    return true, "teleport"
 end
 
 local function claimBoothNow()
@@ -1552,24 +1774,24 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(33, 33, 35),
-    topBarText = Color3.fromRGB(246, 246, 248),
-    panel = Color3.fromRGB(20, 20, 22),
-    tabIdle = Color3.fromRGB(48, 48, 52),
-    tabActive = Color3.fromRGB(66, 66, 72),
-    section = Color3.fromRGB(28, 28, 31),
-    control = Color3.fromRGB(39, 39, 44),
-    controlText = Color3.fromRGB(236, 236, 240),
-    subtleText = Color3.fromRGB(176, 176, 182),
-    accent = Color3.fromRGB(108, 108, 116),
-    stroke = Color3.fromRGB(72, 72, 78),
+    topBar = Color3.fromRGB(28, 164, 52),
+    topBarText = Color3.fromRGB(248, 255, 248),
+    panel = Color3.fromRGB(23, 23, 25),
+    tabIdle = Color3.fromRGB(72, 72, 76),
+    tabActive = Color3.fromRGB(96, 96, 102),
+    section = Color3.fromRGB(18, 18, 20),
+    control = Color3.fromRGB(31, 31, 34),
+    controlText = Color3.fromRGB(238, 238, 238),
+    subtleText = Color3.fromRGB(181, 191, 181),
+    accent = Color3.fromRGB(57, 196, 76),
+    stroke = Color3.fromRGB(66, 66, 71),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(180, 180, 186)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(118, 118, 126)
-local GLOW_TRANSPARENCY = 0.82
+local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
+local GLOW_TRANSPARENCY = 0.84
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
 local function createCorner(target, radius)
@@ -1708,9 +1930,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(57, 57, 62)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(43, 43, 47)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(34, 34, 38)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
     })
     topGradient.Parent = topBar
 end
@@ -1725,7 +1947,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "Pls Donate Animosity- Humanized Version"
+    title.Text = "PLS DONATE ANIMOSITY"
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -1747,7 +1969,7 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 98)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
@@ -1761,7 +1983,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(140, 140, 146)
+    miniStroke.Color = Color3.fromRGB(210, 255, 218)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -1902,7 +2124,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(74, 74, 80) or Color3.fromRGB(90, 90, 98)
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
 
     minimizeTween = TweenService:Create(
         main,
@@ -1957,7 +2179,7 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 130, 0, 28)
+    btn.Size = UDim2.new(0, 80, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -2122,6 +2344,538 @@ local function escapePattern(str)
     return (str:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 end
 
+local currentHelicopterSpinTask = nil
+local currentAstronautIdleTrack = nil
+local pendingHelicopterRaisedAmount = 0
+
+local function stopAstronautIdle()
+    if currentAstronautIdleTrack then
+        pcall(function()
+            currentAstronautIdleTrack:Stop()
+        end)
+        pcall(function()
+            currentAstronautIdleTrack:Destroy()
+        end)
+        currentAstronautIdleTrack = nil
+    end
+end
+
+local function loadAstronautIdle()
+    stopAstronautIdle()
+    local pl = Players.LocalPlayer
+    if not pl then
+        return
+    end
+    local char = pl.Character
+    if not char then
+        return
+    end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then
+        return
+    end
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then
+        animator = Instance.new("Animator")
+        animator.Parent = hum
+    end
+    pcall(function()
+        for _, track in ipairs(hum:GetPlayingAnimationTracks()) do
+            if track ~= currentAstronautIdleTrack then
+                track:Stop()
+            end
+        end
+    end)
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://10921034824"
+    local ok, track = pcall(function()
+        return animator:LoadAnimation(animation)
+    end)
+    animation:Destroy()
+    if ok and track then
+        currentAstronautIdleTrack = track
+        track.Priority = Enum.AnimationPriority.Action
+        track.Looped = true
+        pcall(function()
+            track:Play()
+        end)
+    end
+end
+
+local function stopHelicopterSpin()
+    pendingHelicopterRaisedAmount = 0
+    if currentHelicopterSpinTask then
+        pcall(function()
+            task.cancel(currentHelicopterSpinTask)
+        end)
+        currentHelicopterSpinTask = nil
+    end
+    stopAstronautIdle()
+    local char = LocalPlayer.Character
+    if char then
+        local root = char:FindFirstChildOfClass("Humanoid") and char:FindFirstChildOfClass("Humanoid").RootPart
+        if root then
+            local heliBody = root:FindFirstChild("HL1__HELI")
+            if heliBody then
+                pcall(function()
+                    heliBody:Destroy()
+                end)
+            end
+        end
+    end
+end
+
+local function triggerLandingExplosion(humanoid)
+    if not humanoid or not humanoid.Parent then
+        return
+    end
+
+    pcall(function()
+        humanoid.Health = 0
+    end)
+end
+
+local currentIdleTask = nil
+local HELICOPTER_IDLE_SPIN_SPEED = 2.7
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
+local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
+local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
+local SPIN_DONATION_BASE_SPEED = 0.25
+local HELICOPTER_PLAZA_ROUTE = {
+    Vector3.new(166.584, 0, 371.398),
+    Vector3.new(228.765, 0, 332.55),
+    Vector3.new(225.878, 0, 274.96),
+    Vector3.new(169.654, 0, 232.826),
+    Vector3.new(102.625, 0, 274.941),
+    Vector3.new(109.353, 0, 351.28),
+    Vector3.new(166.584, 0, 371.399),
+}
+
+local function getHelicopterFlightDuration(amount)
+    local donation = math.max(1, tonumber(amount) or 1)
+    if donation >= 100 then
+        local clamped = math.min(10000, donation)
+        local normalized = math.clamp((math.log10(clamped) - 2) / 2, 0, 1)
+        return 52 + (28 * normalized)
+    end
+
+    local normalized = math.clamp((donation - 1) / 99, 0, 1)
+    return 16 + (36 * (normalized ^ 0.72))
+end
+
+local function getHelicopterRiseHeight(amount, minRiseHeight)
+    local donation = math.max(1, tonumber(amount) or 1)
+    local minimum = math.max(0, tonumber(minRiseHeight) or 0)
+    local targetHeight = 22 + (math.sqrt(donation) * 8)
+    return math.clamp(math.max(minimum, targetHeight), 28, 105)
+end
+
+local function getHelicopterSpinSpeedForAmount(amount)
+    local donation = math.max(1, tonumber(amount) or 1)
+    return math.min(55, 25 + (math.sqrt(donation) * 1.6))
+end
+
+local function getHelicopterIdleAngularVelocity()
+    return HELICOPTER_IDLE_SPIN_SPEED
+end
+
+local function stopHelicopterIdleTask()
+    if currentIdleTask then
+        pcall(function() task.cancel(currentIdleTask) end)
+        currentIdleTask = nil
+    end
+end
+
+local function startHelicopterIdleMode()
+    if not settings.helicopterEnabled then
+        return
+    end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = hum and hum.RootPart
+    if not root then return end
+
+    loadAstronautIdle()
+
+    local heliBody = root:FindFirstChild("HL1__HELI")
+    if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
+        heliBody = Instance.new("BodyAngularVelocity")
+        heliBody.Name = "HL1__HELI"
+        heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
+        heliBody.Parent = root
+    end
+
+    local idleSpeed = getHelicopterIdleAngularVelocity()
+    stopHelicopterIdleTask()
+
+    -- Ramp BodyAngularVelocity from 0 up to idleSpeed, then switch to a rapid
+    -- pulse pattern so the idle looks like a quick spin-pause-spin cycle.
+    heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+    currentIdleTask = task.spawn(function()
+        local rampDuration = 0.7
+        local rampStart = tick()
+        while tick() - rampStart < rampDuration and settings.helicopterEnabled and root.Parent do
+            local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
+            local ramped = idleSpeed * (t * t) -- quad-in ramp
+            if heliBody and heliBody.Parent then
+                heliBody.AngularVelocity = Vector3.new(0, ramped, 0)
+            end
+            task.wait()
+        end
+        if heliBody and heliBody.Parent then
+            heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
+        end
+
+        local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
+        while settings.helicopterEnabled and root.Parent do
+            if heliBody and heliBody.Parent then
+                heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
+            end
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end)
+            task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
+
+            if not settings.helicopterEnabled or not root.Parent then
+                break
+            end
+
+            if heliBody and heliBody.Parent then
+                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+            pcall(function()
+                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end)
+            task.wait(HELICOPTER_IDLE_PULSE_PAUSE_DURATION)
+        end
+    end)
+
+    pcall(function()
+        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    end)
+end
+
+local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, burstConfig)
+    pendingHelicopterRaisedAmount += math.max(1, tonumber(raisedAmount) or 1)
+    if currentHelicopterSpinTask then
+        return
+    end
+
+    currentHelicopterSpinTask = task.spawn(function()
+        local burstIndex = 0
+        local config = type(burstConfig) == "table" and burstConfig or {}
+
+        local function restoreIdleMode()
+            if settings.helicopterEnabled and not currentHelicopterSpinTask then
+                task.spawn(function()
+                    task.wait(0.08)
+                    local started = false
+                    for _ = 1, 15 do
+                        if not settings.helicopterEnabled or currentHelicopterSpinTask then
+                            return
+                        end
+
+                        local currentChar = LocalPlayer.Character
+                        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+                        local currentRoot = currentHum and currentHum.RootPart
+                        if currentRoot and currentRoot.Parent then
+                            startHelicopterIdleMode()
+                            started = true
+                            break
+                        end
+                        task.wait(0.2)
+                    end
+
+                    if not started and settings.helicopterEnabled and not currentHelicopterSpinTask then
+                        startHelicopterIdleMode()
+                    end
+                end)
+            end
+        end
+
+        while pendingHelicopterRaisedAmount > 0 do
+            burstIndex += 1
+            local amount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
+            pendingHelicopterRaisedAmount = 0
+
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = hum and hum.RootPart
+            if not char or not hum or not root then
+                break
+            end
+
+            local ok, err = pcall(function()
+                loadAstronautIdle()
+
+                local animateScript = char:FindFirstChild("Animate")
+                local animatePrevEnabled = nil
+                if animateScript and animateScript:IsA("LocalScript") then
+                    animatePrevEnabled = animateScript.Enabled
+                    animateScript.Enabled = false
+                end
+
+                local baseIdleSpeed = getHelicopterIdleAngularVelocity()
+                local targetSpinSpeed = math.max(getHelicopterSpinSpeedForAmount(amount), tonumber(spinSpeed) or 25)
+                local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
+                local riseHeight = getHelicopterRiseHeight(amount, minRiseHeight)
+                local registerDelay = math.max(0.35, tonumber(config.registerDelay) or 1.8)
+                local prepDuration = math.max(0.3, tonumber(config.prepDuration) or 0.75)
+                local groundedSpinDuration = math.max(1.2, tonumber(config.groundedSpinDuration) or math.max(2.5, tonumber(spinDuration) or 2.5))
+                local ascentDuration = math.max(3, tonumber(config.ascentDuration) or 6.5)
+                local landingDuration = math.max(3.5, tonumber(config.landingDuration) or 5.5)
+                local flightDuration = getHelicopterFlightDuration(amount)
+
+                stopHelicopterIdleTask()
+
+                local heliBody = root:FindFirstChild("HL1__HELI")
+                if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
+                    heliBody = Instance.new("BodyAngularVelocity")
+                    heliBody.Name = "HL1__HELI"
+                    heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
+                    heliBody.AngularVelocity = Vector3.new(0, baseIdleSpeed, 0)
+                    heliBody.Parent = root
+                end
+
+                local holdCF = root.CFrame
+                local holdStart = tick()
+                while tick() - holdStart < registerDelay and char.Parent and root.Parent do
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    root.CFrame = holdCF
+                    task.wait()
+                end
+
+                local prepTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or holdCF
+                if prepTargetCF then
+                    local flatLook = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
+                    if flatLook.Magnitude < 0.001 then
+                        flatLook = Vector3.new(0, 0, -1)
+                    end
+                    flatLook = flatLook.Unit
+                    local groundedPrepPos = Vector3.new(prepTargetCF.Position.X, holdCF.Position.Y, prepTargetCF.Position.Z)
+                    prepTargetCF = CFrame.new(groundedPrepPos, groundedPrepPos + flatLook)
+                end
+                if burstIndex == 1 then
+                    sendChatMessage("Preparing for takeoff...")
+                else
+                    sendChatMessage("Adjusting for departure...")
+                end
+
+                local prepStart = tick()
+                while tick() - prepStart < prepDuration and char.Parent and root.Parent do
+                    local t = math.clamp((tick() - prepStart) / prepDuration, 0, 1)
+                    local easedT = 1 - ((1 - t) * (1 - t))
+                    root.CFrame = holdCF:Lerp(prepTargetCF, easedT)
+                    if heliBody and heliBody.Parent then
+                        local prepSpin = baseIdleSpeed + (1.25 * easedT)
+                        heliBody.AngularVelocity = Vector3.new(0, prepSpin, 0)
+                    end
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    task.wait()
+                end
+                root.CFrame = prepTargetCF
+
+                local startPos = prepTargetCF.Position
+                local startRot = prepTargetCF - prepTargetCF.Position
+                local yaw = 0
+                local lastSpinTick = tick()
+
+                sendChatMessage("Spooling up...")
+                local spoolStart = tick()
+                local spoolFromSpeed = math.max(0.35, baseIdleSpeed * 0.7)
+                while tick() - spoolStart < groundedSpinDuration and char.Parent and root.Parent do
+                    local now = tick()
+                    local dt = now - lastSpinTick
+                    lastSpinTick = now
+                    local t = math.clamp((now - spoolStart) / groundedSpinDuration, 0, 1)
+                    local spoolCurve = t * t * t
+                    local currentSpinSpeed = spoolFromSpeed + ((targetSpinSpeed - spoolFromSpeed) * spoolCurve)
+                    yaw += currentSpinSpeed * dt
+                    if heliBody and heliBody.Parent then
+                        heliBody.AngularVelocity = Vector3.new(0, currentSpinSpeed, 0)
+                    end
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
+                    task.wait()
+                end
+
+                local existingHeli = root:FindFirstChild("HL1__HELI")
+                if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
+                    existingHeli:Destroy()
+                end
+
+                local nearestRouteIndex = 1
+                local nearestRouteDistance = math.huge
+                for index, routePoint in ipairs(HELICOPTER_PLAZA_ROUTE) do
+                    local delta = Vector3.new(routePoint.X - startPos.X, 0, routePoint.Z - startPos.Z)
+                    local distance = delta.Magnitude
+                    if distance < nearestRouteDistance then
+                        nearestRouteDistance = distance
+                        nearestRouteIndex = index
+                    end
+                end
+
+                local routeStartBase = HELICOPTER_PLAZA_ROUTE[nearestRouteIndex]
+                local routeStartPos = Vector3.new(routeStartBase.X, routeStartBase.Y + riseHeight, routeStartBase.Z)
+                local ascentStart = tick()
+                local lastFrameTick = ascentStart
+                local finalTargetPos = startPos
+
+                while tick() - ascentStart < ascentDuration and char.Parent and root.Parent do
+                    local now = tick()
+                    local dt = now - lastFrameTick
+                    lastFrameTick = now
+                    local p = math.clamp((now - ascentStart) / ascentDuration, 0, 1)
+                    local easedUp = p * p
+                    local sideDrift = math.sin(p * math.pi) * math.min(8, 2 + (amount * 0.08))
+                    local travelPos = startPos:Lerp(routeStartPos, easedUp)
+                    finalTargetPos = travelPos + Vector3.new(sideDrift, 0, 0)
+                    local facingDir = Vector3.new(routeStartPos.X - startPos.X, 0, routeStartPos.Z - startPos.Z)
+                    if facingDir.Magnitude < 0.001 then
+                        facingDir = Vector3.new(0, 0, -1)
+                    else
+                        facingDir = facingDir.Unit
+                    end
+                    local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * easedUp)
+                    yaw += spinSpeedAtFrame * dt
+                    pcall(function()
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end)
+                    root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + facingDir) * CFrame.Angles(0, yaw, 0)
+                    task.wait()
+                end
+
+                local routeIndex = nearestRouteIndex
+                local routePosition = finalTargetPos
+                local routeFlightStart = tick()
+                lastFrameTick = routeFlightStart
+                sendChatMessage("Cruising the plaza...")
+                while tick() - routeFlightStart < flightDuration and char.Parent and root.Parent do
+                    if pendingHelicopterRaisedAmount > 0 then
+                        local bonusAmount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
+                        pendingHelicopterRaisedAmount = 0
+                        flightDuration = math.min(130, flightDuration + math.max(8, getHelicopterFlightDuration(bonusAmount) * 0.25))
+                        targetSpinSpeed = math.max(targetSpinSpeed, getHelicopterSpinSpeedForAmount(bonusAmount))
+                        riseHeight = math.max(riseHeight, getHelicopterRiseHeight(bonusAmount, minRiseHeight))
+                    end
+
+                    local nextIndex = (routeIndex % #HELICOPTER_PLAZA_ROUTE) + 1
+                    local nextBase = HELICOPTER_PLAZA_ROUTE[nextIndex]
+                    local nextPos = Vector3.new(nextBase.X, nextBase.Y + riseHeight, nextBase.Z)
+                    local segmentDistance = (nextPos - routePosition).Magnitude
+                    local segmentDuration = math.clamp(segmentDistance / 18, 3, 6)
+                    local segmentStart = tick()
+                    local segmentOrigin = routePosition
+
+                    while tick() - segmentStart < segmentDuration and char.Parent and root.Parent and (tick() - routeFlightStart) < flightDuration do
+                        if pendingHelicopterRaisedAmount > 0 then
+                            break
+                        end
+
+                        local now = tick()
+                        local dt = now - lastFrameTick
+                        lastFrameTick = now
+                        local p = math.clamp((now - segmentStart) / segmentDuration, 0, 1)
+                        local smoothP = p * p * (3 - (2 * p))
+                        local segmentPos = segmentOrigin:Lerp(nextPos, smoothP)
+                        local bob = math.sin((tick() - routeFlightStart) * 1.4) * 1.2
+                        finalTargetPos = Vector3.new(segmentPos.X, segmentPos.Y + bob, segmentPos.Z)
+                        local travelDir = Vector3.new(nextPos.X - segmentOrigin.X, 0, nextPos.Z - segmentOrigin.Z)
+                        if travelDir.Magnitude < 0.001 then
+                            travelDir = Vector3.new(0, 0, -1)
+                        else
+                            travelDir = travelDir.Unit
+                        end
+                        yaw += targetSpinSpeed * dt
+                        pcall(function()
+                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                        end)
+                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
+                        task.wait()
+                    end
+
+                    routePosition = nextPos
+                    routeIndex = nextIndex
+                end
+
+                local landingTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or prepTargetCF
+                if landingTargetCF then
+                    local landingPos = landingTargetCF.Position
+                    local landingStart = tick()
+                    local descentOrigin = finalTargetPos
+                    while tick() - landingStart < landingDuration and char.Parent and root.Parent do
+                        local now = tick()
+                        local dt = now - lastFrameTick
+                        lastFrameTick = now
+                        local p = math.clamp((now - landingStart) / landingDuration, 0, 1)
+                        local smoothP = p * p * (3 - (2 * p))
+                        finalTargetPos = descentOrigin:Lerp(landingPos, smoothP)
+                        local travelDir = Vector3.new(landingTargetCF.LookVector.X, 0, landingTargetCF.LookVector.Z)
+                        if travelDir.Magnitude < 0.001 then
+                            travelDir = Vector3.new(0, 0, -1)
+                        else
+                            travelDir = travelDir.Unit
+                        end
+                        local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (1 - smoothP))
+                        yaw += spinSpeedAtFrame * dt
+                        pcall(function()
+                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                        end)
+                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
+                        task.wait()
+                    end
+                    root.CFrame = landingTargetCF
+                end
+
+                if animateScript and animateScript:IsA("LocalScript") and animatePrevEnabled ~= nil then
+                    animateScript.Enabled = animatePrevEnabled
+                end
+            end)
+
+            if not ok then
+                warn("Helicopter burst failed:", err)
+                pendingHelicopterRaisedAmount = 0
+                break
+            end
+        end
+
+        currentHelicopterSpinTask = nil
+
+        local currentChar = LocalPlayer.Character
+        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+        if currentHum and currentHum.Parent then
+            restoreIdleMode()
+        end
+    end)
+end
+
+local function performHelicopterDonationSequence(raisedAmount)
+    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
+        registerDelay = math.random(14, 20) / 10,
+        prepDuration = 0.8,
+        groundedSpinDuration = 2.8,
+        minRiseHeight = 28,
+        ascentDuration = 6.5,
+        landingDuration = 5.5
+    })
+end
+
 local function getCharacterHumanoidRoot()
     local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -2129,18 +2883,56 @@ local function getCharacterHumanoidRoot()
     return character, humanoid, root
 end
 
+local function getSpinAngularVelocity()
+    return SPIN_DONATION_BASE_SPEED
+end
+
+local function getSpinMover()
+    local _, _, root = getCharacterHumanoidRoot()
+    if not root then
+        return nil
+    end
+    local existing = root:FindFirstChild("Spin")
+    if existing and existing:IsA("BodyAngularVelocity") then
+        return existing
+    end
+    return nil
+end
+
+local function applySpinState()
+    local _, _, root = getCharacterHumanoidRoot()
+    if not root then
+        return
+    end
+
+    local existing = root:FindFirstChild("Spin")
+    if settings.spinSet then
+        if not (existing and existing:IsA("BodyAngularVelocity")) then
+            existing = Instance.new("BodyAngularVelocity")
+            existing.Name = "Spin"
+            existing.MaxTorque = Vector3.new(0, math.huge, 0)
+            existing.Parent = root
+        end
+        existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+    elseif existing and existing:IsA("BodyAngularVelocity") then
+        existing:Destroy()
+    end
+end
+
 
 settingHandlers = {
+    helicopterEnabled = function(value)
+        if value then
+            startHelicopterIdleMode()
+        else
+            stopHelicopterIdleTask()
+            stopHelicopterSpin()
+            stopAstronautIdle()
+        end
+    end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
             updateBoothTextNow()
-        end
-    end,
-    boothMonitoringToggle = function(value)
-        boothReactionToken += 1
-        if value and claimedBoothSlot then
-            handledClaimSlot = nil
-            onBoothClaimDetected(claimedBoothSlot)
         end
     end,
     textColor = function(value)
@@ -2217,10 +3009,8 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
-    boothMonitorRadius = function(value)
-        local radiusValue = math.clamp(math.floor(tonumber(value) or tonumber(defaults.boothMonitorRadius) or 10), 9, 12)
-        settings.boothMonitorRadius = radiusValue
-        saveSettings()
+    spinSet = function()
+        applySpinState()
     end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
@@ -2251,51 +3041,18 @@ settingHandlers = {
 
 local handledClaimSlot
 local revealedAfterClaim = false
-
-local function scheduleBoothClaimReaction(slot)
-    if not slot then
-        return
-    end
-
-    boothReactionToken += 1
-    local token = boothReactionToken
-    local delaySeconds = math.random(10, 15)
-
-    task.delay(delaySeconds, function()
-        if token ~= boothReactionToken then
-            return
-        end
-
-        if not settings.boothMonitoringToggle then
-            return
-        end
-
-        if claimedBoothSlot ~= slot then
-            return
-        end
-
-        handledClaimSlot = slot
-        moveToClaimedBooth(slot)
-    end)
-end
-
 local function onBoothClaimDetected(slot)
     if not slot then
         return
     end
 
     claimedBoothSlot = slot
-    if handledClaimSlot == slot and not settings.boothMonitoringToggle then
+    if handledClaimSlot == slot then
         return
     end
 
     handledClaimSlot = slot
-
-    if settings.boothMonitoringToggle then
-        scheduleBoothClaimReaction(slot)
-    else
-        moveToClaimedBooth(slot)
-    end
+    moveToClaimedBooth(slot)
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
@@ -2418,11 +3175,6 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
 
     box.FocusLost:Connect(function()
         settings[key] = tostring(box.Text or "")
-        if key == "autoThanksMessage" then
-            settings.autoThanksPreset = "Custom"
-            saveSettings()
-            return
-        end
         saveSettings()
         if settingHandlers[key] then
             pcall(settingHandlers[key], settings[key])
@@ -2432,7 +3184,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     return box
 end
 
-local function createDropdown(parent, text, key, options, onSelect)
+local function createDropdown(parent, text, key, options)
     local row = Instance.new("Frame")
     row.BackgroundTransparency = 1
     row.Size = UDim2.new(1, 0, 0, 30)
@@ -2505,9 +3257,6 @@ local function createDropdown(parent, text, key, options, onSelect)
             settings[key] = options[idx]
             syncText()
             saveSettings()
-            if type(onSelect) == "function" then
-                pcall(onSelect, settings[key])
-            end
             if settingHandlers[key] then
                 pcall(settingHandlers[key], settings[key])
             end
@@ -2515,6 +3264,132 @@ local function createDropdown(parent, text, key, options, onSelect)
             activeDropdown = nil
         end)
     end
+
+    btn.MouseButton1Click:Connect(function()
+        if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
+            dropdownCloseFns[activeDropdown]()
+        end
+
+        if expanded then
+            setExpanded(false)
+            activeDropdown = nil
+        else
+            setExpanded(true)
+            activeDropdown = row
+        end
+    end)
+end
+
+local function createMessageDropdown(parent, text, key, fallback)
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.Parent = parent
+
+    local baseHeight = 30
+    local contentHeight = 216
+
+    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
+
+    local content = Instance.new("Frame")
+    content.Visible = false
+    content.BackgroundColor3 = THEME.control
+    content.BorderSizePixel = 0
+    content.Position = UDim2.new(0, 0, 0, baseHeight)
+    content.Size = UDim2.new(1, 0, 0, contentHeight)
+    content.Parent = row
+
+    createCorner(content, CONTROL_CORNER_RADIUS)
+
+    local contentStroke = Instance.new("UIStroke")
+    contentStroke.Thickness = 1
+    contentStroke.Color = THEME.stroke
+    contentStroke.Parent = content
+
+    local contentPad = Instance.new("UIPadding")
+    contentPad.PaddingTop = UDim.new(0, 6)
+    contentPad.PaddingBottom = UDim.new(0, 6)
+    contentPad.PaddingLeft = UDim.new(0, 6)
+    contentPad.PaddingRight = UDim.new(0, 6)
+    contentPad.Parent = content
+
+    local editor = Instance.new("TextBox")
+    editor.Size = UDim2.new(1, 0, 0, 140)
+    editor.BackgroundColor3 = THEME.section
+    editor.TextColor3 = THEME.controlText
+    editor.PlaceholderColor3 = THEME.subtleText
+    editor.Font = Enum.Font.Gotham
+    editor.TextSize = 12
+    editor.ClearTextOnFocus = false
+    editor.TextXAlignment = Enum.TextXAlignment.Left
+    editor.TextYAlignment = Enum.TextYAlignment.Top
+    editor.MultiLine = true
+    editor.TextWrapped = false
+    editor.PlaceholderText = "One message per line (no limit)"
+    editor.Parent = content
+    applyTextGlow(editor, GLOW_COLOR, 0.9)
+
+    local editorPad = Instance.new("UIPadding")
+    editorPad.PaddingTop = UDim.new(0, 6)
+    editorPad.PaddingBottom = UDim.new(0, 6)
+    editorPad.PaddingLeft = UDim.new(0, 8)
+    editorPad.PaddingRight = UDim.new(0, 8)
+    editorPad.Parent = editor
+
+    createCorner(editor, CONTROL_CORNER_RADIUS)
+
+    local editorStroke = Instance.new("UIStroke")
+    editorStroke.Thickness = 1
+    editorStroke.Color = THEME.stroke
+    editorStroke.Parent = editor
+
+    local saveBtn = createStyledButton(content, "Save", UDim2.new(0.5, -3, 0, 24), UDim2.new(0, 0, 0, 146), THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
+    local closeBtn = createStyledButton(content, "Close", UDim2.new(0.5, -3, 0, 24), UDim2.new(0.5, 3, 0, 146), THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
+    local nextLineBtn = createStyledButton(content, "Skip To Next Line", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 174), THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
+
+    local currentList = normalizeMessageList(settings[key], defaults[key])
+    settings[key] = currentList
+    editor.Text = table.concat(currentList, "\n")
+
+    local expanded = false
+    local function setExpanded(open)
+        expanded = open
+        content.Visible = open
+        row.Size = open and UDim2.new(1, 0, 0, baseHeight + contentHeight + 2) or UDim2.new(1, 0, 0, baseHeight)
+        btn.Text = (open and "▼ " or "") .. text
+    end
+
+    dropdownCloseFns[row] = function()
+        setExpanded(false)
+    end
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local parsed = {}
+        for line in tostring(editor.Text or ""):gmatch("[^\r\n]+") do
+            local message = trimText(line)
+            if message ~= "" then
+                table.insert(parsed, message)
+            end
+        end
+
+        settings[key] = normalizeMessageList(parsed, {fallback})
+        editor.Text = table.concat(settings[key], "\n")
+        saveSettings()
+        notify("Chat Messages", text .. " saved.", 3, "chat-message-save-" .. key, 0.5)
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        setExpanded(false)
+        activeDropdown = nil
+    end)
+
+    nextLineBtn.MouseButton1Click:Connect(function()
+        editor.Text = tostring(editor.Text or "") .. "\n"
+        pcall(function()
+            editor:CaptureFocus()
+            editor.CursorPosition = #editor.Text + 1
+        end)
+    end)
 
     btn.MouseButton1Click:Connect(function()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
@@ -2663,13 +3538,15 @@ end
 
 local function buildSettingsTabs()
     local boothTab = createTab("Booth")
-    local characterTab = createTab("Character Settings")
+    local mainTab = createTab("Main")
+    local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
+    createTextBox(boothSection, "Text Color", "textColor", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
@@ -2699,6 +3576,8 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
+    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
         if #nextText > 221 then
@@ -2718,11 +3597,14 @@ local function buildSettingsTabs()
             notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
         end
     end)
+    createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
 
     do
-        local characterSection = createSection(characterTab, "Character Settings")
-        createTextBox(characterSection, "Test $", "testDonationAmount", true)
-        createButton(characterSection, "Test", function()
+        local mainSection = createSection(mainTab, "Main Settings")
+        createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
+        createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
+        createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
+        createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
             local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
             if stat and type(stat.Value) == "number" then
@@ -2732,45 +3614,48 @@ local function buildSettingsTabs()
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
             end
         end)
-
-        local boothMonitoringSection = createSection(characterTab, "Booth Monitoring")
-        createToggle(boothMonitoringSection, "Enable Booth Monitoring", "boothMonitoringToggle")
-        createTextBox(boothMonitoringSection, "Monitor Radius (9-12)", "boothMonitorRadius", true)
-        createInfoLabel(boothMonitoringSection, "The bot will walk around your booth slowly and re-check every 30-70 seconds.")
-        createToggle(boothMonitoringSection, "Auto Thanks", "autoThanksToggle")
-        createInfoLabel(boothMonitoringSection, "Use one thank-you message per line. Blank lines are ignored.")
-        createPlainTextBox(boothMonitoringSection, "Thank you for donating!\nThanks so much for the donation!", "autoThanksMessage", 90, true)
     end
 
     do
-        local webhookSection = createSection(webhookTab, "Webhook Settings")
-        createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
-        createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
-        -- Donation Notifier feature only - other webhook options removed per user request
+        local chatSection = createSection(chatTab, "Chat Settings")
+        createToggle(chatSection, "Auto Thank You", "autoThanks")
+        createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
+        createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
+        createToggle(chatSection, "Auto Beg", "autoBeg")
+        createTextBox(chatSection, "Beg Delay (S)", "begDelay", true)
+        createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
-    do
-        local serverSection = createSection(serverTab, "Serverhop Settings")
-        createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
-        createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
-        createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
-        createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-        createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-        createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-        createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
-        createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
-        createToggle(serverSection, "Mod Evader", "modEvader")
-        createButton(serverSection, "Scan Bot Booths Now", function()
-            local scan = runBotDetectionScan()
-            notifyBotScanResult(scan, true)
-        end)
-        createButton(serverSection, "Server Hop Now", function()
-            requestServerHop("manual-button")
-        end)
+do
+    local webhookSection = createSection(webhookTab, "Webhook Settings")
+    createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
+    createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+    -- Donation Notifier feature only - other webhook options removed per user request
+end
 
-        -- VC Server Hop
-        createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
-    end
+do
+    local serverSection = createSection(serverTab, "Serverhop Settings")
+    createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
+    createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+    createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
+    createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
+    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
+    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
+    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
+    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
+    createToggle(serverSection, "Mod Evader", "modEvader")
+    createButton(serverSection, "Scan Bot Booths Now", function()
+        local scan = runBotDetectionScan()
+        notifyBotScanResult(scan, true)
+    end)
+    createButton(serverSection, "Server Hop Now", function()
+        requestServerHop("manual-button")
+    end)
+
+    -- VC Server Hop
+    createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+end
+
 end
 
 buildSettingsTabs()
@@ -2783,6 +3668,12 @@ task.spawn(function()
     end
 end)
 
+task.defer(function()
+    if settings.spinSet then
+        applySpinState()
+    end
+end)
+
 task.spawn(function()
     while task.wait(0.8) do
         local boothLocation = getBoothLocation()
@@ -2790,31 +3681,6 @@ task.spawn(function()
         local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
         if ownedSlot then
             onBoothClaimDetected(ownedSlot)
-        end
-    end
-end)
-
-task.spawn(function()
-    while task.wait(1) do
-        if not settings.boothMonitoringToggle then
-            task.wait(0.1)
-        else
-            local boothLocation = getBoothLocation()
-            local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-            local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
-            if not ownedSlot then
-                claimedBoothSlot = nil
-            else
-                claimedBoothSlot = ownedSlot
-                if tick() >= nextBoothMonitorRun then
-                    nextBoothMonitorRun = tick() + math.random(30, 70)
-                    task.spawn(function()
-                        pcall(function()
-                            performBoothMonitoringCycle(ownedSlot)
-                        end)
-                    end)
-                end
-            end
         end
     end
 end)
@@ -2915,16 +3781,57 @@ task.spawn(function()
 
         lastRaised = current
         markDonationForHopTimer(delta)
-        notify("Donation Received", "donation received. Check raised stat in-game, or check transactions/roblox.com 👀", 4, "donation-received", 5)
-        sendDonationWebhook()
-        sendAutoThanksMessage()
+
+        if settings.spinSet then
+            local spin = getSpinMover()
+            if spin then
+                local averageDelta = delta / 3
+                local nextVelocity = averageDelta + spin.AngularVelocity.Y
+                spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
+            else
+                applySpinState()
+            end
+        end
+
+        if settings.helicopterEnabled then
+            performHelicopterDonationSequence(delta)
+        end
+
+        sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
+
+        if settings.autoThanks then
+            task.spawn(function()
+                task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
+                sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
+            end)
+        end
     end)
 end)
 
+if LocalPlayer.Character then
+    if settings.helicopterEnabled then
+        task.delay(1.5, startHelicopterIdleMode)
+    end
+end
+
 LocalPlayer.CharacterAdded:Connect(function()
     task.delay(1.5, function()
+        local character = LocalPlayer.Character
+        if character then
+            task.spawn(function()
+            end)
+        end
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
+        end
+        stopAstronautIdle()
+        stopHelicopterIdleTask()
+        stopHelicopterSpin()
+        if settings.helicopterEnabled then
+            startHelicopterIdleMode()
+        end
+        if settings.spinSet then
+            applySpinState()
         end
     end)
 end)
@@ -2944,7 +3851,42 @@ task.spawn(function()
     end
 end)
 
-activateTab("Character Settings")
+task.spawn(function()
+    local lastBegTick = 0
+    while task.wait(1) do
+        if settings.autoBeg then
+            local delaySeconds = math.max(3, tonumber(settings.begDelay) or 300)
+            if tick() - lastBegTick >= delaySeconds then
+                lastBegTick = tick()
+                sendChatMessage(pickRandomMessage(settings.begMessage, "Please donate"))
+            end
+        else
+            lastBegTick = tick()
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.4) do
+        if settings.spinSet and claimedBoothSlot and not currentHelicopterSpinTask then
+            local _, _, root = getCharacterHumanoidRoot()
+            local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
+            if root and targetCF then
+                local distance = (root.Position - targetCF.Position).Magnitude
+                if distance > 12 then
+                    root.CFrame = targetCF
+                    task.delay(0.1, function()
+                        if root and root.Parent and settings.spinSet then
+                            root.CFrame = targetCF
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+activateTab("Main")
 
 RunService.RenderStepped:Connect(function()
     local viewport = getViewportSize()
