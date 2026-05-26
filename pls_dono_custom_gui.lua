@@ -596,20 +596,6 @@ local requestServerHop
 local countZeroDonatedPlayers
 local updateBoothTextNow
 
-local flaggedBoothTexts = {
-    "helicopter",
-    "gifting",
-    "5x",
-    "multiply",
-    "multiplying",
-    "improving",
-    "raising",
-    "1R$=",
-    "1R",
-    "homeless bacon",
-    
-}
-
 local modUsernames = {
     ["haz3mn"] = true,
     ["zenuux"] = true,
@@ -726,138 +712,8 @@ local function parseIdFromTemplate(tmpl)
     return id and tonumber(id) or nil
 end
 
-local function isTextFlagged(txt)
-    if txt == nil then
-        return false
-    end
-
-    local norm = tostring(txt):lower()
-
-    for _, keyword in ipairs(flaggedBoothTexts) do
-        local plain = tostring(keyword):lower()
-        if plain ~= "" and norm:find(plain, 1, true) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function hasNamedAncestor(desc, wantedName)
-    local current = desc and desc.Parent
-    local target = tostring(wantedName or ""):lower()
-    while current do
-        if tostring(current.Name or ""):lower() == target then
-            return true
-        end
-        current = current.Parent
-    end
-    return false
-end
-
-local function isLikelyBoothSignLabel(label)
-    if not label or not label:IsA("TextLabel") then
-        return false
-    end
-
-    if hasNamedAncestor(label, "Details") then
-        return false
-    end
-
-    local labelName = tostring(label.Name or ""):lower()
-    if labelName:find("owner", 1, true) or labelName:find("raised", 1, true) or labelName:find("goal", 1, true) or labelName:find("donat", 1, true) then
-        return false
-    end
-
-    return labelName:find("sign", 1, true) or labelName:find("text", 1, true) or labelName:find("message", 1, true)
-end
-
-local function getBoothSlotFromDescendant(desc)
-    local current = desc
-    for _ = 1, 12 do
-        if not current then
-            break
-        end
-        local slot = tonumber(tostring(current.Name):match("BoothUI(%d+)"))
-        if slot then
-            return slot
-        end
-        current = current.Parent
-    end
-    return nil
-end
-
 local function countBotLikeBooths()
-    local boothLocation = getBoothLocation()
-    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-    if not boothUiFolder then
-        return 0
-    end
-
-    local flaggedOwners = {}
-    local seenSlots = {}
-    for _, obj in ipairs(boothUiFolder:GetDescendants()) do
-        if isLikelyBoothSignLabel(obj) then
-            local slot = getBoothSlotFromDescendant(obj)
-            if slot and not seenSlots[slot] then
-                local ownerName = nil
-                local boothFrame = boothUiFolder:FindFirstChild("BoothUI" .. tostring(slot))
-                if boothFrame and boothFrame:FindFirstChild("Details") and boothFrame.Details:FindFirstChild("Owner") then
-                    ownerName = tostring(boothFrame.Details.Owner.Text or "")
-                end
-
-                local ownerLower = tostring(ownerName or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-                if ownerLower ~= "" and ownerLower ~= "unclaimed" then
-                    local textVal = tostring(obj.Text or "")
-                    if isTextFlagged(textVal) then
-                        seenSlots[slot] = true
-                        table.insert(flaggedOwners, {slot = slot, owner = ownerName})
-                    end
-                end
-            end
-        end
-    end
-
-    local uniqueSuspiciousSlots = {}
-    for _, data in ipairs(flaggedOwners) do
-        local ownerSuspicious = false
-        local ownerLower = tostring(data.owner or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-
-        if ownerLower == "" or ownerLower == "unclaimed" then
-            ownerSuspicious = true
-        else
-            local matchedPlayer = nil
-            for _, pl in ipairs(Players:GetPlayers()) do
-                local n = tostring(pl.Name or ""):lower()
-                local d = tostring(pl.DisplayName or ""):lower()
-                if n == ownerLower or d == ownerLower then
-                    matchedPlayer = pl
-                    break
-                end
-            end
-
-            if not matchedPlayer then
-                ownerSuspicious = true
-            else
-                local okAge, accAge = pcall(function()
-                    return matchedPlayer.AccountAge
-                end)
-                if okAge and type(accAge) == "number" and accAge < 3 then
-                    ownerSuspicious = true
-                end
-            end
-        end
-
-        if ownerSuspicious and data.slot then
-            uniqueSuspiciousSlots[data.slot] = true
-        end
-    end
-
-    local count = 0
-    for _ in pairs(uniqueSuspiciousSlots) do
-        count += 1
-    end
-    return count
+    return 0
 end
 
 local function runBotDetectionScan()
@@ -1774,23 +1630,23 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(28, 164, 52),
-    topBarText = Color3.fromRGB(248, 255, 248),
-    panel = Color3.fromRGB(23, 23, 25),
-    tabIdle = Color3.fromRGB(72, 72, 76),
-    tabActive = Color3.fromRGB(96, 96, 102),
-    section = Color3.fromRGB(18, 18, 20),
-    control = Color3.fromRGB(31, 31, 34),
-    controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(181, 191, 181),
-    accent = Color3.fromRGB(57, 196, 76),
-    stroke = Color3.fromRGB(66, 66, 71),
+    topBar = Color3.fromRGB(10, 32, 90),
+    topBarText = Color3.fromRGB(245, 245, 255),
+    panel = Color3.fromRGB(12, 18, 40),
+    tabIdle = Color3.fromRGB(28, 44, 82),
+    tabActive = Color3.fromRGB(45, 80, 150),
+    section = Color3.fromRGB(10, 16, 34),
+    control = Color3.fromRGB(17, 26, 55),
+    controlText = Color3.fromRGB(238, 238, 255),
+    subtleText = Color3.fromRGB(166, 186, 238),
+    accent = Color3.fromRGB(90, 154, 255),
+    stroke = Color3.fromRGB(40, 60, 115),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
+local GLOW_COLOR = Color3.fromRGB(120, 180, 255)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(95, 135, 255)
 local GLOW_TRANSPARENCY = 0.84
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
@@ -1930,9 +1786,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(42, 98, 190)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(28, 76, 152)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 48, 118)),
     })
     topGradient.Parent = topBar
 end
@@ -1969,7 +1825,7 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(47, 89, 172)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
@@ -1983,7 +1839,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = Color3.fromRGB(172, 205, 255)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -2000,7 +1856,8 @@ tabHolder.Size = UDim2.new(1, -12, 0, 28)
 tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
-tabHolder.ScrollBarThickness = 2
+tabHolder.ScrollBarThickness = 0
+tabHolder.ScrollBarImageTransparency = 1
 tabHolder.ScrollBarImageColor3 = THEME.accent
 tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2030,14 +1887,6 @@ do
     tabPad.PaddingLeft = UDim.new(0, 6)
     tabPad.PaddingRight = UDim.new(0, 6)
     tabPad.Parent = tabHolder
-
-    local tabUnderline = Instance.new("Frame")
-    tabUnderline.Name = "TabUnderline"
-    tabUnderline.Size = UDim2.new(1, -12, 0, 1)
-    tabUnderline.Position = UDim2.new(0, 6, 0, 35)
-    tabUnderline.BackgroundColor3 = THEME.stroke
-    tabUnderline.BorderSizePixel = 0
-    tabUnderline.Parent = body
 end
 
 local pages = Instance.new("Frame")
@@ -3630,6 +3479,7 @@ do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+    createInfoLabel(webhookSection, "https://www.roblox.com/transactions")
     -- Donation Notifier feature only - other webhook options removed per user request
 end
 
