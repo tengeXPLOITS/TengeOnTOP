@@ -226,7 +226,7 @@ local function consumeRecentDonationDonorInfo(amount)
         end
     end
 
-    return getNearestPlayerInfo()
+    return nil
 end
 
 pcall(function()
@@ -389,7 +389,6 @@ local defaults = {
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
-    AnonymousMode = false,
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
@@ -896,57 +895,7 @@ end
 
 
 getNearestPlayerInfo = function()
-    local myCharacter = LocalPlayer.Character
-    local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
-    local myRoot = myHumanoid and myHumanoid.RootPart
-    if not myRoot then
-        return {
-            name = "Unknown",
-            displayName = "Unknown",
-            userId = 0,
-        }
-    end
-
-    local nearestPlayer = nil
-    local nearestDistance = math.huge
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and pl.Character then
-            local hum = pl.Character:FindFirstChildOfClass("Humanoid")
-            local root = hum and hum.RootPart
-            if root then
-                local dist = (root.Position - myRoot.Position).Magnitude
-                if dist < nearestDistance then
-                    nearestDistance = dist
-                    nearestPlayer = pl
-                end
-            end
-        end
-    end
-
-    if nearestPlayer then
-        return {
-            name = tostring(nearestPlayer.Name or "Unknown"),
-            displayName = tostring(nearestPlayer.DisplayName or nearestPlayer.Name or "Unknown"),
-            userId = tonumber(nearestPlayer.UserId) or 0,
-        }
-    end
-
-    -- Fallback: if no one is near, just pick the first other player in the server
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer then
-            return {
-                name = tostring(pl.Name or "Unknown"),
-                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
-                userId = tonumber(pl.UserId) or 0,
-            }
-        end
-    end
-
-    return {
-        name = "Unknown",
-        displayName = "Unknown",
-        userId = 0,
-    }
+    return nil
 end
 
 local function getCurrentRaisedAmount()
@@ -1042,15 +991,16 @@ local function sendDonationWebhook(amount, donorInfo)
         donorLabel = donorDisplay
     end
     postWebhookJson(url, {
-        username = "PLS DONATE",
-        content = ("Donation received from %s"):format(donorLabel),
+        content = "",
         embeds = {{
             color = 0x1E90FF,
-            title = "Donation Stats",
+            title = "You received a donation! 💵",
+            url = "https://www.roblox.com/transactions",
+            description = "[View transaction history](https://www.roblox.com/transactions)",
             fields = {
                 {name = "Donor", value = donorLabel, inline = false},
                 {name = "Robux Received", value = string.format("%d", received), inline = true},
-                {name = "After Tax", value = string.format("%d", taxed), inline = true},
+                {name = "After Roblox Dumass Tax", value = string.format("%d", taxed), inline = true},
             },
         }},
     })
@@ -1507,6 +1457,23 @@ local function getClaimedBoothTargetCFrame(slot)
     return getBoothTargetCFrameForStand(slot)
 end
 
+local function smoothMoveRootToCFrame(hrp, targetCF, duration)
+    if not hrp or not hrp.Parent or not targetCF then
+        return
+    end
+    duration = math.max(0.15, tonumber(duration) or 0.25)
+    local startCF = hrp.CFrame
+    local startTime = tick()
+    while tick() - startTime < duration and hrp.Parent do
+        local t = math.clamp((tick() - startTime) / duration, 0, 1)
+        hrp.CFrame = startCF:Lerp(targetCF, t)
+        task.wait()
+    end
+    if hrp.Parent then
+        hrp.CFrame = targetCF
+    end
+end
+
 local function moveToClaimedBooth(slot)
     local targetCF, err = getClaimedBoothTargetCFrame(slot)
     if not targetCF then
@@ -1521,7 +1488,7 @@ local function moveToClaimedBooth(slot)
     end
 
     local function applyFacing()
-        hrp.CFrame = targetCF
+        smoothMoveRootToCFrame(hrp, targetCF, 0.25)
         task.delay(0.15, function()
             if hrp and hrp.Parent then
                 hrp.CFrame = targetCF
@@ -1973,7 +1940,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(28, 44, 82) or Color3.fromRGB(45, 80, 150)
 
     minimizeTween = TweenService:Create(
         main,
@@ -2579,6 +2546,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 
                 local routeStartBase = HELICOPTER_PLAZA_ROUTE[nearestRouteIndex]
                 local routeStartPos = Vector3.new(routeStartBase.X, routeStartBase.Y + riseHeight, routeStartBase.Z)
+                local ascentTargetPos = Vector3.new(startPos.X, routeStartPos.Y, startPos.Z)
                 local ascentStart = tick()
                 local lastFrameTick = ascentStart
                 local finalTargetPos = startPos
@@ -2589,9 +2557,8 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     lastFrameTick = now
                     local p = math.clamp((now - ascentStart) / ascentDuration, 0, 1)
                     local easedUp = p * p
-                    local sideDrift = math.sin(p * math.pi) * math.min(8, 2 + (amount * 0.08))
-                    local travelPos = startPos:Lerp(routeStartPos, easedUp)
-                    finalTargetPos = travelPos + Vector3.new(sideDrift, 0, 0)
+                    local travelPos = startPos:Lerp(ascentTargetPos, easedUp)
+                    finalTargetPos = travelPos
                     local facingDir = Vector3.new(routeStartPos.X - startPos.X, 0, routeStartPos.Z - startPos.Z)
                     if facingDir.Magnitude < 0.001 then
                         facingDir = Vector3.new(0, 0, -1)
@@ -3395,7 +3362,6 @@ local function buildSettingsTabs()
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "textColor", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
@@ -3425,8 +3391,6 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
-    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
         if #nextText > 221 then
@@ -3724,7 +3688,17 @@ task.spawn(function()
             if root and targetCF then
                 local distance = (root.Position - targetCF.Position).Magnitude
                 if distance > 12 then
-                    root.CFrame = targetCF
+                    local startCF = root.CFrame
+                    local startTime = tick()
+                    local duration = 0.25
+                    while tick() - startTime < duration and root.Parent and settings.spinSet do
+                        local t = math.clamp((tick() - startTime) / duration, 0, 1)
+                        root.CFrame = startCF:Lerp(targetCF, t)
+                        task.wait()
+                    end
+                    if root and root.Parent and settings.spinSet then
+                        root.CFrame = targetCF
+                    end
                     task.delay(0.1, function()
                         if root and root.Parent and settings.spinSet then
                             root.CFrame = targetCF
