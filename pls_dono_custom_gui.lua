@@ -416,6 +416,7 @@ local antiBotConfirmationDelay = 10
 local hopCooldownSeconds = 1
 local lastHopTick = 0
 local nextBoothMonitorRun = 0
+local lastAutoThanksMessage = ""
 local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
@@ -842,16 +843,43 @@ local function sendDonationWebhook()
     })
 end
 
+local function getAutoThanksMessages()
+    local raw = tostring(settings.autoThanksMessage or "")
+    local messages = {}
+
+    for line in raw:gmatch("[^\n]+") do
+    end
+
+    if #messages == 0 then
+        table.insert(messages, "Thank you for donating!")
+    end
+
+    return messages
+end
+
+local function chooseAutoThanksMessage()
+    local messages = getAutoThanksMessages()
+    if #messages == 1 then
+        return messages[1]
+    end
+
+    local candidate = messages[math.random(1, #messages)]
+    local attempts = 0
+    while candidate == lastAutoThanksMessage and attempts < 8 do
+        candidate = messages[math.random(1, #messages)]
+        attempts += 1
+    end
+
+    lastAutoThanksMessage = candidate
+    return candidate
+end
+
 local function sendAutoThanksMessage()
     if not settings.autoThanksToggle then
         return false
     end
 
-    local message = trimText(settings.autoThanksMessage)
-    if message == "" then
-        message = "Thank you for donating!"
-    end
-
+    local message = chooseAutoThanksMessage()
     local sent = false
 
     pcall(function()
@@ -1363,47 +1391,57 @@ local function navigateToBoothMonitoringPoint(targetPosition)
         return false, "missing-character"
     end
 
-    humanoid.WalkSpeed = 7
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2.2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-    })
+    humanoid.WalkSpeed = 6
+    humanoid:MoveTo(targetPosition)
 
-    local computeOk, _ = pcall(function()
-        path:ComputeAsync(root.Position, targetPosition)
-    end)
+    local startedAt = tick()
+    local lastPosition = root.Position
+    local lastMovementAt = tick()
+    local recoveryAttempts = 0
 
-    if not computeOk or path.Status ~= Enum.PathStatus.Success then
-        humanoid:MoveTo(targetPosition)
-        return true, "fallback-move"
-    end
-
-    for _, waypoint in ipairs(path:GetWaypoints()) do
-        if waypoint.Action == Enum.PathWaypointAction.Jump then
-            humanoid.Jump = true
-        end
-
-        humanoid:MoveTo(waypoint.Position)
-        local startedAt = tick()
-        while tick() - startedAt < 2.5 do
-            task.wait(0.1)
-            if (root.Position - waypoint.Position).Magnitude <= 2.2 then
-                break
-            end
-        end
-    end
-
-    local finishAt = tick()
-    while tick() - finishAt < 3 do
+    while tick() - startedAt < 10 do
         task.wait(0.1)
+
         if (root.Position - targetPosition).Magnitude <= 2.5 then
+            humanoid:MoveTo(root.Position)
             return true, "arrived"
         end
+
+        local movementDistance = (root.Position - lastPosition).Magnitude
+        if movementDistance < 0.05 then
+            if tick() - lastMovementAt >= 1.5 and recoveryAttempts < 2 then
+                recoveryAttempts += 1
+                local recoveryTarget = targetPosition + Vector3.new(math.random(-2, 2), 0, math.random(-2, 2))
+                humanoid:MoveTo(recoveryTarget)
+                lastMovementAt = tick()
+            end
+        else
+            lastMovementAt = tick()
+        end
+
+        lastPosition = root.Position
     end
 
     humanoid:MoveTo(targetPosition)
     return true, "continued"
+end
+
+local function ensureBoothMonitoringSlot()
+    local boothLocation = getBoothLocation()
+    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
+    local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
+    if ownedSlot then
+        claimedBoothSlot = ownedSlot
+        return ownedSlot
+    end
+
+    local claimed, info = claimBoothNow()
+    if claimed then
+        onBoothClaimDetected(info)
+        return info
+    end
+
+    return nil
 end
 
 local function performBoothMonitoringCycle(slot)
@@ -1917,7 +1955,7 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 80, 0, 28)
+    btn.Size = UDim2.new(0, 130, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
@@ -2658,26 +2696,8 @@ local function buildSettingsTabs()
         createTextBox(boothMonitoringSection, "Monitor Radius (9-12)", "boothMonitorRadius", true)
         createInfoLabel(boothMonitoringSection, "The bot will walk around your booth slowly and re-check every 30-70 seconds.")
         createToggle(boothMonitoringSection, "Auto Thanks", "autoThanksToggle")
-        createInfoLabel(boothMonitoringSection, "Thanks preset:")
-        local thanksBox = createPlainTextBox(boothMonitoringSection, "Thank you for donating!", "autoThanksMessage", 42, false)
-        createDropdown(boothMonitoringSection, "Thanks Preset", "autoThanksPreset", {
-            "Custom",
-            "Thank you for donating!",
-            "Thanks so much for the donation!",
-            "Much appreciated!",
-            "Thanks for donating, best of luck!",
-            "Thank you for the help!",
-            "Appreciate the donation!",
-            "Thanks, you’re awesome!",
-            "Big thanks for donating!",
-            "Love the support, thank you!",
-        }, function(selected)
-            if selected ~= "Custom" then
-                settings.autoThanksMessage = tostring(selected)
-                thanksBox.Text = tostring(selected)
-                saveSettings()
-            end
-        end)
+        createInfoLabel(boothMonitoringSection, "Use one thank-you message per line. Blank lines are ignored.")
+        createPlainTextBox(boothMonitoringSection, "Thank you for donating!\nThanks so much for the donation!", "autoThanksMessage", 90, true)
     end
 
     do
