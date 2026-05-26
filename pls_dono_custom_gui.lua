@@ -36,10 +36,13 @@ end
 
 local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
-local avatarThumbnailCache = {}
 local recentDonationLogs = {}
 local getNearestPlayerInfo
-local observedDonationChatChannels = {}
+
+local currentSpinSpeed = 0
+local spinSpeedSlowdownStart = nil
+local spinSpeedSlowdownDuration = 2
+local lastSpinSpeedPromoTick = 0
 
 local function notify(title, text, duration, dedupeKey, cooldown)
     local now = tick()
@@ -135,13 +138,9 @@ local function resolvePlayerInfoFromText(value)
     }
 end
 
-local function pruneRecentDonationLogs(now)
-    now = tonumber(now) or tick()
-    for index = #recentDonationLogs, 1, -1 do
-        local entry = recentDonationLogs[index]
-        if not entry or (now - (tonumber(entry.time) or 0)) > 15 then
-            table.remove(recentDonationLogs, index)
-        end
+local function pruneRecentDonationLogs()
+    while #recentDonationLogs > 20 do
+        table.remove(recentDonationLogs, 1)
     end
 end
 
@@ -157,16 +156,14 @@ local function recordDonationEvent(donorText, amountValue, recipientText)
         return
     end
 
-    local now = tick()
-    lastDonationTick = now
-    pruneRecentDonationLogs(now)
+    lastDonationTick = tick()
+    pruneRecentDonationLogs()
     local normalizedDonor = normalizePlayerText(donorText)
     for _, entry in ipairs(recentDonationLogs) do
         local entryDonor = entry and entry.donorInfo and entry.donorInfo.name or ""
         if entry
             and tonumber(entry.amount) == amount
-            and normalizePlayerText(entryDonor) == normalizedDonor
-            and (now - (tonumber(entry.time) or 0)) <= 2 then
+            and normalizePlayerText(entryDonor) == normalizedDonor then
             return
         end
     end
@@ -174,12 +171,9 @@ local function recordDonationEvent(donorText, amountValue, recipientText)
     table.insert(recentDonationLogs, {
         amount = amount,
         donorInfo = resolvePlayerInfoFromText(donorText),
-        time = now,
     })
 
-    while #recentDonationLogs > 20 do
-        table.remove(recentDonationLogs, 1)
-    end
+    pruneRecentDonationLogs()
 end
 
 local function parseDonationMessageText(message)
@@ -226,75 +220,8 @@ local function consumeRecentDonationDonorInfo(amount)
         end
     end
 
-    return nil
+    return getNearestPlayerInfo()
 end
-
-pcall(function()
-    LogService.MessageOut:Connect(function(message)
-        recordDonationLogMessage(message)
-    end)
-end)
-
-local function recordDonationChatMessage(message)
-    local text = ""
-    local prefixText = ""
-
-    pcall(function()
-        text = tostring(message.Text or "")
-    end)
-    pcall(function()
-        prefixText = tostring(message.PrefixText or "")
-    end)
-
-    local donorText, amount, recipientText = parseDonationMessageText(text)
-    if donorText and amount and recipientText then
-        recordDonationEvent(donorText, amount, recipientText)
-        return
-    end
-
-    if prefixText ~= "" then
-        donorText, amount, recipientText = parseDonationMessageText(prefixText .. " " .. text)
-        if donorText and amount and recipientText then
-            recordDonationEvent(donorText, amount, recipientText)
-        end
-    end
-end
-
-local function watchDonationChatChannel(channel)
-    if not channel or observedDonationChatChannels[channel] then
-        return
-    end
-
-    local isTextChannel = false
-    pcall(function()
-        isTextChannel = channel:IsA("TextChannel")
-    end)
-    if not isTextChannel then
-        return
-    end
-
-    observedDonationChatChannels[channel] = true
-    pcall(function()
-        channel.MessageReceived:Connect(function(message)
-            recordDonationChatMessage(message)
-        end)
-    end)
-end
-
-pcall(function()
-    local channels = TextChatService:FindFirstChild("TextChannels") or TextChatService:WaitForChild("TextChannels", 10)
-    if not channels then
-        return
-    end
-
-    for _, channel in ipairs(channels:GetChildren()) do
-        watchDonationChatChannel(channel)
-    end
-
-    channels.ChildAdded:Connect(function(channel)
-        watchDonationChatChannel(channel)
-    end)
-end)
 
 local function cloneRef(v)
     if type(cloneref) == "function" then
@@ -392,6 +319,7 @@ local defaults = {
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
+    spinSpeedResetThreshold = 1500,
 }
 
 local boothFontOptions = {"SciFi"}
@@ -895,7 +823,46 @@ end
 
 
 getNearestPlayerInfo = function()
-    return nil
+    local myCharacter = LocalPlayer.Character
+    local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
+    local myRoot = myHumanoid and myHumanoid.RootPart
+    if not myRoot then
+        return {
+            name = "Unknown",
+            displayName = "Unknown",
+            userId = 0,
+        }
+    end
+
+    local nearestPlayer = nil
+    local nearestDistance = math.huge
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and pl.Character then
+            local hum = pl.Character:FindFirstChildOfClass("Humanoid")
+            local root = hum and hum.RootPart
+            if root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if dist < nearestDistance then
+                    nearestDistance = dist
+                    nearestPlayer = pl
+                end
+            end
+        end
+    end
+
+    if nearestPlayer then
+        return {
+            name = tostring(nearestPlayer.Name or "Unknown"),
+            displayName = tostring(nearestPlayer.DisplayName or nearestPlayer.Name or "Unknown"),
+            userId = tonumber(nearestPlayer.UserId) or 0,
+        }
+    end
+
+    return {
+        name = "Unknown",
+        displayName = "Unknown",
+        userId = 0,
+    }
 end
 
 local function getCurrentRaisedAmount()
@@ -925,48 +892,7 @@ local function findDetectedModPlayer()
     return nil
 end
 
-local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
-    userId = tonumber(userId) or 0
-    if userId <= 0 then
-        return nil
-    end
 
-    local cacheKey = table.concat({tostring(userId), tostring(size or "420x420"), tostring(isCircular == true)}, ":")
-    if avatarThumbnailCache[cacheKey] then
-        return avatarThumbnailCache[cacheKey]
-    end
-
-    local thumbSize = tostring(size or "420x420")
-    local circleFlag = isCircular == true and "true" or "false"
-    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=%s&format=Png&isCircular=%s"):format(
-        userId,
-        HttpService:UrlEncode(thumbSize),
-        circleFlag
-    )
-
-    local ok, imageUrl = pcall(function()
-        local body = httpGetBody(endpoint)
-        if type(body) ~= "string" or body == "" then
-            return nil
-        end
-
-        local decoded = HttpService:JSONDecode(body)
-        local items = decoded and decoded.data
-        local firstItem = type(items) == "table" and items[1] or nil
-        local resolved = firstItem and firstItem.imageUrl
-        if type(resolved) == "string" and resolved ~= "" then
-            return resolved
-        end
-        return nil
-    end)
-
-    if ok and imageUrl then
-        avatarThumbnailCache[cacheKey] = imageUrl
-        return imageUrl
-    end
-
-    return nil
-end
 
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
@@ -990,6 +916,7 @@ local function sendDonationWebhook(amount, donorInfo)
     else
         donorLabel = donorDisplay
     end
+    local currentRaised = getCurrentRaisedAmount()
     postWebhookJson(url, {
         content = "",
         embeds = {{
@@ -1001,6 +928,7 @@ local function sendDonationWebhook(amount, donorInfo)
                 {name = "Donor", value = donorLabel, inline = false},
                 {name = "Robux Received", value = string.format("%d", received), inline = true},
                 {name = "After Roblox Dumass Tax", value = string.format("%d", taxed), inline = true},
+                {name = "Total Raised", value = string.format("%d", currentRaised), inline = false},
             },
         }},
     })
@@ -1024,6 +952,21 @@ local function pickRandomMessage(list, fallback)
         return tostring(list[index] or fallback or "")
     end
     return tostring(fallback or "")
+end
+
+local function getEffectiveBegMessages()
+    local messages = {}
+    if type(settings.begMessage) == "table" then
+        for _, msg in ipairs(settings.begMessage) do
+            table.insert(messages, msg)
+        end
+    end
+    
+    if settings.spinSet then
+        table.insert(messages, "Help me reach " .. tostring(tonumber(settings.spinSpeedResetThreshold) or 1500) .. " spinspeed!")
+    end
+    
+    return messages
 end
 
 local function getRaisedStatObject()
@@ -2700,7 +2643,36 @@ local function getCharacterHumanoidRoot()
 end
 
 local function getSpinAngularVelocity()
-    return SPIN_DONATION_BASE_SPEED
+    if not settings.spinSet then
+        return SPIN_DONATION_BASE_SPEED
+    end
+    
+    if spinSpeedSlowdownStart then
+        local elapsed = tick() - spinSpeedSlowdownStart
+        if elapsed < spinSpeedSlowdownDuration then
+            local progress = elapsed / spinSpeedSlowdownDuration
+            return currentSpinSpeed * (1 - progress)
+        else
+            spinSpeedSlowdownStart = nil
+            currentSpinSpeed = 0
+        end
+    end
+    
+    return currentSpinSpeed
+end
+
+local function addSpinSpeed(amount)
+    if not settings.spinSet then
+        return
+    end
+    
+    local threshold = tonumber(settings.spinSpeedResetThreshold) or 1500
+    currentSpinSpeed = currentSpinSpeed + (amount or 0)
+    
+    if currentSpinSpeed >= threshold then
+        spinSpeedSlowdownStart = tick()
+        currentSpinSpeed = threshold
+    end
 end
 
 local function getSpinMover()
@@ -2748,33 +2720,6 @@ settingHandlers = {
     end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    textColor = function(value)
-        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local lower = normalized:lower()
-        local allowedNames = {
-            green = true,
-            blue = true,
-            yellow = true,
-            black = true,
-            white = true,
-            red = true,
-            orange = true,
-            pink = true,
-            purple = true,
-            gray = true,
-            grey = true,
-        }
-        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
-            settings.textColor = defaults.textColor
-            saveSettings()
-            return
-        end
-        settings.textColor = allowedNames[lower] and lower or normalized:upper()
-        saveSettings()
-        if updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
@@ -2827,6 +2772,10 @@ settingHandlers = {
     end,
     spinSet = function()
         applySpinState()
+    end,
+    spinSpeedResetThreshold = function(value)
+        local threshold = math.max(100, tonumber(value) or 1500)
+        settings.spinSpeedResetThreshold = threshold
     end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
@@ -3416,6 +3365,7 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
+        createTextBox(mainSection, "Spin Speed Reset Threshold", "spinSpeedResetThreshold", true)
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
@@ -3597,6 +3547,7 @@ task.spawn(function()
         markDonationForHopTimer(delta)
 
         if settings.spinSet then
+            addSpinSpeed(delta)
             local spin = getSpinMover()
             if spin then
                 local averageDelta = delta / 3
@@ -3620,6 +3571,98 @@ task.spawn(function()
             end)
         end
     end)
+end)
+
+task.spawn(function()
+    while task.wait(1200) do
+        if settings.spinSet then
+            sendChatMessage("want to know my current spinspeed? say \".spinspeed\"")
+            lastSpinSpeedPromoTick = tick()
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if settings.spinSet then
+            applySpinState()
+        end
+    end
+end)
+
+task.spawn(function()
+    local function handleChatMessage(message)
+        if not message or settings.spinSet ~= true then
+            return
+        end
+        
+        local playerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        
+        if playerMessage == ".spinspeed" then
+            local speedStr = tostring(math.floor(currentSpinSpeed * 100) / 100)
+            sendChatMessage("My current spinspeed is: " .. speedStr)
+        end
+    end
+    
+    local function getNearestPlayers()
+        local _, _, root = getCharacterHumanoidRoot()
+        if not root then
+            return {}
+        end
+        
+        local nearby = {}
+        local searchRadius = 50
+        
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                if playerRoot then
+                    local dist = (root.Position - playerRoot.Position).Magnitude
+                    if dist <= searchRadius then
+                        table.insert(nearby, {player = player, distance = dist})
+                    end
+                end
+            end
+        end
+        
+        table.sort(nearby, function(a, b)
+            return a.distance < b.distance
+        end)
+        
+        return nearby
+    end
+    
+    while task.wait(0.5) do
+        if settings.spinSet and TextChatService then
+            local chatWindow = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
+            if chatWindow then
+                local generalChannel = TextChatService.ChatChannels:FindFirstChild("RBXGeneral")
+                if generalChannel then
+                    for _, textMessage in ipairs(generalChannel:GetMessages()) do
+                        if textMessage and textMessage.Parent == generalChannel then
+                            local messageText = tostring(textMessage.Text or "")
+                            local player = Players:FindFirstChild(textMessage.TextSource.Name)
+                            
+                            if player and player ~= LocalPlayer and messageText:lower() == ".spinspeed" then
+                                local nearbyPlayers = getNearestPlayers()
+                                local isNearby = false
+                                for _, nearby in ipairs(nearbyPlayers) do
+                                    if nearby.player == player then
+                                        isNearby = true
+                                        break
+                                    end
+                                end
+                                
+                                if isNearby then
+                                    handleChatMessage(messageText)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end)
 
 if LocalPlayer.Character then
@@ -3672,7 +3715,9 @@ task.spawn(function()
             local delaySeconds = math.max(3, tonumber(settings.begDelay) or 300)
             if tick() - lastBegTick >= delaySeconds then
                 lastBegTick = tick()
-                sendChatMessage(pickRandomMessage(settings.begMessage, "Please donate"))
+                local begMessages = getEffectiveBegMessages()
+                local message = pickRandomMessage(begMessages, "Please donate")
+                sendChatMessage(message)
             end
         else
             lastBegTick = tick()
