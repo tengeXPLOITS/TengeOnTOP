@@ -27,13 +27,20 @@ local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 
-local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui%20(1).lua"
+local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
+
+local function buildAutoexecSource(url)
+    local resolvedUrl = tostring(url or DEFAULT_AUTOEXEC_URL or "")
+    if resolvedUrl == "" then
+        resolvedUrl = DEFAULT_AUTOEXEC_URL
+    end
+    return "loadstring(game:HttpGet(\"" .. resolvedUrl .. "\"))()"
+end
+
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
     SharedEnv.PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
 end
-if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_SOURCE == "" then
-    SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui%20(1).lua\"))()"
-end
+SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = buildAutoexecSource(SharedEnv.PLS_DONO_AUTOEXEC_URL)
 
 local notificationTimestamps = {}
 
@@ -115,18 +122,12 @@ local function queueScriptOnTeleport()
         return false
     end
 
-    if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
-        return pcall(function()
-            queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
-        end)
-    elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
-        local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
-        return pcall(function()
-            queueOnTeleport(source)
-        end)
-    end
+    local source = buildAutoexecSource(SharedEnv.PLS_DONO_AUTOEXEC_URL)
+    SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = source
 
-    return false
+    return pcall(function()
+        queueOnTeleport(source)
+    end)
 end
 
 local GuiParent = resolveGuiParent()
@@ -417,6 +418,7 @@ local hopCooldownSeconds = 1
 local lastHopTick = 0
 local nextBoothMonitorRun = 0
 local lastAutoThanksMessage = ""
+local boothReactionToken = 0
 local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
@@ -1347,28 +1349,65 @@ local function getClaimedBoothTargetCFrame(slot)
     return getBoothTargetCFrameForStand(slot)
 end
 
+local function pathfindToPosition(targetPosition, walkSpeed, goalTolerance)
+    local character, humanoid, root = getCharacterHumanoidRoot()
+    if not humanoid or not root then
+        return false, "missing-character"
+    end
+
+    local tolerance = tonumber(goalTolerance) or 2.5
+    if (root.Position - targetPosition).Magnitude <= tolerance then
+        return true, "already-there"
+    end
+
+    humanoid.WalkSpeed = tonumber(walkSpeed) or 6
+
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2.2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+    })
+
+    local computeOk, computeStatus = pcall(function()
+        return path:ComputeAsync(root.Position, targetPosition)
+    end)
+
+    if not computeOk or path.Status ~= Enum.PathStatus.Success then
+        humanoid:MoveTo(targetPosition)
+        return true, "fallback-move"
+    end
+
+    local waypoints = path:GetWaypoints()
+    for _, waypoint in ipairs(waypoints) do
+        if waypoint.Action == Enum.PathWaypointAction.Jump then
+            humanoid.Jump = true
+        end
+
+        humanoid:MoveTo(waypoint.Position)
+        local startedAt = tick()
+        while tick() - startedAt < 2.4 do
+            task.wait(0.05)
+            if (root.Position - waypoint.Position).Magnitude <= 2.2 then
+                break
+            end
+        end
+
+        if (root.Position - targetPosition).Magnitude <= tolerance then
+            return true, "arrived"
+        end
+    end
+
+    humanoid:MoveTo(targetPosition)
+    return true, "path-complete"
+end
+
 local function moveToClaimedBooth(slot)
     local targetCF, err = getClaimedBoothTargetCFrame(slot)
     if not targetCF then
         return false, err or "missing-booth-part"
     end
 
-    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local hrp = character and character:FindFirstChild("HumanoidRootPart")
-    if not humanoid or not hrp then
-        return false, "missing-character"
-    end
-
-    local currentCF = hrp.CFrame
-    if (currentCF.Position - targetCF.Position).Magnitude < 0.5 then
-        hrp.CFrame = targetCF
-        return true, "positioned"
-    end
-
-    local tween = TweenService:Create(hrp, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = targetCF})
-    tween:Play()
-    return true, "smooth-move"
+    return pathfindToPosition(targetCF.Position, 6, 2.2)
 end
 
 local function getBoothMonitoringTarget(slot)
@@ -1386,44 +1425,7 @@ local function getBoothMonitoringTarget(slot)
 end
 
 local function navigateToBoothMonitoringPoint(targetPosition)
-    local character, humanoid, root = getCharacterHumanoidRoot()
-    if not humanoid or not root then
-        return false, "missing-character"
-    end
-
-    humanoid.WalkSpeed = 6
-    humanoid:MoveTo(targetPosition)
-
-    local startedAt = tick()
-    local lastPosition = root.Position
-    local lastMovementAt = tick()
-    local recoveryAttempts = 0
-
-    while tick() - startedAt < 10 do
-        task.wait(0.1)
-
-        if (root.Position - targetPosition).Magnitude <= 2.5 then
-            humanoid:MoveTo(root.Position)
-            return true, "arrived"
-        end
-
-        local movementDistance = (root.Position - lastPosition).Magnitude
-        if movementDistance < 0.05 then
-            if tick() - lastMovementAt >= 1.5 and recoveryAttempts < 2 then
-                recoveryAttempts += 1
-                local recoveryTarget = targetPosition + Vector3.new(math.random(-2, 2), 0, math.random(-2, 2))
-                humanoid:MoveTo(recoveryTarget)
-                lastMovementAt = tick()
-            end
-        else
-            lastMovementAt = tick()
-        end
-
-        lastPosition = root.Position
-    end
-
-    humanoid:MoveTo(targetPosition)
-    return true, "continued"
+    return pathfindToPosition(targetPosition, 6, 2.4)
 end
 
 local function ensureBoothMonitoringSlot()
@@ -2134,6 +2136,13 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
+    boothMonitoringToggle = function(value)
+        boothReactionToken += 1
+        if value and claimedBoothSlot then
+            handledClaimSlot = nil
+            onBoothClaimDetected(claimedBoothSlot)
+        end
+    end,
     textColor = function(value)
         local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
         local lower = normalized:lower()
@@ -2242,18 +2251,51 @@ settingHandlers = {
 
 local handledClaimSlot
 local revealedAfterClaim = false
+
+local function scheduleBoothClaimReaction(slot)
+    if not slot then
+        return
+    end
+
+    boothReactionToken += 1
+    local token = boothReactionToken
+    local delaySeconds = math.random(10, 15)
+
+    task.delay(delaySeconds, function()
+        if token ~= boothReactionToken then
+            return
+        end
+
+        if not settings.boothMonitoringToggle then
+            return
+        end
+
+        if claimedBoothSlot ~= slot then
+            return
+        end
+
+        handledClaimSlot = slot
+        moveToClaimedBooth(slot)
+    end)
+end
+
 local function onBoothClaimDetected(slot)
     if not slot then
         return
     end
 
     claimedBoothSlot = slot
-    if handledClaimSlot == slot then
+    if handledClaimSlot == slot and not settings.boothMonitoringToggle then
         return
     end
 
     handledClaimSlot = slot
-    moveToClaimedBooth(slot)
+
+    if settings.boothMonitoringToggle then
+        scheduleBoothClaimReaction(slot)
+    else
+        moveToClaimedBooth(slot)
+    end
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
