@@ -12,9 +12,11 @@ local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local PathfindingService = game:GetService("PathfindingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
+local TextChatService = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -33,7 +35,6 @@ if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AU
     SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui%20(1).lua\"))()"
 end
 
-local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
 
 local function notify(title, text, duration, dedupeKey, cooldown)
@@ -156,12 +157,15 @@ local defaults = {
     standingPosition = "Front",
     boothPosition = 3,
 
-    autoThanks = true,
-    thanksDelay = 3,
-    thanksMessage = {"Thank you", "Thankss!", "ty"},
-
     webhookToggle = false,
     webhookBox = "",
+
+    autoThanksToggle = false,
+    autoThanksPreset = "Custom",
+    autoThanksMessage = "Thank you for donating!",
+
+    boothMonitoringToggle = false,
+    boothMonitorRadius = 10,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -176,20 +180,6 @@ local defaults = {
     vcServerHopToggle = false,
     testDonationAmount = 6,
 }
-
-local boothFontOptions = {"SciFi"}
-do
-    local ok, enumItems = pcall(function()
-        return Enum.Font:GetEnumItems()
-    end)
-    if ok and type(enumItems) == "table" and #enumItems > 0 then
-        boothFontOptions = {}
-        for _, fontItem in ipairs(enumItems) do
-            table.insert(boothFontOptions, fontItem.Name)
-        end
-        table.sort(boothFontOptions)
-    end
-end
 
 local settings = {}
 
@@ -230,6 +220,20 @@ local function migrateLegacySettings(data)
 
     if data.textColor == nil and data.hexBox ~= nil then
         data.textColor = data.hexBox
+    end
+
+    local normalizedTextColor = tostring(data.textColor or ""):lower()
+    if normalizedTextColor == "grey" or normalizedTextColor == "gray" or normalizedTextColor == "#7a7a7a" then
+        data.textColor = "#32CD32"
+    end
+
+    local normalizedGoalBarColor = tostring(data.goalBarColor or ""):lower()
+    if normalizedGoalBarColor == "grey" or normalizedGoalBarColor == "gray" then
+        data.goalBarColor = "blue"
+    end
+
+    if data.autoThanksPreset == nil then
+        data.autoThanksPreset = "Custom"
     end
 
     data.hexBox = nil
@@ -309,10 +313,6 @@ local function loadSettings()
 end
 
 loadSettings()
-settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
-settings.autoBeg = nil
-settings.begDelay = nil
-settings.begMessage = nil
 saveSettings()
 SharedEnv.plsdonoSettings = settings
 
@@ -415,6 +415,7 @@ local antiBotNotifyCooldown = 30
 local antiBotConfirmationDelay = 10
 local hopCooldownSeconds = 1
 local lastHopTick = 0
+local nextBoothMonitorRun = 0
 local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
@@ -720,29 +721,6 @@ local function shouldHopForBots(scan)
     return false
 end
 
-local function sendChatMessage(message)
-    local text = tostring(message or "")
-    if text == "" then
-        return
-    end
-
-    local ok = pcall(function()
-        local channels = TextChatService:FindFirstChild("TextChannels")
-        local general = channels and channels:FindFirstChild("RBXGeneral")
-        if general and general.SendAsync then
-            general:SendAsync(text)
-            return
-        end
-        Players:Chat(text)
-    end)
-
-    if not ok then
-        pcall(function()
-            Players:Chat(text)
-        end)
-    end
-end
-
 local function performHttpRequest(options)
     if syn and syn.request then
         return syn.request(options)
@@ -864,7 +842,41 @@ local function sendDonationWebhook()
     })
 end
 
+local function sendAutoThanksMessage()
+    if not settings.autoThanksToggle then
+        return false
+    end
 
+    local message = trimText(settings.autoThanksMessage)
+    if message == "" then
+        message = "Thank you for donating!"
+    end
+
+    local sent = false
+
+    pcall(function()
+        local channel = TextChatService and TextChatService.TextChannels and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+        if channel and channel.SendAsync then
+            channel:SendAsync(message)
+            sent = true
+        end
+    end)
+
+    if sent then
+        return true
+    end
+
+    pcall(function()
+        local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        local sayMessageRequest = chatEvents and chatEvents:FindFirstChild("SayMessageRequest")
+        if sayMessageRequest and sayMessageRequest.FireServer then
+            sayMessageRequest:FireServer(message, "All")
+            sent = true
+        end
+    end)
+
+    return sent
+end
 
 local function resetHopTimer()
     hopTimerResetTick = tick()
@@ -874,14 +886,6 @@ end
 local function markDonationForHopTimer(delta)
     hopTimerResetTick = tick()
     donatedSinceHopTimerReset += math.max(0, tonumber(delta) or 0)
-end
-
-local function pickRandomMessage(list, fallback)
-    if type(list) == "table" and #list > 0 then
-        local index = math.random(1, #list)
-        return tostring(list[index] or fallback or "")
-    end
-    return tostring(fallback or "")
 end
 
 local function getRaisedStatObject()
@@ -972,7 +976,7 @@ local function buildGoalProgressBar()
 
     local emptySegments = math.max(0, totalSegments - filledSegments)
     local namedColors = getNamedTextColorMap()
-    local filledColor = namedColors[getGoalBarColorName()] or namedColors.blue
+    local filledColor = namedColors[getGoalBarColorName()] or namedColors.grey
     return string.format(
         "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
         color3ToRgbText(filledColor),
@@ -1063,8 +1067,8 @@ updateBoothTextNow = function()
         textColor = hexToColor3(settings.textColor),
         buttonStrokeColor = Color3.new(0, 0, 0),
         buttonTextColor = Color3.new(1, 1, 1),
-        buttonColor = Color3.new(98 / 255, 1, 0),
-        buttonHoverColor = Color3.new(98 / 255, 1, 0),
+        buttonColor = Color3.fromRGB(92, 92, 98),
+        buttonHoverColor = Color3.fromRGB(110, 110, 116),
         buttonLayout = "",
     }
 
@@ -1328,17 +1332,87 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
-    local function applyFacing()
+    local currentCF = hrp.CFrame
+    if (currentCF.Position - targetCF.Position).Magnitude < 0.5 then
         hrp.CFrame = targetCF
-        task.delay(0.15, function()
-            if hrp and hrp.Parent then
-                hrp.CFrame = targetCF
-            end
-        end)
+        return true, "positioned"
     end
 
-    applyFacing()
-    return true, "teleport"
+    local tween = TweenService:Create(hrp, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = targetCF})
+    tween:Play()
+    return true, "smooth-move"
+end
+
+local function getBoothMonitoringTarget(slot)
+    local boothPart = findBoothPartBySlot(slot)
+    if not boothPart then
+        return nil
+    end
+
+    local radius = math.clamp(math.floor(tonumber(settings.boothMonitorRadius) or 10), 9, 12)
+    local angle = math.random() * math.pi * 2
+    local offsetDistance = radius + (math.random() * 1.5)
+    local targetPosition = boothPart.Position + Vector3.new(math.cos(angle) * offsetDistance, 0, math.sin(angle) * offsetDistance)
+    targetPosition = Vector3.new(targetPosition.X, boothPart.Position.Y + 1.25, targetPosition.Z)
+    return targetPosition
+end
+
+local function navigateToBoothMonitoringPoint(targetPosition)
+    local character, humanoid, root = getCharacterHumanoidRoot()
+    if not humanoid or not root then
+        return false, "missing-character"
+    end
+
+    humanoid.WalkSpeed = 7
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2.2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+    })
+
+    local computeOk, _ = pcall(function()
+        path:ComputeAsync(root.Position, targetPosition)
+    end)
+
+    if not computeOk or path.Status ~= Enum.PathStatus.Success then
+        humanoid:MoveTo(targetPosition)
+        return true, "fallback-move"
+    end
+
+    for _, waypoint in ipairs(path:GetWaypoints()) do
+        if waypoint.Action == Enum.PathWaypointAction.Jump then
+            humanoid.Jump = true
+        end
+
+        humanoid:MoveTo(waypoint.Position)
+        local startedAt = tick()
+        while tick() - startedAt < 2.5 do
+            task.wait(0.1)
+            if (root.Position - waypoint.Position).Magnitude <= 2.2 then
+                break
+            end
+        end
+    end
+
+    local finishAt = tick()
+    while tick() - finishAt < 3 do
+        task.wait(0.1)
+        if (root.Position - targetPosition).Magnitude <= 2.5 then
+            return true, "arrived"
+        end
+    end
+
+    humanoid:MoveTo(targetPosition)
+    return true, "continued"
+end
+
+local function performBoothMonitoringCycle(slot)
+    local targetPosition = getBoothMonitoringTarget(slot)
+    if not targetPosition then
+        return false, "missing-target"
+    end
+
+    return navigateToBoothMonitoringPoint(targetPosition)
 end
 
 local function claimBoothNow()
@@ -1438,24 +1512,24 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(28, 164, 52),
-    topBarText = Color3.fromRGB(248, 255, 248),
-    panel = Color3.fromRGB(23, 23, 25),
-    tabIdle = Color3.fromRGB(72, 72, 76),
-    tabActive = Color3.fromRGB(96, 96, 102),
-    section = Color3.fromRGB(18, 18, 20),
-    control = Color3.fromRGB(31, 31, 34),
-    controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(181, 191, 181),
-    accent = Color3.fromRGB(57, 196, 76),
-    stroke = Color3.fromRGB(66, 66, 71),
+    topBar = Color3.fromRGB(33, 33, 35),
+    topBarText = Color3.fromRGB(246, 246, 248),
+    panel = Color3.fromRGB(20, 20, 22),
+    tabIdle = Color3.fromRGB(48, 48, 52),
+    tabActive = Color3.fromRGB(66, 66, 72),
+    section = Color3.fromRGB(28, 28, 31),
+    control = Color3.fromRGB(39, 39, 44),
+    controlText = Color3.fromRGB(236, 236, 240),
+    subtleText = Color3.fromRGB(176, 176, 182),
+    accent = Color3.fromRGB(108, 108, 116),
+    stroke = Color3.fromRGB(72, 72, 78),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
-local GLOW_TRANSPARENCY = 0.84
+local GLOW_COLOR = Color3.fromRGB(180, 180, 186)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(118, 118, 126)
+local GLOW_TRANSPARENCY = 0.82
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
 local function createCorner(target, radius)
@@ -1594,9 +1668,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(57, 57, 62)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(43, 43, 47)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(34, 34, 38)),
     })
     topGradient.Parent = topBar
 end
@@ -1633,7 +1707,7 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 98)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
@@ -1647,7 +1721,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = Color3.fromRGB(140, 140, 146)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -1788,7 +1862,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(74, 74, 80) or Color3.fromRGB(90, 90, 98)
 
     minimizeTween = TweenService:Create(
         main,
@@ -2096,6 +2170,11 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
+    boothMonitorRadius = function(value)
+        local radiusValue = math.clamp(math.floor(tonumber(value) or tonumber(defaults.boothMonitorRadius) or 10), 9, 12)
+        settings.boothMonitorRadius = radiusValue
+        saveSettings()
+    end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
         donatedSinceHopTimerReset = 0
@@ -2259,6 +2338,11 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
 
     box.FocusLost:Connect(function()
         settings[key] = tostring(box.Text or "")
+        if key == "autoThanksMessage" then
+            settings.autoThanksPreset = "Custom"
+            saveSettings()
+            return
+        end
         saveSettings()
         if settingHandlers[key] then
             pcall(settingHandlers[key], settings[key])
@@ -2268,7 +2352,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     return box
 end
 
-local function createDropdown(parent, text, key, options)
+local function createDropdown(parent, text, key, options, onSelect)
     local row = Instance.new("Frame")
     row.BackgroundTransparency = 1
     row.Size = UDim2.new(1, 0, 0, 30)
@@ -2341,6 +2425,9 @@ local function createDropdown(parent, text, key, options)
             settings[key] = options[idx]
             syncText()
             saveSettings()
+            if type(onSelect) == "function" then
+                pcall(onSelect, settings[key])
+            end
             if settingHandlers[key] then
                 pcall(settingHandlers[key], settings[key])
             end
@@ -2348,132 +2435,6 @@ local function createDropdown(parent, text, key, options)
             activeDropdown = nil
         end)
     end
-
-    btn.MouseButton1Click:Connect(function()
-        if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
-            dropdownCloseFns[activeDropdown]()
-        end
-
-        if expanded then
-            setExpanded(false)
-            activeDropdown = nil
-        else
-            setExpanded(true)
-            activeDropdown = row
-        end
-    end)
-end
-
-local function createMessageDropdown(parent, text, key, fallback)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 30)
-    row.Parent = parent
-
-    local baseHeight = 30
-    local contentHeight = 216
-
-    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
-
-    local content = Instance.new("Frame")
-    content.Visible = false
-    content.BackgroundColor3 = THEME.control
-    content.BorderSizePixel = 0
-    content.Position = UDim2.new(0, 0, 0, baseHeight)
-    content.Size = UDim2.new(1, 0, 0, contentHeight)
-    content.Parent = row
-
-    createCorner(content, CONTROL_CORNER_RADIUS)
-
-    local contentStroke = Instance.new("UIStroke")
-    contentStroke.Thickness = 1
-    contentStroke.Color = THEME.stroke
-    contentStroke.Parent = content
-
-    local contentPad = Instance.new("UIPadding")
-    contentPad.PaddingTop = UDim.new(0, 6)
-    contentPad.PaddingBottom = UDim.new(0, 6)
-    contentPad.PaddingLeft = UDim.new(0, 6)
-    contentPad.PaddingRight = UDim.new(0, 6)
-    contentPad.Parent = content
-
-    local editor = Instance.new("TextBox")
-    editor.Size = UDim2.new(1, 0, 0, 140)
-    editor.BackgroundColor3 = THEME.section
-    editor.TextColor3 = THEME.controlText
-    editor.PlaceholderColor3 = THEME.subtleText
-    editor.Font = Enum.Font.Gotham
-    editor.TextSize = 12
-    editor.ClearTextOnFocus = false
-    editor.TextXAlignment = Enum.TextXAlignment.Left
-    editor.TextYAlignment = Enum.TextYAlignment.Top
-    editor.MultiLine = true
-    editor.TextWrapped = false
-    editor.PlaceholderText = "One message per line (no limit)"
-    editor.Parent = content
-    applyTextGlow(editor, GLOW_COLOR, 0.9)
-
-    local editorPad = Instance.new("UIPadding")
-    editorPad.PaddingTop = UDim.new(0, 6)
-    editorPad.PaddingBottom = UDim.new(0, 6)
-    editorPad.PaddingLeft = UDim.new(0, 8)
-    editorPad.PaddingRight = UDim.new(0, 8)
-    editorPad.Parent = editor
-
-    createCorner(editor, CONTROL_CORNER_RADIUS)
-
-    local editorStroke = Instance.new("UIStroke")
-    editorStroke.Thickness = 1
-    editorStroke.Color = THEME.stroke
-    editorStroke.Parent = editor
-
-    local saveBtn = createStyledButton(content, "Save", UDim2.new(0.5, -3, 0, 24), UDim2.new(0, 0, 0, 146), THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
-    local closeBtn = createStyledButton(content, "Close", UDim2.new(0.5, -3, 0, 24), UDim2.new(0.5, 3, 0, 146), THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
-    local nextLineBtn = createStyledButton(content, "Skip To Next Line", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 174), THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
-
-    local currentList = normalizeMessageList(settings[key], defaults[key])
-    settings[key] = currentList
-    editor.Text = table.concat(currentList, "\n")
-
-    local expanded = false
-    local function setExpanded(open)
-        expanded = open
-        content.Visible = open
-        row.Size = open and UDim2.new(1, 0, 0, baseHeight + contentHeight + 2) or UDim2.new(1, 0, 0, baseHeight)
-        btn.Text = (open and "▼ " or "") .. text
-    end
-
-    dropdownCloseFns[row] = function()
-        setExpanded(false)
-    end
-
-    saveBtn.MouseButton1Click:Connect(function()
-        local parsed = {}
-        for line in tostring(editor.Text or ""):gmatch("[^\r\n]+") do
-            local message = trimText(line)
-            if message ~= "" then
-                table.insert(parsed, message)
-            end
-        end
-
-        settings[key] = normalizeMessageList(parsed, {fallback})
-        editor.Text = table.concat(settings[key], "\n")
-        saveSettings()
-        notify("Chat Messages", text .. " saved.", 3, "chat-message-save-" .. key, 0.5)
-    end)
-
-    closeBtn.MouseButton1Click:Connect(function()
-        setExpanded(false)
-        activeDropdown = nil
-    end)
-
-    nextLineBtn.MouseButton1Click:Connect(function()
-        editor.Text = tostring(editor.Text or "") .. "\n"
-        pcall(function()
-            editor:CaptureFocus()
-            editor.CursorPosition = #editor.Text + 1
-        end)
-    end)
 
     btn.MouseButton1Click:Connect(function()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
@@ -2623,14 +2584,12 @@ end
 local function buildSettingsTabs()
     local boothTab = createTab("Booth")
     local characterTab = createTab("Character Settings")
-    local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "textColor", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
@@ -2660,8 +2619,6 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
-    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
         if #nextText > 221 then
@@ -2681,12 +2638,11 @@ local function buildSettingsTabs()
             notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
         end
     end)
-    createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
 
     do
         local characterSection = createSection(characterTab, "Character Settings")
-        createTextBox(characterSection, "Test Donation Amount (R$)", "testDonationAmount", true)
-        createButton(characterSection, "Test Donation", function()
+        createTextBox(characterSection, "Test $", "testDonationAmount", true)
+        createButton(characterSection, "Test", function()
             local stat = getRaisedStatObject()
             local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
             if stat and type(stat.Value) == "number" then
@@ -2696,45 +2652,63 @@ local function buildSettingsTabs()
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
             end
         end)
+
+        local boothMonitoringSection = createSection(characterTab, "Booth Monitoring")
+        createToggle(boothMonitoringSection, "Enable Booth Monitoring", "boothMonitoringToggle")
+        createTextBox(boothMonitoringSection, "Monitor Radius (9-12)", "boothMonitorRadius", true)
+        createInfoLabel(boothMonitoringSection, "The bot will walk around your booth slowly and re-check every 30-70 seconds.")
+        createToggle(boothMonitoringSection, "Auto Thanks", "autoThanksToggle")
+        createInfoLabel(boothMonitoringSection, "Thanks preset:")
+        local thanksBox = createPlainTextBox(boothMonitoringSection, "Thank you for donating!", "autoThanksMessage", 42, false)
+        createDropdown(boothMonitoringSection, "Thanks Preset", "autoThanksPreset", {
+            "Custom",
+            "Thank you for donating!",
+            "Thanks so much for the donation!",
+            "Much appreciated!",
+            "Thanks for donating, best of luck!",
+            "Thank you for the help!",
+            "Appreciate the donation!",
+            "Thanks, you’re awesome!",
+            "Big thanks for donating!",
+            "Love the support, thank you!",
+        }, function(selected)
+            if selected ~= "Custom" then
+                settings.autoThanksMessage = tostring(selected)
+                thanksBox.Text = tostring(selected)
+                saveSettings()
+            end
+        end)
     end
 
     do
-        local chatSection = createSection(chatTab, "Chat Settings")
-        createToggle(chatSection, "Auto Thank You", "autoThanks")
-        createTextBox(chatSection, "Thanks Delay (S)", "thanksDelay", true)
-        createMessageDropdown(chatSection, "Thank You Messages", "thanksMessage", "Thank you")
+        local webhookSection = createSection(webhookTab, "Webhook Settings")
+        createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
+        createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+        -- Donation Notifier feature only - other webhook options removed per user request
     end
 
-do
-    local webhookSection = createSection(webhookTab, "Webhook Settings")
-    createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
-    createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
-    -- Donation Notifier feature only - other webhook options removed per user request
-end
+    do
+        local serverSection = createSection(serverTab, "Serverhop Settings")
+        createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
+        createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+        createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
+        createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
+        createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
+        createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
+        createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
+        createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
+        createToggle(serverSection, "Mod Evader", "modEvader")
+        createButton(serverSection, "Scan Bot Booths Now", function()
+            local scan = runBotDetectionScan()
+            notifyBotScanResult(scan, true)
+        end)
+        createButton(serverSection, "Server Hop Now", function()
+            requestServerHop("manual-button")
+        end)
 
-do
-    local serverSection = createSection(serverTab, "Serverhop Settings")
-    createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
-    createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
-    createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
-    createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
-    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
-    createToggle(serverSection, "Mod Evader", "modEvader")
-    createButton(serverSection, "Scan Bot Booths Now", function()
-        local scan = runBotDetectionScan()
-        notifyBotScanResult(scan, true)
-    end)
-    createButton(serverSection, "Server Hop Now", function()
-        requestServerHop("manual-button")
-    end)
-
-    -- VC Server Hop
-    createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
-end
-
+        -- VC Server Hop
+        createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+    end
 end
 
 buildSettingsTabs()
@@ -2754,6 +2728,31 @@ task.spawn(function()
         local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
         if ownedSlot then
             onBoothClaimDetected(ownedSlot)
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(1) do
+        if not settings.boothMonitoringToggle then
+            task.wait(0.1)
+        else
+            local boothLocation = getBoothLocation()
+            local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
+            local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
+            if not ownedSlot then
+                claimedBoothSlot = nil
+            else
+                claimedBoothSlot = ownedSlot
+                if tick() >= nextBoothMonitorRun then
+                    nextBoothMonitorRun = tick() + math.random(30, 70)
+                    task.spawn(function()
+                        pcall(function()
+                            performBoothMonitoringCycle(ownedSlot)
+                        end)
+                    end)
+                end
+            end
         end
     end
 end)
@@ -2856,13 +2855,7 @@ task.spawn(function()
         markDonationForHopTimer(delta)
         notify("Donation Received", "donation received. Check raised stat in-game, or check transactions/roblox.com 👀", 4, "donation-received", 5)
         sendDonationWebhook()
-
-        if settings.autoThanks then
-            task.spawn(function()
-                task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
-                sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
-            end)
-        end
+        sendAutoThanksMessage()
     end)
 end)
 
