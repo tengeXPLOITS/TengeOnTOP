@@ -365,7 +365,11 @@ if not GuiParent then
 end
 
 if SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED and GuiParent:FindFirstChild("PlsDonoCustomGui") then
-    return
+    local existing = GuiParent:FindFirstChild("PlsDonoCustomGui")
+    if existing then
+        existing:Destroy()
+    end
+    SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 end
 
 -- Recover gracefully if a previous run crashed before creating the UI.
