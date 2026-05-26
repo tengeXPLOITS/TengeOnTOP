@@ -1858,8 +1858,6 @@ main.Parent = gui
 main.Visible = true
 main.ClipsDescendants = true
 
-applyResponsiveSize(false)
-
 createCorner(main, SHELL_CORNER_RADIUS)
 
 local shellStroke = Instance.new("UIStroke")
@@ -2014,6 +2012,8 @@ resizeStroke.Color = Color3.fromRGB(0, 0, 0)
 resizeStroke.Thickness = 2
 resizeStroke.Transparency = 0.7
 resizeStroke.Parent = resizeGrip
+
+applyResponsiveSize(false)
 
 for i = 0, 2 do
     local line = Instance.new("Frame")
