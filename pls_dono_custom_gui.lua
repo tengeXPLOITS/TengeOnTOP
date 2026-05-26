@@ -26,6 +26,14 @@ local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 
+local function isSupportedPlaceId()
+    return game.PlaceId == DEFAULT_PLS_DONATE_PLACE_ID or game.PlaceId == VC_PLS_DONATE_PLACE_ID
+end
+
+if not isSupportedPlaceId() then
+    return
+end
+
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
     SharedEnv.PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
@@ -36,7 +44,6 @@ end
 
 local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
-local avatarThumbnailCache = {}
 local recentDonationLogs = {}
 local getNearestPlayerInfo
 local observedDonationChatChannels = {}
@@ -320,6 +327,10 @@ local function resolveGuiParent()
 end
 
 local function queueScriptOnTeleport()
+    if not isSupportedPlaceId() then
+        return false
+    end
+
     local queueOnTeleport = (syn and syn.queue_on_teleport)
         or queue_on_teleport
         or queueonteleport
@@ -328,18 +339,24 @@ local function queueScriptOnTeleport()
         return false
     end
 
+    local ok, result = false, false
     if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
-        return pcall(function()
+        ok, result = pcall(function()
             queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
         end)
     elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
         local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
-        return pcall(function()
+        ok, result = pcall(function()
             queueOnTeleport(source)
         end)
     end
 
-    return false
+    if not ok then
+        notify("Autoexec", "Teleport persistence failed. Re-run the script in PLS Donate.", 6, "autoexec-queue-fail", 10)
+        return false
+    end
+
+    return true
 end
 
 local GuiParent = resolveGuiParent()
@@ -1120,49 +1137,6 @@ local function findDetectedModPlayer()
     return nil
 end
 
-local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
-    userId = tonumber(userId) or 0
-    if userId <= 0 then
-        return nil
-    end
-
-    local cacheKey = table.concat({tostring(userId), tostring(size or "420x420"), tostring(isCircular == true)}, ":")
-    if avatarThumbnailCache[cacheKey] then
-        return avatarThumbnailCache[cacheKey]
-    end
-
-    local thumbSize = tostring(size or "420x420")
-    local circleFlag = isCircular == true and "true" or "false"
-    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=%s&format=Png&isCircular=%s"):format(
-        userId,
-        HttpService:UrlEncode(thumbSize),
-        circleFlag
-    )
-
-    local ok, imageUrl = pcall(function()
-        local body = httpGetBody(endpoint)
-        if type(body) ~= "string" or body == "" then
-            return nil
-        end
-
-        local decoded = HttpService:JSONDecode(body)
-        local items = decoded and decoded.data
-        local firstItem = type(items) == "table" and items[1] or nil
-        local resolved = firstItem and firstItem.imageUrl
-        if type(resolved) == "string" and resolved ~= "" then
-            return resolved
-        end
-        return nil
-    end)
-
-    if ok and imageUrl then
-        avatarThumbnailCache[cacheKey] = imageUrl
-        return imageUrl
-    end
-
-    return nil
-end
-
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
         return
@@ -1173,30 +1147,9 @@ local function sendDonationWebhook(amount, donorInfo)
         return
     end
 
-    local received = math.max(0, tonumber(amount) or 0)
-    local taxed = math.floor((tonumber(amount) or 0) * 0.6)
-    local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
-    local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
-    local donorLabel
-    if donorName ~= "Unknown" and donorDisplay ~= donorName then
-        donorLabel = donorDisplay .. " (@" .. donorName .. ")"
-    elseif donorName ~= "Unknown" then
-        donorLabel = "@" .. donorName
-    else
-        donorLabel = donorDisplay
-    end
     postWebhookJson(url, {
-        username = "PLS DONATE",
-        content = ("Donation received from %s"):format(donorLabel),
-        embeds = {{
-            color = 0x1E90FF,
-            title = "Donation Stats",
-            fields = {
-                {name = "Donor", value = donorLabel, inline = false},
-                {name = "Robux Received", value = string.format("%d", received), inline = true},
-                {name = "After Tax", value = string.format("%d", taxed), inline = true},
-            },
-        }},
+        username = "game pass removal soon 😔",
+        content = "donation received! check your raised stat in-game 👀",
     })
 end
 
@@ -1846,15 +1799,6 @@ local function createStyledButton(parent, text, size, position, backgroundColor,
     return btn
 end
 
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.new(0, 380, 0, 360)
-main.Position = UDim2.fromOffset(0, 0)
-main.BackgroundColor3 = THEME.panel
-main.BorderSizePixel = 0
-main.Parent = gui
-main.Visible = true
-
 local TOP_BAR_HEIGHT = 34
 local expandedWidth = 380
 local expandedHeight = 360
@@ -1876,17 +1820,20 @@ local function getBottomRightPosition(sizeY)
     return UDim2.fromOffset(x, y)
 end
 
+local function updateWindowMetrics(width, height)
+    expandedWidth = math.clamp(math.floor(width), 340, 700)
+    expandedHeight = math.clamp(math.floor(height), 300, 700)
+    main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
+    resizeGrip.Position = UDim2.new(1, -6, 1, -6)
+    main.Position = getBottomRightPosition(expandedHeight)
+end
+
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 72), 340, 400)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 40), 360, 412)
+    local targetWidth = math.clamp(math.floor(viewport.X - 72), 340, 700)
+    local targetHeight = math.clamp(math.floor(viewport.Y - 40), 300, 700)
 
-    if not UserInputService.TouchEnabled then
-        expandedWidth = math.max(expandedWidth, 380)
-        expandedHeight = math.max(expandedHeight, 360)
-    end
-
-    main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
+    updateWindowMetrics(targetWidth, targetHeight)
 
     if centerOnApply then
         local centeredX = math.floor((viewport.X - expandedWidth) * 0.5)
@@ -1897,25 +1844,33 @@ local function applyResponsiveSize(centerOnApply)
     end
 end
 
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 380, 0, 360)
+main.Position = UDim2.fromOffset(0, 0)
+main.BackgroundColor3 = THEME.panel
+main.BorderSizePixel = 0
+main.Parent = gui
+main.Visible = true
+main.ClipsDescendants = true
+
 applyResponsiveSize(false)
 
-do
-    createCorner(main, SHELL_CORNER_RADIUS)
+createCorner(main, SHELL_CORNER_RADIUS)
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = THEME.stroke
-    stroke.Thickness = 1
-    stroke.Parent = main
+local shellStroke = Instance.new("UIStroke")
+shellStroke.Color = THEME.stroke
+shellStroke.Thickness = 1
+shellStroke.Parent = main
 
-    local gradient = Instance.new("UIGradient")
-    gradient.Rotation = 90
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 34, 36)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 24, 26)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 20)),
-    })
-    gradient.Parent = main
-end
+local shellGlow = Instance.new("UIGradient")
+shellGlow.Rotation = 90
+shellGlow.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 34, 36)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 24, 26)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 20)),
+})
+shellGlow.Parent = main
 
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
@@ -1924,46 +1879,42 @@ topBar.BackgroundColor3 = THEME.topBar
 topBar.BorderSizePixel = 0
 topBar.Parent = main
 
-do
-    createCorner(topBar, SHELL_CORNER_RADIUS)
+createCorner(topBar, SHELL_CORNER_RADIUS)
 
-    local topGradient = Instance.new("UIGradient")
-    topGradient.Rotation = 0
-    topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
-    })
-    topGradient.Parent = topBar
-end
+local topGradient = Instance.new("UIGradient")
+topGradient.Rotation = 0
+topGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
+})
+topGradient.Parent = topBar
 
-do
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -48, 0, 15)
-    title.Position = UDim2.new(0, 32, 0, 2)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.TextColor3 = THEME.topBarText
-    title.Font = Enum.Font.GothamSemibold
-    title.TextSize = 13
-    title.Text = "PLS DONATE ANIMOSITY"
-    title.Parent = topBar
-    applyTextGlow(title, GLOW_COLOR, 0.78)
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.BackgroundTransparency = 1
+title.Size = UDim2.new(1, -48, 0, 15)
+title.Position = UDim2.new(0, 32, 0, 2)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextColor3 = THEME.topBarText
+title.Font = Enum.Font.GothamSemibold
+title.TextSize = 13
+title.Text = "PLS DONATE ANIMOSITY"
+title.Parent = topBar
+applyTextGlow(title, GLOW_COLOR, 0.78)
 
-    local subtitle = Instance.new("TextLabel")
-    subtitle.Name = "Subtitle"
-    subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -48, 0, 11)
-    subtitle.Position = UDim2.new(0, 32, 0, 18)
-    subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.TextColor3 = THEME.subtleText
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 10
-    subtitle.Text = "developed by mattyB"
-    subtitle.Parent = topBar
-    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
-end
+local subtitle = Instance.new("TextLabel")
+subtitle.Name = "Subtitle"
+subtitle.BackgroundTransparency = 1
+subtitle.Size = UDim2.new(1, -48, 0, 11)
+subtitle.Position = UDim2.new(0, 32, 0, 18)
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.TextColor3 = THEME.subtleText
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextSize = 10
+subtitle.Text = "developed by mattyB"
+subtitle.Parent = topBar
+applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
@@ -1978,14 +1929,12 @@ minimizeBtn.AutoButtonColor = true
 minimizeBtn.Parent = topBar
 applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
 
-do
-    createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
+createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
 
-    local miniStroke = Instance.new("UIStroke")
-    miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
-    miniStroke.Parent = minimizeBtn
-end
+local miniStroke = Instance.new("UIStroke")
+miniStroke.Thickness = 1
+miniStroke.Color = Color3.fromRGB(210, 255, 218)
+miniStroke.Parent = minimizeBtn
 
 local body = Instance.new("Frame")
 body.Name = "Body"
@@ -2007,38 +1956,34 @@ tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
 tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
 tabHolder.Parent = body
 
-do
-    createCorner(tabHolder, CONTROL_CORNER_RADIUS)
+createCorner(tabHolder, CONTROL_CORNER_RADIUS)
 
-    local tabStroke = Instance.new("UIStroke")
-    tabStroke.Thickness = 1
-    tabStroke.Color = THEME.stroke
-    tabStroke.Parent = tabHolder
-end
+local tabStroke = Instance.new("UIStroke")
+tabStroke.Thickness = 1
+tabStroke.Color = THEME.stroke
+tabStroke.Parent = tabHolder
 
-do
-    local tabLayout = Instance.new("UIListLayout")
-    tabLayout.FillDirection = Enum.FillDirection.Horizontal
-    tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    tabLayout.Padding = UDim.new(0, 6)
-    tabLayout.Parent = tabHolder
+local tabLayout = Instance.new("UIListLayout")
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+tabLayout.Padding = UDim.new(0, 6)
+tabLayout.Parent = tabHolder
 
-    local tabPad = Instance.new("UIPadding")
-    tabPad.PaddingTop = UDim.new(0, 4)
-    tabPad.PaddingBottom = UDim.new(0, 4)
-    tabPad.PaddingLeft = UDim.new(0, 6)
-    tabPad.PaddingRight = UDim.new(0, 6)
-    tabPad.Parent = tabHolder
+local tabPad = Instance.new("UIPadding")
+tabPad.PaddingTop = UDim.new(0, 4)
+tabPad.PaddingBottom = UDim.new(0, 4)
+tabPad.PaddingLeft = UDim.new(0, 6)
+tabPad.PaddingRight = UDim.new(0, 6)
+tabPad.Parent = tabHolder
 
-    local tabUnderline = Instance.new("Frame")
-    tabUnderline.Name = "TabUnderline"
-    tabUnderline.Size = UDim2.new(1, -12, 0, 1)
-    tabUnderline.Position = UDim2.new(0, 6, 0, 35)
-    tabUnderline.BackgroundColor3 = THEME.stroke
-    tabUnderline.BorderSizePixel = 0
-    tabUnderline.Parent = body
-end
+local tabUnderline = Instance.new("Frame")
+tabUnderline.Name = "TabUnderline"
+tabUnderline.Size = UDim2.new(1, -12, 0, 1)
+tabUnderline.Position = UDim2.new(0, 6, 0, 35)
+tabUnderline.BackgroundColor3 = THEME.stroke
+tabUnderline.BorderSizePixel = 0
+tabUnderline.Parent = body
 
 local pages = Instance.new("Frame")
 pages.Name = "Pages"
@@ -2046,6 +1991,80 @@ pages.Size = UDim2.new(1, -12, 1, -43)
 pages.Position = UDim2.new(0, 6, 0, 40)
 pages.BackgroundTransparency = 1
 pages.Parent = body
+
+local resizeGrip = Instance.new("Frame")
+resizeGrip.Name = "ResizeGrip"
+resizeGrip.Size = UDim2.new(0, 28, 0, 28)
+resizeGrip.AnchorPoint = Vector2.new(1, 1)
+resizeGrip.Position = UDim2.new(1, -6, 1, -6)
+resizeGrip.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
+resizeGrip.BackgroundTransparency = 0.15
+resizeGrip.BorderSizePixel = 0
+resizeGrip.ZIndex = 10
+resizeGrip.Parent = main
+
+createCorner(resizeGrip, 12)
+
+local resizeStroke = Instance.new("UIStroke")
+resizeStroke.Color = Color3.fromRGB(0, 0, 0)
+resizeStroke.Thickness = 2
+resizeStroke.Transparency = 0.7
+resizeStroke.Parent = resizeGrip
+
+for i = 0, 2 do
+    local line = Instance.new("Frame")
+    line.Size = UDim2.new(0, 16 - i * 4, 0, 2)
+    line.Position = UDim2.new(1, -18 + i * 6, 1, -10 + i * 4)
+    line.AnchorPoint = Vector2.new(1, 1)
+    line.BackgroundColor3 = Color3.fromRGB(120, 120, 130)
+    line.BackgroundTransparency = 0.2 + i * 0.15
+    line.BorderSizePixel = 0
+    line.ZIndex = resizeGrip.ZIndex + 1
+    line.Parent = resizeGrip
+
+    local lineCorner = Instance.new("UICorner")
+    lineCorner.CornerRadius = UDim.new(1, 2)
+    lineCorner.Parent = line
+end
+
+local resizeDrag = false
+local resizeStart
+local resizeStartSize
+
+resizeGrip.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizeDrag = true
+        resizeStart = input.Position
+        resizeStartSize = main.Size
+    end
+end)
+
+resizeGrip.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        resizeDrag = false
+    end
+end)
+
+resizeGrip.MouseEnter:Connect(function()
+    resizeGrip.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+end)
+
+resizeGrip.MouseLeave:Connect(function()
+    resizeGrip.BackgroundColor3 = Color3.fromRGB(40, 40, 44)
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not resizeDrag then
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - resizeStart
+        local newWidth = math.clamp(resizeStartSize.X.Offset + delta.X, 340, 700)
+        local newHeight = math.clamp(resizeStartSize.Y.Offset + delta.Y, 300, 700)
+        updateWindowMetrics(newWidth, newHeight)
+    end
+end)
 
 local function makeDraggable(frame, handle)
     local DRAG_SMOOTH_TIME = 0.06
@@ -3797,6 +3816,7 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
+        notify("Donation", "donation received! check your raised stat in-game 👀", 4, "donation-received", 2)
         sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
 
         if settings.autoThanks then
