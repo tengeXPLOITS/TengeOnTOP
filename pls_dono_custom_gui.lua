@@ -94,6 +94,21 @@ local function normalizePlayerText(value)
     return trimText(value):gsub("^@", ""):lower()
 end
 
+local function isPlayerWhitelisted(player)
+    if not player or type(settings.autoTalkWhitelist) ~= "table" then
+        return false
+    end
+    local pname = normalizePlayerText(player.Name or "")
+    local pdisplay = normalizePlayerText(player.DisplayName or "")
+    for _, entry in ipairs(settings.autoTalkWhitelist) do
+        local e = normalizePlayerText(entry or "")
+        if e ~= "" and (e == pname or e == pdisplay) then
+            return true
+        end
+    end
+    return false
+end
+
 local function textMatchesLocalPlayer(value)
     local normalized = normalizePlayerText(value)
     if normalized == "" then
@@ -307,6 +322,8 @@ local defaults = {
     greetingMessage = {"Hello!", "Hi there!", "Hey!"},
     donateReplyMessage = {"Thanks for the support!", "Appreciate it!", "Thank you!"},
 
+    autoTalkWhitelist = {},
+
     webhookToggle = false,
     webhookBox = "",
 
@@ -459,6 +476,9 @@ settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.t
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
 settings.greetingMessage = normalizeMessageList(settings.greetingMessage, defaults.greetingMessage)
 settings.donateReplyMessage = normalizeMessageList(settings.donateReplyMessage, defaults.donateReplyMessage)
+if type(settings.autoTalkWhitelist) ~= "table" then
+    settings.autoTalkWhitelist = {}
+end
 saveSettings()
 SharedEnv.plsdonoSettings = settings
 
@@ -3183,6 +3203,136 @@ local function createMessageDropdown(parent, text, key, fallback)
     end)
 end
 
+local function createWhitelistEditor(parent, text, key)
+    local row = Instance.new("Frame")
+    row.BackgroundTransparency = 1
+    row.Size = UDim2.new(1, 0, 0, 30)
+    row.Parent = parent
+
+    local baseHeight = 30
+    local contentHeight = 216
+
+    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
+
+    local content = Instance.new("Frame")
+    content.Visible = false
+    content.BackgroundColor3 = THEME.control
+    content.BorderSizePixel = 0
+    content.Position = UDim2.new(0, 0, 0, baseHeight)
+    content.Size = UDim2.new(1, 0, 0, contentHeight)
+    content.Parent = row
+
+    createCorner(content, CONTROL_CORNER_RADIUS)
+
+    local contentStroke = Instance.new("UIStroke")
+    contentStroke.Thickness = 1
+    contentStroke.Color = THEME.stroke
+    contentStroke.Parent = content
+
+    local contentPad = Instance.new("UIPadding")
+    contentPad.PaddingTop = UDim.new(0, 6)
+    contentPad.PaddingBottom = UDim.new(0, 6)
+    contentPad.PaddingLeft = UDim.new(0, 6)
+    contentPad.PaddingRight = UDim.new(0, 6)
+    contentPad.Parent = content
+
+    local editor = Instance.new("TextBox")
+    editor.Size = UDim2.new(1, 0, 0, 140)
+    editor.BackgroundColor3 = THEME.section
+    editor.TextColor3 = THEME.controlText
+    editor.PlaceholderColor3 = THEME.subtleText
+    editor.Font = Enum.Font.Gotham
+    editor.TextSize = 12
+    editor.ClearTextOnFocus = false
+    editor.TextXAlignment = Enum.TextXAlignment.Left
+    editor.TextYAlignment = Enum.TextYAlignment.Top
+    editor.MultiLine = true
+    editor.TextWrapped = false
+    editor.PlaceholderText = "One username per line (no @)."
+    editor.Parent = content
+    applyTextGlow(editor, GLOW_COLOR, 0.9)
+
+    local editorPad = Instance.new("UIPadding")
+    editorPad.PaddingTop = UDim.new(0, 6)
+    editorPad.PaddingBottom = UDim.new(0, 6)
+    editorPad.PaddingLeft = UDim.new(0, 8)
+    editorPad.PaddingRight = UDim.new(0, 8)
+    editorPad.Parent = editor
+
+    createCorner(editor, CONTROL_CORNER_RADIUS)
+
+    local editorStroke = Instance.new("UIStroke")
+    editorStroke.Thickness = 1
+    editorStroke.Color = THEME.stroke
+    editorStroke.Parent = editor
+
+    local saveBtn = createStyledButton(content, "Save", UDim2.new(0.5, -3, 0, 24), UDim2.new(0, 0, 0, 146), THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
+    local closeBtn = createStyledButton(content, "Close", UDim2.new(0.5, -3, 0, 24), UDim2.new(0.5, 3, 0, 146), THEME.section, THEME.controlText, 11, Enum.Font.GothamSemibold)
+    local nextLineBtn = createStyledButton(content, "Skip To Next Line", UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0, 174), THEME.control, THEME.controlText, 11, Enum.Font.GothamSemibold)
+
+    local currentList = {}
+    if type(settings[key]) == "table" then
+        for _, v in ipairs(settings[key]) do
+            table.insert(currentList, tostring(v))
+        end
+    end
+    editor.Text = table.concat(currentList, "\n")
+
+    local expanded = false
+    local function setExpanded(open)
+        expanded = open
+        content.Visible = open
+        row.Size = open and UDim2.new(1, 0, 0, baseHeight + contentHeight + 2) or UDim2.new(1, 0, 0, baseHeight)
+        btn.Text = (open and "▼ " or "") .. text
+    end
+
+    dropdownCloseFns[row] = function()
+        setExpanded(false)
+    end
+
+    saveBtn.MouseButton1Click:Connect(function()
+        local parsed = {}
+        for line in tostring(editor.Text or ""):gmatch("[^\r\n]+") do
+            local message = trimText(line)
+            if message ~= "" then
+                table.insert(parsed, message)
+            end
+        end
+
+        settings[key] = parsed
+        editor.Text = table.concat(settings[key], "\n")
+        saveSettings()
+        notify("Whitelist", text .. " saved.", 3, "auto-talk-whitelist-save", 0.5)
+    end)
+
+    closeBtn.MouseButton1Click:Connect(function()
+        setExpanded(false)
+        activeDropdown = nil
+    end)
+
+    nextLineBtn.MouseButton1Click:Connect(function()
+        editor.Text = tostring(editor.Text or "") .. "\n"
+        pcall(function()
+            editor:CaptureFocus()
+            editor.CursorPosition = #editor.Text + 1
+        end)
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
+            dropdownCloseFns[activeDropdown]()
+        end
+
+        if expanded then
+            setExpanded(false)
+            activeDropdown = nil
+        else
+            setExpanded(true)
+            activeDropdown = row
+        end
+    end)
+end
+
 local function createButton(parent, text, callback)
     local btn = createStyledButton(parent, text, UDim2.new(0, 104, 0, 23), nil, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
 
@@ -3407,6 +3557,7 @@ local function buildSettingsTabs()
         createToggle(autoTalkSection, "Auto Responder", "autoResponder")
         createMessageDropdown(autoTalkSection, "Greeting Responses", "greetingMessage", "Hello!")
         createMessageDropdown(autoTalkSection, "Donation Responses", "donateReplyMessage", "Thanks for the support!")
+        createWhitelistEditor(autoTalkSection, "AutoTalk Whitelist", "autoTalkWhitelist")
     end
 
 do
@@ -3651,8 +3802,42 @@ task.spawn(function()
             return
         end
 
+        -- Whitelist command handling (higher priority)
+        if isPlayerWhitelisted(player) then
+            if lowerMessage:match("^%.help") then
+                sendChatMessage("Whitelist: you can use \".serverhop now\" to request an immediate server hop, or \"test dono <amount>\" to simulate a donation. Reply with the exact commands.")
+                return
+            end
+
+            if lowerMessage:match("^%.serverhop%s*now") then
+                pcall(function()
+                    requestServerHop("whitelist-command")
+                end)
+                sendChatMessage("Okay — hopping servers now, I'll be back soon!")
+                return
+            end
+
+            local testAmt = lowerMessage:match("^test%s*dono[^%d]*(%d+)")
+            if testAmt then
+                local amount = tonumber(testAmt) or 0
+                if amount > 0 then
+                    local stat = getRaisedStatObject()
+                    if stat and type(stat.Value) == "number" then
+                        stat.Value += amount
+                        notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono-whitelist", 1)
+                        sendChatMessage("Thanks — simulated +" .. tostring(amount) .. " R$")
+                    else
+                        sendChatMessage("Could not simulate donation (stat not found).")
+                    end
+                else
+                    sendChatMessage("Please provide a valid donation amount, e.g. \"test dono 6\".")
+                end
+                return
+            end
+        end
+
         if settings.autoResponder then
-            local isGreeting = lowerMessage:match("^%s*(hi|hey|hello)([%p%s].*)?$")
+            local isGreeting = lowerMessage:match("^%s*(hi|hey|hello|hiya|yo)(.*)$")
             local isDono = lowerMessage:find("dono")
             local isDonate = not isDono and lowerMessage:find("donat")
 
@@ -3661,7 +3846,7 @@ task.spawn(function()
             elseif isDono then
                 sendChatMessage("i am saving up, srry")
             elseif isDonate then
-                sendChatMessage(pickRandomMessage(settings.donateReplyMessage, "dont have much to spare, but thanks for stopping by!"))
+                sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
             else
                 sendChatMessage("Thanks for visiting my booth!")
             end
