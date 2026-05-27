@@ -41,7 +41,7 @@ local getNearestPlayerInfo
 
 local currentSpinSpeed = 0
 local spinSpeedSlowdownStart = nil
-local spinSpeedSlowdownDuration = 2
+local spinSpeedSlowdownDuration = 0.25
 local lastSpinSpeedPromoTick = 0
 
 local function notify(title, text, duration, dedupeKey, cooldown)
@@ -2655,15 +2655,20 @@ local function getSpinAngularVelocity()
         else
             spinSpeedSlowdownStart = nil
             currentSpinSpeed = 0
+            return 0
         end
     end
     
-    return currentSpinSpeed
+    return math.max(currentSpinSpeed, SPIN_DONATION_BASE_SPEED)
 end
 
 local function addSpinSpeed(amount)
     if not settings.spinSet then
         return
+    end
+    
+    if spinSpeedSlowdownStart then
+        spinSpeedSlowdownStart = nil
     end
     
     local threshold = tonumber(settings.spinSpeedResetThreshold) or 1500
@@ -3550,9 +3555,7 @@ task.spawn(function()
             addSpinSpeed(delta)
             local spin = getSpinMover()
             if spin then
-                local averageDelta = delta / 3
-                local nextVelocity = averageDelta + spin.AngularVelocity.Y
-                spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
+                spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
             else
                 applySpinState()
             end
@@ -3571,6 +3574,17 @@ task.spawn(function()
             end)
         end
     end)
+end)
+
+task.spawn(function()
+    while task.wait(0.05) do
+        if settings.spinSet and spinSpeedSlowdownStart then
+            local spin = getSpinMover()
+            if spin then
+                spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+            end
+        end
+    end
 end)
 
 task.spawn(function()
