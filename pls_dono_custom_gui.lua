@@ -1429,24 +1429,10 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
-    local highTargetCF = CFrame.new(targetCF.Position + Vector3.new(0, 24, 0), targetCF.Position)
+    pcall(function()
+        hrp.CFrame = targetCF
+    end)
 
-    local function applyFacing()
-        smoothMoveRootToCFrame(hrp, highTargetCF, 0.18)
-        task.delay(0.09, function()
-            if hrp and hrp.Parent then
-                hrp.CFrame = highTargetCF
-            end
-        end)
-        smoothMoveRootToCFrame(hrp, targetCF, 0.18)
-        task.delay(0.08, function()
-            if hrp and hrp.Parent then
-                hrp.CFrame = targetCF
-            end
-        end)
-    end
-
-    applyFacing()
     return true, "teleport"
 end
 
@@ -3412,7 +3398,12 @@ local function buildSettingsTabs()
         createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
- do
+    do
+        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
+        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
+    end
+
+do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
@@ -3420,7 +3411,7 @@ local function buildSettingsTabs()
     -- Donation Notifier feature only - other webhook options removed per user request
 end
 
- do
+do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
@@ -3441,10 +3432,6 @@ end
     createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
 end
 
-    do
-        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
-        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
-    end
 end
 
 buildSettingsTabs()
@@ -3454,17 +3441,6 @@ task.spawn(function()
     local claimed, info = claimBoothNow()
     if claimed then
         onBoothClaimDetected(info)
-    end
-end)
-
-task.spawn(function()
-    while task.wait(5) do
-        if not claimedBoothSlot then
-            local claimed, info = claimBoothNow()
-            if claimed then
-                onBoothClaimDetected(info)
-            end
-        end
     end
 end)
 
@@ -3659,11 +3635,12 @@ task.spawn(function()
         if not player or player == LocalPlayer or type(message) ~= "string" then
             return
         end
-        local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
         if not isPlayerWithinBoothRadius(player) then
             return
         end
-        if lowerMessage:match("^%$?spinspeed$") and settings.spinSet then
+
+        local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        if lowerMessage:match("^%$?spinspeed[%p%s]*$") and settings.spinSet then
             local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
             sendChatMessage("My current spinspeed is: " .. speedStr)
         elseif settings.autoResponder then
@@ -3680,17 +3657,6 @@ task.spawn(function()
         end)
     end
 
-    local function getPlayerFromTextChatMessage(textChatMessage)
-        if not textChatMessage then
-            return nil
-        end
-        local userId = textChatMessage.SenderUserId or (textChatMessage.TextSource and textChatMessage.TextSource.UserId)
-        if type(userId) ~= "number" or userId <= 0 then
-            return nil
-        end
-        return Players:GetPlayerByUserId(userId)
-    end
-
     if Players.PlayerChatted then
         Players.PlayerChatted:Connect(function(player, message)
             processChatMessage(player, message)
@@ -3704,11 +3670,13 @@ task.spawn(function()
 
     if TextChatService and TextChatService.OnIncomingMessage then
         TextChatService.OnIncomingMessage:Connect(function(textChatMessage)
-            local player = getPlayerFromTextChatMessage(textChatMessage)
+            local player = textChatMessage and textChatMessage.SenderUserId and Players:GetPlayerByUserId(textChatMessage.SenderUserId)
             if not player then
-                return
+                player = textChatMessage and textChatMessage.TextSource and Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)
             end
-            processChatMessage(player, tostring(textChatMessage.Text))
+            if player then
+                processChatMessage(player, tostring(textChatMessage.Text))
+            end
         end)
     end
 end)
