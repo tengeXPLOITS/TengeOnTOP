@@ -3412,12 +3412,7 @@ local function buildSettingsTabs()
         createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
-    do
-        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
-        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
-    end
-
-do
+ do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
@@ -3425,7 +3420,7 @@ do
     -- Donation Notifier feature only - other webhook options removed per user request
 end
 
-do
+ do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
@@ -3446,15 +3441,10 @@ do
     createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
 end
 
-end
-
-buildSettingsTabs()
-
-task.spawn(function()
-    task.wait(2)
-    local claimed, info = claimBoothNow()
-    if claimed then
-        onBoothClaimDetected(info)
+    do
+        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
+        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
+    end
     end
 end)
 
@@ -3645,48 +3635,61 @@ task.spawn(function()
         return (playerRoot.Position - targetCF.Position).Magnitude <= radius
     end
 
+    local function processChatMessage(player, message)
+        if not player or player == LocalPlayer or type(message) ~= "string" then
+            return
+        end
+        local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        if not isPlayerWithinBoothRadius(player) then
+            return
+        end
+        if lowerMessage:match("^%$?spinspeed$") and settings.spinSet then
+            local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
+            sendChatMessage("My current spinspeed is: " .. speedStr)
+        elseif settings.autoResponder then
+            sendChatMessage("Thanks for visiting my booth!")
+        end
+    end
+
     local function bindPlayerChat(player)
         if not player or not player.Chatted then
             return
         end
         player.Chatted:Connect(function(message)
-            if player == LocalPlayer or type(message) ~= "string" then
-                return
-            end
-            local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
-            if not isPlayerWithinBoothRadius(player) then
-                return
-            end
-            if lowerMessage == "$spinspeed" and settings.spinSet then
-                local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
-                sendChatMessage("My current spinspeed is: " .. speedStr)
-            elseif settings.autoResponder then
-                sendChatMessage("Thanks for visiting my booth!")
-            end
+            processChatMessage(player, message)
         end)
+    end
+
+    local function getPlayerFromTextChatMessage(textChatMessage)
+        if not textChatMessage then
+            return nil
+        end
+        local userId = textChatMessage.SenderUserId or (textChatMessage.TextSource and textChatMessage.TextSource.UserId)
+        if type(userId) ~= "number" or userId <= 0 then
+            return nil
+        end
+        return Players:GetPlayerByUserId(userId)
     end
 
     if Players.PlayerChatted then
         Players.PlayerChatted:Connect(function(player, message)
-            if not player or player == LocalPlayer or type(message) ~= "string" then
-                return
-            end
-            local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
-            if not isPlayerWithinBoothRadius(player) then
-                return
-            end
-            if lowerMessage == "$spinspeed" and settings.spinSet then
-                local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
-                sendChatMessage("My current spinspeed is: " .. speedStr)
-            elseif settings.autoResponder then
-                sendChatMessage("Thanks for visiting my booth!")
-            end
+            processChatMessage(player, message)
         end)
     else
         for _, player in ipairs(Players:GetPlayers()) do
             bindPlayerChat(player)
         end
         Players.PlayerAdded:Connect(bindPlayerChat)
+    end
+
+    if TextChatService and TextChatService.OnIncomingMessage then
+        TextChatService.OnIncomingMessage:Connect(function(textChatMessage)
+            local player = getPlayerFromTextChatMessage(textChatMessage)
+            if not player then
+                return
+            end
+            processChatMessage(player, tostring(textChatMessage.Text))
+        end)
     end
 end)
 
