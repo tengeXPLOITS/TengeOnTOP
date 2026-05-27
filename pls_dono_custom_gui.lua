@@ -3688,17 +3688,6 @@ task.spawn(function()
         Players.PlayerAdded:Connect(bindPlayerChat)
     end
 
-    if TextChatService and TextChatService.OnIncomingMessage then
-        TextChatService.OnIncomingMessage:Connect(function(textChatMessage)
-            local player = textChatMessage and textChatMessage.SenderUserId and Players:GetPlayerByUserId(textChatMessage.SenderUserId)
-            if not player then
-                player = textChatMessage and textChatMessage.TextSource and Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)
-            end
-            if player then
-                processChatMessage(player, tostring(textChatMessage.Text))
-            end
-        end)
-    end
 end)
 
 if LocalPlayer.Character then
