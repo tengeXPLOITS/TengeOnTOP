@@ -90,6 +90,9 @@ local function normalizeMessageList(value, fallback)
     return normalized
 end
 
+-- settings will be initialized later by loadSettings(); avoid redeclaring
+settings = settings or {}
+
 local function normalizePlayerText(value)
     return trimText(value):gsub("^@", ""):lower()
 end
