@@ -3678,15 +3678,26 @@ task.spawn(function()
     end
 
     if Players.PlayerChatted then
-        Players.PlayerChatted:Connect(function(player, message)
+        Players.PlayerChatted:Connect(function(arg1, arg2, arg3)
+            local player, message
+            if typeof(arg1) == "Instance" and arg1:IsA("Player") then
+                player = arg1
+                message = arg2
+            elseif typeof(arg2) == "Instance" and arg2:IsA("Player") then
+                player = arg2
+                message = arg3
+            elseif type(arg1) == "string" then
+                player = Players:FindFirstChild(arg1)
+                message = arg2
+            end
             processChatMessage(player, message)
         end)
-    else
-        for _, player in ipairs(Players:GetPlayers()) do
-            bindPlayerChat(player)
-        end
-        Players.PlayerAdded:Connect(bindPlayerChat)
     end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        bindPlayerChat(player)
+    end
+    Players.PlayerAdded:Connect(bindPlayerChat)
 
 end)
 
