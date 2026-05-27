@@ -1429,9 +1429,17 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
+    local highTargetCF = CFrame.new(targetCF.Position + Vector3.new(0, 24, 0), targetCF.Position)
+
     local function applyFacing()
-        smoothMoveRootToCFrame(hrp, targetCF, 0.25)
-        task.delay(0.15, function()
+        smoothMoveRootToCFrame(hrp, highTargetCF, 0.18)
+        task.delay(0.09, function()
+            if hrp and hrp.Parent then
+                hrp.CFrame = highTargetCF
+            end
+        end)
+        smoothMoveRootToCFrame(hrp, targetCF, 0.18)
+        task.delay(0.08, function()
             if hrp and hrp.Parent then
                 hrp.CFrame = targetCF
             end
@@ -1463,6 +1471,16 @@ local function claimBoothNow()
         local interactionsFolder = Workspace:FindFirstChild("BoothInteractions") or Workspace:WaitForChild("BoothInteractions", 5)
         if not boothUiFolder or not interactionsFolder then
             return false, "missing-booth-data"
+        end
+
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if hrp and hrp.Parent then
+            local aboveMapCF = CFrame.new(boothScanAnchor.X, math.max(hrp.Position.Y + 30, 80), boothScanAnchor.Z)
+            pcall(function()
+                hrp.CFrame = aboveMapCF
+            end)
+            task.wait(0.1)
         end
 
         local alreadyOwned = findOwnedBoothSlot(boothUiFolder)
@@ -3309,9 +3327,9 @@ local function buildSettingsTabs()
     local boothTab = createTab("Booth")
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
-    local autoTalkTab = createTab("Auto Talk")
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server Hop")
+    local autoTalkTab = createTab("Auto Talk")
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
