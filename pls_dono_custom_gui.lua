@@ -3449,6 +3449,25 @@ end
 
 buildSettingsTabs()
 
+task.spawn(function()
+    task.wait(2)
+    local claimed, info = claimBoothNow()
+    if claimed then
+        onBoothClaimDetected(info)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(5) do
+        if not claimedBoothSlot then
+            local claimed, info = claimBoothNow()
+            if claimed then
+                onBoothClaimDetected(info)
+            end
+        end
+    end
+end)
+
 task.defer(function()
     if settings.spinSet then
         applySpinState()
