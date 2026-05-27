@@ -303,6 +303,7 @@ local defaults = {
     autoBeg = true,
     begDelay = 300,
     begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
+    autoResponder = false,
 
     webhookToggle = false,
     webhookBox = "",
@@ -310,8 +311,6 @@ local defaults = {
     serverHopToggle = true,
     serverHopDelay = 15,
     antiBotServers = false,
-    antiBotThreshold = 17,
-    antiBotInterval = 8,
     zeroDonatedBotThreshold = 16,
     modEvader = false,
     minPlayerCount = 23,
@@ -3310,6 +3309,7 @@ local function buildSettingsTabs()
     local boothTab = createTab("Booth")
     local mainTab = createTab("Main")
     local chatTab = createTab("Chat")
+    local autoTalkTab = createTab("Auto Talk")
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server Hop")
 
@@ -3394,6 +3394,11 @@ local function buildSettingsTabs()
         createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
+    do
+        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
+        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
+    end
+
 do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
@@ -3409,8 +3414,6 @@ do
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
     createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
     createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
     createToggle(serverSection, "Mod Evader", "modEvader")
     createButton(serverSection, "Scan Bot Booths Now", function()
@@ -3588,9 +3591,9 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while task.wait(1200) do
+    while task.wait(300) do
         if settings.spinSet then
-            sendChatMessage("want to know my current spinspeed? say \".spinspeed\"")
+            sendChatMessage("want to know my current spinspeed? say \"$spinspeed\"")
             lastSpinSpeedPromoTick = tick()
         end
     end
@@ -3605,77 +3608,67 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    local function handleChatMessage(message)
-        if not message or settings.spinSet ~= true then
+    local function isPlayerWithinBoothRadius(player)
+        if not player or player == LocalPlayer or not player.Character or not claimedBoothSlot then
+            return false
+        end
+
+        local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
+        if not playerRoot then
+            return false
+        end
+
+        local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
+        if not targetCF then
+            return false
+        end
+
+        local radius = 24
+        return (playerRoot.Position - targetCF.Position).Magnitude <= radius
+    end
+
+    local function bindPlayerChat(player)
+        if not player or not player.Chatted then
             return
         end
-        
-        local playerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
-        
-        if playerMessage == ".spinspeed" then
-            local speedStr = tostring(math.floor(currentSpinSpeed * 100) / 100)
-            sendChatMessage("My current spinspeed is: " .. speedStr)
-        end
-    end
-    
-    local function getNearestPlayers()
-        local _, _, root = getCharacterHumanoidRoot()
-        if not root then
-            return {}
-        end
-        
-        local nearby = {}
-        local searchRadius = 50
-        
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
-                if playerRoot then
-                    local dist = (root.Position - playerRoot.Position).Magnitude
-                    if dist <= searchRadius then
-                        table.insert(nearby, {player = player, distance = dist})
-                    end
-                end
+        player.Chatted:Connect(function(message)
+            if player == LocalPlayer or type(message) ~= "string" then
+                return
             end
-        end
-        
-        table.sort(nearby, function(a, b)
-            return a.distance < b.distance
+            local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+            if not isPlayerWithinBoothRadius(player) then
+                return
+            end
+            if lowerMessage == "$spinspeed" and settings.spinSet then
+                local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
+                sendChatMessage("My current spinspeed is: " .. speedStr)
+            elseif settings.autoResponder then
+                sendChatMessage("Thanks for visiting my booth!")
+            end
         end)
-        
-        return nearby
     end
-    
-    while task.wait(0.5) do
-        if settings.spinSet and TextChatService then
-            local chatWindow = TextChatService:FindFirstChildOfClass("ChatWindowConfiguration")
-            if chatWindow then
-                local generalChannel = TextChatService.ChatChannels:FindFirstChild("RBXGeneral")
-                if generalChannel then
-                    for _, textMessage in ipairs(generalChannel:GetMessages()) do
-                        if textMessage and textMessage.Parent == generalChannel then
-                            local messageText = tostring(textMessage.Text or "")
-                            local player = Players:FindFirstChild(textMessage.TextSource.Name)
-                            
-                            if player and player ~= LocalPlayer and messageText:lower() == ".spinspeed" then
-                                local nearbyPlayers = getNearestPlayers()
-                                local isNearby = false
-                                for _, nearby in ipairs(nearbyPlayers) do
-                                    if nearby.player == player then
-                                        isNearby = true
-                                        break
-                                    end
-                                end
-                                
-                                if isNearby then
-                                    handleChatMessage(messageText)
-                                end
-                            end
-                        end
-                    end
-                end
+
+    if Players.PlayerChatted then
+        Players.PlayerChatted:Connect(function(player, message)
+            if not player or player == LocalPlayer or type(message) ~= "string" then
+                return
             end
+            local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+            if not isPlayerWithinBoothRadius(player) then
+                return
+            end
+            if lowerMessage == "$spinspeed" and settings.spinSet then
+                local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
+                sendChatMessage("My current spinspeed is: " .. speedStr)
+            elseif settings.autoResponder then
+                sendChatMessage("Thanks for visiting my booth!")
+            end
+        end)
+    else
+        for _, player in ipairs(Players:GetPlayers()) do
+            bindPlayerChat(player)
         end
+        Players.PlayerAdded:Connect(bindPlayerChat)
     end
 end)
 
