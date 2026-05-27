@@ -3742,9 +3742,9 @@ task.spawn(function()
         end
 
         if settings.autoResponder then
-            local isGreeting = lowerMessage:match("^%s*(hi|hey|hello|hiya|yo)(.*)$")
-            local isDono = lowerMessage:find("dono")
-            local isDonate = not isDono and lowerMessage:find("donat")
+            local isGreeting = lowerMessage:match("%f[%a](hi|hey|hello|hiya|yo)%f[%A]")
+            local isDono = lowerMessage:match("%f[%a]dono%f[%A]")
+            local isDonate = not isDono and lowerMessage:match("%f[%a]donat%f[%A]")
 
             if isGreeting then
                 sendChatMessage(pickRandomMessage(settings.greetingMessage, "Hello!"))
@@ -3752,8 +3752,6 @@ task.spawn(function()
                 sendChatMessage("i am saving up, srry")
             elseif isDonate then
                 sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
-            else
-                sendChatMessage("Thanks for visiting my booth!")
             end
         end
     end
@@ -3778,6 +3776,9 @@ task.spawn(function()
                 message = arg3
             elseif type(arg1) == "string" then
                 player = Players:FindFirstChild(arg1)
+                message = arg2
+            elseif type(arg1) == "number" then
+                player = Players:GetPlayerByUserId(arg1)
                 message = arg2
             end
             processChatMessage(player, message)
