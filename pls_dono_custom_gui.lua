@@ -3445,8 +3445,9 @@ end
         local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
         createToggle(autoTalkSection, "Auto Responder", "autoResponder")
     end
-    end
-end)
+end
+
+buildSettingsTabs()
 
 task.defer(function()
     if settings.spinSet then
