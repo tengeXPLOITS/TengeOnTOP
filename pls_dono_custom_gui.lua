@@ -304,6 +304,8 @@ local defaults = {
     begDelay = 300,
     begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
     autoResponder = false,
+    greetingMessage = {"Hello!", "Hi there!", "Hey!"},
+    donateReplyMessage = {"Thanks for the support!", "Appreciate it!", "Thank you!"},
 
     webhookToggle = false,
     webhookBox = "",
@@ -455,6 +457,8 @@ end
 loadSettings()
 settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
+settings.greetingMessage = normalizeMessageList(settings.greetingMessage, defaults.greetingMessage)
+settings.donateReplyMessage = normalizeMessageList(settings.donateReplyMessage, defaults.donateReplyMessage)
 saveSettings()
 SharedEnv.plsdonoSettings = settings
 
@@ -3401,6 +3405,8 @@ local function buildSettingsTabs()
     do
         local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
         createToggle(autoTalkSection, "Auto Responder", "autoResponder")
+        createMessageDropdown(autoTalkSection, "Greeting Responses", "greetingMessage", "Hello!")
+        createMessageDropdown(autoTalkSection, "Donation Responses", "donateReplyMessage", "Thanks for the support!")
     end
 
 do
@@ -3612,39 +3618,53 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    local function isPlayerWithinBoothRadius(player)
-        if not player or player == LocalPlayer or not player.Character or not claimedBoothSlot then
+    local function isPlayerNearby(player)
+        if not player or player == LocalPlayer or not player.Character then
             return false
         end
 
         local playerRoot = player.Character:FindFirstChild("HumanoidRootPart")
-        if not playerRoot then
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not playerRoot or not myRoot then
             return false
         end
 
-        local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
-        if not targetCF then
-            return false
-        end
-
-        local radius = 24
-        return (playerRoot.Position - targetCF.Position).Magnitude <= radius
+        return (playerRoot.Position - myRoot.Position).Magnitude < 11
     end
 
     local function processChatMessage(player, message)
         if not player or player == LocalPlayer or type(message) ~= "string" then
             return
         end
-        if not isPlayerWithinBoothRadius(player) then
+
+        local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
+        if string.find(lowerMessage, "donates") or string.find(lowerMessage, "donated") or string.find(lowerMessage, "spamming") then
+            return
+        end
+        if not isPlayerNearby(player) then
             return
         end
 
-        local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
         if lowerMessage:match("^%$?spinspeed[%p%s]*$") and settings.spinSet then
             local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
             sendChatMessage("My current spinspeed is: " .. speedStr)
-        elseif settings.autoResponder then
-            sendChatMessage("Thanks for visiting my booth!")
+            return
+        end
+
+        if settings.autoResponder then
+            local isGreeting = lowerMessage:match("^%s*(hi|hey|hello)([%p%s].*)?$")
+            local isDono = lowerMessage:find("dono")
+            local isDonate = not isDono and lowerMessage:find("donat")
+
+            if isGreeting then
+                sendChatMessage(pickRandomMessage(settings.greetingMessage, "Hello!"))
+            elseif isDono then
+                sendChatMessage("i am saving up, srry")
+            elseif isDonate then
+                sendChatMessage(pickRandomMessage(settings.donateReplyMessage, "dont have much to spare, but thanks for stopping by!"))
+            else
+                sendChatMessage("Thanks for visiting my booth!")
+            end
         end
     end
 
