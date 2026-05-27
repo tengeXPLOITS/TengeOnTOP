@@ -97,21 +97,6 @@ local function normalizePlayerText(value)
     return trimText(value):gsub("^@", ""):lower()
 end
 
-local function isPlayerWhitelisted(player)
-    if not player or type(settings) ~= "table" or type(settings.autoTalkWhitelist) ~= "table" then
-        return false
-    end
-    local pname = normalizePlayerText(player.Name or "")
-    local pdisplay = normalizePlayerText(player.DisplayName or "")
-    for _, entry in ipairs(settings.autoTalkWhitelist) do
-        local e = normalizePlayerText(entry or "")
-        if e ~= "" and (e == pname or e == pdisplay) then
-            return true
-        end
-    end
-    return false
-end
-
 local function textMatchesLocalPlayer(value)
     local normalized = normalizePlayerText(value)
     if normalized == "" then
@@ -321,11 +306,6 @@ local defaults = {
     autoBeg = true,
     begDelay = 300,
     begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
-    autoResponder = true,
-    greetingMessage = {"Hello!", "Hi there!", "Hey!"},
-    donateReplyMessage = {"Thanks for the support!", "Appreciate it!", "Thank you!"},
-
-    autoTalkWhitelist = {"evadingnegativity"},
 
     webhookToggle = false,
     webhookBox = "",
@@ -477,11 +457,6 @@ end
 loadSettings()
 settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
-settings.greetingMessage = normalizeMessageList(settings.greetingMessage, defaults.greetingMessage)
-settings.donateReplyMessage = normalizeMessageList(settings.donateReplyMessage, defaults.donateReplyMessage)
-if type(settings.autoTalkWhitelist) ~= "table" then
-    settings.autoTalkWhitelist = {}
-end
 saveSettings()
 SharedEnv.plsdonoSettings = settings
 
@@ -3206,34 +3181,6 @@ local function createMessageDropdown(parent, text, key, fallback)
     end)
 end
 
-local function createWhitelistEditor(parent, text, key)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 48)
-    row.Parent = parent
-
-    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), nil, THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
-
-    local info = Instance.new("TextLabel")
-    info.BackgroundTransparency = 1
-    info.Size = UDim2.new(1, 0, 0, 22)
-    info.Position = UDim2.new(0, 0, 0, 26)
-    info.Font = Enum.Font.Gotham
-    info.TextSize = 11
-    info.TextColor3 = THEME.subtleText
-    info.TextXAlignment = Enum.TextXAlignment.Left
-    info.TextYAlignment = Enum.TextYAlignment.Center
-    info.TextWrapped = false
-    local entries = ""
-    if type(settings[key]) == "table" and #settings[key] > 0 then
-        entries = table.concat(settings[key], ", ")
-    else
-        entries = "(none)"
-    end
-    info.Text = "Whitelist is edited in code (settings.autoTalkWhitelist). Current: " .. entries
-    info.Parent = row
-end
-
 local function createButton(parent, text, callback)
     local btn = createStyledButton(parent, text, UDim2.new(0, 104, 0, 23), nil, THEME.topBar, THEME.topBarText, 11, Enum.Font.GothamSemibold)
 
@@ -3370,8 +3317,6 @@ local function buildSettingsTabs()
     local chatTab = createTab("Chat")
     local webhookTab = createTab("Webhook")
     local serverTab = createTab("Server Hop")
-    local autoTalkTab = createTab("Auto Talk")
-
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
@@ -3453,13 +3398,6 @@ local function buildSettingsTabs()
         createMessageDropdown(chatSection, "Begging Messages", "begMessage", "Please donate")
     end
 
-    do
-        local autoTalkSection = createSection(autoTalkTab, "Auto Talk Settings")
-        createToggle(autoTalkSection, "Auto Responder", "autoResponder")
-        createMessageDropdown(autoTalkSection, "Greeting Responses", "greetingMessage", "Hello!")
-        createMessageDropdown(autoTalkSection, "Donation Responses", "donateReplyMessage", "Thanks for the support!")
-        createWhitelistEditor(autoTalkSection, "AutoTalk Whitelist", "autoTalkWhitelist")
-    end
 
 do
     local webhookSection = createSection(webhookTab, "Webhook Settings")
@@ -3694,9 +3632,6 @@ task.spawn(function()
         end
 
         local lowerMessage = tostring(message):lower():gsub("^%s+", ""):gsub("%s+$", "")
-        if string.find(lowerMessage, "donates") or string.find(lowerMessage, "donated") or string.find(lowerMessage, "spamming") then
-            return
-        end
         if not isPlayerNearby(player) then
             return
         end
@@ -3705,54 +3640,6 @@ task.spawn(function()
             local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
             sendChatMessage("My current spinspeed is: " .. speedStr)
             return
-        end
-
-        -- Whitelist command handling (higher priority)
-        if isPlayerWhitelisted(player) then
-            if lowerMessage:match("^%.help") then
-                sendChatMessage("Whitelist: you can use \".serverhop now\" to request an immediate server hop, or \"test dono <amount>\" to simulate a donation. Reply with the exact commands.")
-                return
-            end
-
-            if lowerMessage:match("^%.serverhop%s*now") then
-                pcall(function()
-                    requestServerHop("whitelist-command")
-                end)
-                sendChatMessage("Okay — hopping servers now, I'll be back soon!")
-                return
-            end
-
-            local testAmt = lowerMessage:match("^test%s*dono[^%d]*(%d+)")
-            if testAmt then
-                local amount = tonumber(testAmt) or 0
-                if amount > 0 then
-                    local stat = getRaisedStatObject()
-                    if stat and type(stat.Value) == "number" then
-                        stat.Value += amount
-                        notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono-whitelist", 1)
-                        sendChatMessage("Thanks — simulated +" .. tostring(amount) .. " R$")
-                    else
-                        sendChatMessage("Could not simulate donation (stat not found).")
-                    end
-                else
-                    sendChatMessage("Please provide a valid donation amount, e.g. \"test dono 6\".")
-                end
-                return
-            end
-        end
-
-        if settings.autoResponder then
-            local isGreeting = lowerMessage:match("%f[%a](hi|hey|hello|hiya|yo)%f[%A]")
-            local isDono = lowerMessage:match("%f[%a]dono%f[%A]")
-            local isDonate = not isDono and lowerMessage:match("%f[%a]donat%f[%A]")
-
-            if isGreeting then
-                sendChatMessage(pickRandomMessage(settings.greetingMessage, "Hello!"))
-            elseif isDono then
-                sendChatMessage("i am saving up, srry")
-            elseif isDonate then
-                sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
-            end
         end
     end
 
