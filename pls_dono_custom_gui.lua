@@ -1458,15 +1458,8 @@ local function claimBoothNow()
             return false, "missing-booth-data"
         end
 
-        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        if hrp and hrp.Parent then
-            local aboveMapCF = CFrame.new(boothScanAnchor.X, math.max(hrp.Position.Y + 30, 80), boothScanAnchor.Z)
-            pcall(function()
-                hrp.CFrame = aboveMapCF
-            end)
-            task.wait(0.1)
-        end
+        -- Avoid teleporting before booth claim; preserve normal walking movement.
+        -- The pathfinder will move the player to the claimed booth after a successful claim.
 
         local alreadyOwned = findOwnedBoothSlot(boothUiFolder)
         if alreadyOwned then
@@ -1539,7 +1532,8 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 50
-gui.Parent = GuiParent
+-- Start hidden; show GUI after player walks to their claimed booth
+gui.Parent = nil
 
 local THEME = {
     topBar = Color3.fromRGB(10, 32, 90),
@@ -1865,6 +1859,79 @@ local function makeDraggable(frame, handle)
 end
 
 makeDraggable(main, topBar)
+
+-- Resize handle (bottom-right corner) — supports mouse and touch drag-resize
+local resizeHandle = Instance.new("Frame")
+resizeHandle.Name = "ResizeHandle"
+resizeHandle.Size = UDim2.new(0, 18, 0, 18)
+resizeHandle.AnchorPoint = Vector2.new(1, 1)
+resizeHandle.Position = UDim2.new(1, -8, 1, -8)
+resizeHandle.BackgroundTransparency = 1
+resizeHandle.Parent = main
+
+do
+    -- visual grip dots (diagonal) to suggest resize
+    for i = 0, 2 do
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 3, 0, 3)
+        dot.Position = UDim2.new(0, 4 + (i * 5), 0, 4 + (i * 5))
+        dot.BackgroundColor3 = THEME.subtleText
+        dot.BorderSizePixel = 0
+        dot.AnchorPoint = Vector2.new(0, 0)
+        dot.Parent = resizeHandle
+        createCorner(dot, 2)
+    end
+end
+
+local resizing = false
+local resizeStartPos = nil
+local resizeStartSize = nil
+local MIN_W, MIN_H = 300, 120
+local MAX_W, MAX_H = 1000, 1200
+
+local function clampPositionWithinViewport()
+    local vp = getViewportSize()
+    local curPos = main.Position
+    local curSize = main.AbsoluteSize
+    local x = math.clamp(curPos.X.Offset, 0, math.max(0, vp.X - curSize.X - 12))
+    local y = math.clamp(curPos.Y.Offset, 0, math.max(0, vp.Y - curSize.Y - 12))
+    main.Position = UDim2.fromOffset(x, y)
+end
+
+resizeHandle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        resizing = true
+        resizeStartPos = input.Position
+        resizeStartSize = Vector2.new(main.AbsoluteSize.X, main.AbsoluteSize.Y)
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                resizing = false
+                resizeStartPos = nil
+                resizeStartSize = nil
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not resizing or not resizeStartPos or not resizeStartSize then
+        return
+    end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+
+    local delta = input.Position - resizeStartPos
+    local newW = math.clamp(math.floor(resizeStartSize.X + delta.X), MIN_W, MAX_W)
+    local newH = math.clamp(math.floor(resizeStartSize.Y + delta.Y), MIN_H, MAX_H)
+
+    expandedWidth = newW
+    expandedHeight = newH
+    main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
+
+    -- keep window on-screen after resize
+    clampPositionWithinViewport()
+end)
 
 local minimized = false
 local minimizeTween
@@ -2209,8 +2276,8 @@ end
 
 local currentIdleTask = nil
 local HELICOPTER_IDLE_SPIN_SPEED = 2.7
-local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
-local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.05
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.05
 local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
@@ -2843,7 +2910,24 @@ local function onBoothClaimDetected(slot)
     end
 
     handledClaimSlot = slot
-    moveToClaimedBooth(slot)
+
+    -- Walk to the claimed booth; only show and enable the GUI after arrival
+    local ok, mode = moveToClaimedBooth(slot)
+    if ok then
+        if not gui.Parent then
+            gui.Parent = GuiParent
+        end
+        -- enable runtime features/configs now that character is positioned
+        if settings.spinSet then
+            applySpinState()
+        end
+        stopDanceIdle()
+        stopHelicopterIdleTask()
+        stopHelicopterSpin()
+        if settings.helicopterEnabled then
+            startHelicopterIdleMode()
+        end
+    end
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
@@ -3626,11 +3710,7 @@ task.spawn(function()
             return
         end
 
-        if lowerMessage:match("^%$?spinspeed[%p%s]*$") and settings.spinSet then
-            local speedStr = tostring(math.floor(getSpinAngularVelocity() * 100) / 100)
-            sendChatMessage("My current spinspeed is: " .. speedStr)
-            return
-        end
+        -- removed spinspeed chat reply per user request
     end
 
     local function bindPlayerChat(player)
