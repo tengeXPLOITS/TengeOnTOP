@@ -2899,6 +2899,7 @@ settingHandlers = {
 
 local handledClaimSlot
 local revealedAfterClaim = false
+local movingToBooth = false
 local function onBoothClaimDetected(slot)
     if not slot then
         return
@@ -3816,22 +3817,14 @@ task.spawn(function()
             if root and targetCF then
                 local distance = (root.Position - targetCF.Position).Magnitude
                 if distance > 12 then
-                    local startCF = root.CFrame
-                    local startTime = tick()
-                    local duration = 0.25
-                    while tick() - startTime < duration and root.Parent and settings.spinSet do
-                        local t = math.clamp((tick() - startTime) / duration, 0, 1)
-                        root.CFrame = startCF:Lerp(targetCF, t)
-                        task.wait()
+                    -- Use pathfinding/walking instead of directly setting CFrame (avoids teleporting)
+                    if not movingToBooth then
+                        movingToBooth = true
+                        task.spawn(function()
+                            local ok, err = moveToClaimedBooth(claimedBoothSlot)
+                            movingToBooth = false
+                        end)
                     end
-                    if root and root.Parent and settings.spinSet then
-                        root.CFrame = targetCF
-                    end
-                    task.delay(0.1, function()
-                        if root and root.Parent and settings.spinSet then
-                            root.CFrame = targetCF
-                        end
-                    end)
                 end
             end
         end
