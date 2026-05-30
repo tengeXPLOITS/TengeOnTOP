@@ -319,6 +319,7 @@ local defaults = {
     helicopterEnabled = false,
     testDonationAmount = 6,
     spinSpeedResetThreshold = 1500,
+    walkToBooth = true,
 }
 
 local boothFontOptions = {"SciFi"}
@@ -1700,7 +1701,7 @@ do
 end
 
 do
-    local title = Instance.new("TextLabel")
+    title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
     title.Size = UDim2.new(1, -48, 0, 15)
@@ -1713,7 +1714,7 @@ do
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
-    local subtitle = Instance.new("TextLabel")
+        local subtitle = Instance.new("TextLabel")
     subtitle.Name = "Subtitle"
     subtitle.BackgroundTransparency = 1
     subtitle.Size = UDim2.new(1, -48, 0, 11)
@@ -1755,6 +1756,32 @@ body.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
 body.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
 body.BackgroundTransparency = 1
 body.Parent = main
+
+-- Loading overlay (covers body/pages while configs load)
+local loadingOverlay = Instance.new("Frame")
+loadingOverlay.Name = "LoadingOverlay"
+loadingOverlay.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
+loadingOverlay.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
+loadingOverlay.BackgroundColor3 = THEME.panel
+loadingOverlay.BackgroundTransparency = 0
+loadingOverlay.BorderSizePixel = 0
+loadingOverlay.ZIndex = 50
+loadingOverlay.Visible = false
+loadingOverlay.Parent = main
+
+local loadingLabel = Instance.new("TextLabel")
+loadingLabel.Size = UDim2.new(1, 0, 0, 32)
+loadingLabel.Position = UDim2.new(0, 0, 0, 30)
+loadingLabel.BackgroundTransparency = 1
+loadingLabel.Font = Enum.Font.GothamSemibold
+loadingLabel.TextSize = 16
+loadingLabel.TextColor3 = THEME.topBarText
+loadingLabel.Text = "Loading..."
+loadingLabel.TextYAlignment = Enum.TextYAlignment.Top
+loadingLabel.Parent = loadingOverlay
+applyTextGlow(loadingLabel, GLOW_COLOR, 0.8)
+
+createCorner(loadingOverlay, SHELL_CORNER_RADIUS)
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
@@ -2870,6 +2897,11 @@ settingHandlers = {
         local threshold = math.max(100, tonumber(value) or 1500)
         settings.spinSpeedResetThreshold = threshold
     end,
+    walkToBooth = function(value)
+        -- no immediate action; respected when claiming
+        settings.walkToBooth = not not value
+        saveSettings()
+    end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
         donatedSinceHopTimerReset = 0
@@ -2912,22 +2944,68 @@ local function onBoothClaimDetected(slot)
 
     handledClaimSlot = slot
 
-    -- Walk to the claimed booth; only show and enable the GUI after arrival
-    local ok, mode = moveToClaimedBooth(slot)
-    if ok then
+    -- Move to the claimed booth (walking) or teleport instantly based on settings
+    local arrived = false
+    if settings.walkToBooth == false then
+        local targetCF = getClaimedBoothTargetCFrame(slot)
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root and targetCF then
+            pcall(function()
+                root.CFrame = targetCF
+            end)
+            task.wait(0.05)
+            arrived = true
+        end
+    else
+        local ok, mode = moveToClaimedBooth(slot)
+        arrived = ok and true or false
+    end
+
+    if arrived then
         if not gui.Parent then
             gui.Parent = GuiParent
         end
-        -- enable runtime features/configs now that character is positioned
-        if settings.spinSet then
-            applySpinState()
+
+        -- Show loading overlay and title for 10 seconds while configs load
+        local previousTitle = (title and title.Text) or "PLS DONATE ANIMOSITY"
+        if title then
+            title.Text = "Loading..."
         end
-        stopDanceIdle()
-        stopHelicopterIdleTask()
-        stopHelicopterSpin()
-        if settings.helicopterEnabled then
-            startHelicopterIdleMode()
+        if loadingOverlay then
+            loadingOverlay.Visible = true
         end
+
+        task.spawn(function()
+            task.wait(10)
+
+            -- Apply all setting handlers to enable selected configs
+            pcall(function()
+                for k, handler in pairs(settingHandlers) do
+                    pcall(function()
+                        handler(settings[k])
+                    end)
+                end
+            end)
+
+            -- Ensure core runtime features are applied
+            stopDanceIdle()
+            stopHelicopterIdleTask()
+            stopHelicopterSpin()
+            if settings.spinSet then
+                applySpinState()
+            end
+            if settings.helicopterEnabled then
+                startHelicopterIdleMode()
+            end
+
+            if loadingOverlay then
+                loadingOverlay.Visible = false
+            end
+            if title then
+                title.Text = previousTitle
+            end
+        end)
     end
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
