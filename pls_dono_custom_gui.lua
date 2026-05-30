@@ -2774,6 +2774,7 @@ settingHandlers = {
         if updateBoothTextNow then
             updateBoothTextNow()
         end
+    end,
     fontFace = function(value)
         local fontName = tostring(value or defaults.fontFace)
         if not Enum.Font[fontName] then
