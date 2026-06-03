@@ -2625,7 +2625,6 @@ local function createDropdown(parent, text, key, options)
 
     btn.MouseButton1Click:Connect(onToggle)
     if toggleBtn then toggleBtn.MouseButton1Click:Connect(onToggle) end
-    end)
 end
 
 local function createMessageDropdown(parent, text, key, fallback)
