@@ -1234,30 +1234,34 @@ serverHopNow = function(reason)
                 end
 
                 if #servers > 0 then
-                    local selectedServer = servers[math.random(1, #servers)]
-                    local teleported = false
-                    local ok, err = pcall(function()
-                        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                    end)
-                    if ok then
-                        teleported = true
-                    else
-                        local errStr = tostring(err or "")
-                        -- ignore common "server full" teleport error code 772
-                        if not (errStr:find("772") or errStr:lower():find("server is full")) then
-                            warn("Teleport failed:", errStr)
+                    -- try servers in random order, attempt multiple quick tries for persistence
+                    local indices = {}
+                    for i = 1, #servers do table.insert(indices, i) end
+                    for attempt = 1, math.min(8, #indices) do
+                        local idx = table.remove(indices, math.random(1, #indices))
+                        local selectedServer = servers[idx]
+                        local teleported = false
+                        local ok, err = pcall(function()
+                            TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                        end)
+                        if ok then
+                            teleported = true
+                        else
+                            local errStr = tostring(err or "")
+                            if not (errStr:find("772") or errStr:lower():find("server is full")) then
+                                warn("Teleport failed:", errStr)
+                            end
                         end
-                    end
-
-                    if teleported then
-                        markPendingFarmHop(reason, placeId, selectedServer.id)
-                        serverHopIsActive = false
-                        return
+                        if teleported then
+                            markPendingFarmHop(reason, placeId, selectedServer.id)
+                            serverHopIsActive = false
+                            return
+                        end
+                        task.wait(0.08)
                     end
                 end
             end
-
-            task.wait(0.35)
+            task.wait(0.15)
         end
     end)
     return true
@@ -1265,11 +1269,14 @@ end
 
 requestServerHop = function(reason)
     local now = tick()
-    if now - lastHopTick < hopCooldownSeconds then
-        return false
-    end
-    if now - lastDonationTick < donationHopBlockSeconds then
-        return false
+    -- allow manual hops to bypass cooldowns for responsiveness
+    if tostring(reason or "") ~= "manual-button" then
+        if now - lastHopTick < hopCooldownSeconds then
+            return false
+        end
+        if now - lastDonationTick < donationHopBlockSeconds then
+            return false
+        end
     end
     lastHopTick = now
     return serverHopNow(reason)
@@ -1561,6 +1568,54 @@ gui.IgnoreGuiInset = true
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 50
 gui.Parent = GuiParent
+
+-- Loading overlay to delay UI appearance after exec/teleport
+local loadingOverlay = Instance.new("Frame")
+loadingOverlay.Name = "LoadingOverlay"
+loadingOverlay.Size = UDim2.new(1, 0, 1, 0)
+loadingOverlay.Position = UDim2.new(0, 0, 0, 0)
+loadingOverlay.BackgroundColor3 = THEME.panel
+loadingOverlay.BorderSizePixel = 0
+loadingOverlay.ZIndex = 1000
+loadingOverlay.Parent = main
+
+local loadLabel = Instance.new("TextLabel")
+loadLabel.Size = UDim2.new(1, -20, 0, 40)
+loadLabel.Position = UDim2.new(0, 10, 0, (TOP_BAR_HEIGHT / 2) - 10)
+loadLabel.BackgroundTransparency = 1
+loadLabel.Font = Enum.Font.GothamBold
+loadLabel.TextSize = 16
+loadLabel.TextColor3 = THEME.topBarText
+loadLabel.Text = "loading"
+loadLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadLabel.Parent = loadingOverlay
+
+local loadingActive = true
+task.spawn(function()
+    local dots = 0
+    local start = tick()
+    while loadingActive and tick() - start < 3.0 do
+        dots = dots % 3 + 1
+        loadLabel.Text = "loading" .. string.rep(".", dots)
+        task.wait(0.45)
+    end
+    -- leave overlay visible until explicitly cleared (e.g., arrival to booth or timer)
+end)
+
+local function hideLoadingOverlay()
+    if loadingOverlay and loadingOverlay.Parent then
+        loadingActive = false
+        loadingOverlay:Destroy()
+    end
+end
+
+-- auto-hide after short delay if not already hidden
+task.spawn(function()
+    task.wait(2.5)
+    if loadingOverlay and loadingOverlay.Parent then
+        hideLoadingOverlay()
+    end
+end)
 
 local UI_VARIANT = (tonumber(game.PlaceId) == tonumber(THIRD_PLS_DONATE_PLACE_ID)) and "simple" or "animosity"
 
@@ -2284,7 +2339,10 @@ local function onBoothClaimDetected(slot)
     end
 
     handledClaimSlot = slot
-    moveToClaimedBooth(slot)
+    local ok, mode = moveToClaimedBooth(slot)
+    if ok then
+        pcall(hideLoadingOverlay)
+    end
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
@@ -2426,7 +2484,7 @@ local function createDropdown(parent, text, key, options)
     local optionHeight = 22
     local optionsHeight = (#options * optionHeight) + 6
 
-    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), Color3.fromRGB(57, 196, 76), THEME.topBarText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
