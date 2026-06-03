@@ -1690,6 +1690,7 @@ loadingOverlay.Name = "LoadingOverlay"
 loadingOverlay.Size = UDim2.new(1, 0, 1, 0)
 loadingOverlay.Position = UDim2.new(0, 0, 0, 0)
 loadingOverlay.BackgroundColor3 = THEME.panel
+loadingOverlay.BackgroundTransparency = 1
 loadingOverlay.BorderSizePixel = 0
 loadingOverlay.Parent = main
 
@@ -1702,30 +1703,68 @@ loadLabel.TextSize = 16
 loadLabel.TextColor3 = THEME.topBarText
 loadLabel.Text = "loading"
 loadLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadLabel.TextTransparency = 1
 loadLabel.Parent = loadingOverlay
 
 local loadingActive = true
 task.spawn(function()
+    -- initial delay, then fade in
+    task.wait(2)
+    pcall(function()
+        if title and originalTitleText then
+            title.Text = "loading"
+        end
+        local tween = TweenService:Create(loadingOverlay, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {BackgroundTransparency = 0})
+        tween:Play()
+        TweenService:Create(loadLabel, TweenInfo.new(0.6, Enum.EasingStyle.Quad), {TextTransparency = 0}):Play()
+    end)
+
     local dots = 0
     local start = tick()
-    while loadingActive and tick() - start < 3.0 do
+    -- title pulsing tween
+    task.spawn(function()
+        while loadingActive do
+            pcall(function()
+                if title then
+                    local t1 = TweenService:Create(title, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.7})
+                    local t2 = TweenService:Create(title, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0})
+                    t1:Play(); t1.Completed:Wait()
+                    if not loadingActive then break end
+                    t2:Play(); t2.Completed:Wait()
+                else
+                    task.wait(0.8)
+                end
+            end)
+        end
+    end)
+
+    while loadingActive do
         dots = dots % 3 + 1
         loadLabel.Text = "loading" .. string.rep(".", dots)
         task.wait(0.45)
     end
-    -- leave overlay visible until explicitly cleared (e.g., arrival to booth or timer)
+    -- fade out will be handled by hideLoadingOverlay
 end)
 
 local function hideLoadingOverlay()
     if loadingOverlay and loadingOverlay.Parent then
         loadingActive = false
-        loadingOverlay:Destroy()
+        pcall(function()
+            local outTween = TweenService:Create(loadingOverlay, TweenInfo.new(0.45, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
+            local textOut = TweenService:Create(loadLabel, TweenInfo.new(0.45, Enum.EasingStyle.Quad), {TextTransparency = 1})
+            outTween:Play(); textOut:Play()
+            outTween.Completed:Wait()
+            if title and originalTitleText then
+                title.Text = originalTitleText
+            end
+            loadingOverlay:Destroy()
+        end)
     end
 end
 
 -- auto-hide after short delay if not already hidden
 task.spawn(function()
-    task.wait(2.5)
+    task.wait(20)
     if loadingOverlay and loadingOverlay.Parent then
         hideLoadingOverlay()
     end
@@ -1796,6 +1835,8 @@ topBar.BackgroundColor3 = THEME.topBar
 topBar.BorderSizePixel = 0
 topBar.Parent = main
 
+local title, originalTitleText
+
 do
     createCorner(topBar, SHELL_CORNER_RADIUS)
 
@@ -1810,7 +1851,7 @@ do
 end
 
 do
-    local title = Instance.new("TextLabel")
+    title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
     title.Size = UDim2.new(1, -48, 0, 15)
@@ -1820,6 +1861,7 @@ do
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
     title.Text = (UI_VARIANT == "simple") and "Simply Donate! 💵" or "PLS DONATE ANIMOSITY"
+    originalTitleText = title.Text
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -2556,11 +2598,20 @@ local function createDropdown(parent, text, key, options)
         end)
     end
 
-    btn.MouseButton1Click:Connect(function()
+    local toggleBtn
+    if UI_VARIANT == "simple" then
+        -- shrink main button and add small + toggle
+        btn.Size = UDim2.new(1, -28, 0, 24)
+        toggleBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
+        toggleBtn.Text = "+"
+        toggleBtn.Parent = row
+        toggleBtn.ZIndex = 25
+    end
+
+    local function onToggle()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
             dropdownCloseFns[activeDropdown]()
         end
-
         if expanded then
             setExpanded(false)
             activeDropdown = nil
@@ -2568,6 +2619,10 @@ local function createDropdown(parent, text, key, options)
             setExpanded(true)
             activeDropdown = row
         end
+    end
+
+    btn.MouseButton1Click:Connect(onToggle)
+    if toggleBtn then toggleBtn.MouseButton1Click:Connect(onToggle) end
     end)
 end
 
@@ -2682,7 +2737,14 @@ local function createMessageDropdown(parent, text, key, fallback)
         end)
     end)
 
-    btn.MouseButton1Click:Connect(function()
+    local toggleMsgBtn
+    if UI_VARIANT == "simple" then
+        btn.Size = UDim2.new(1, -28, 0, 24)
+        toggleMsgBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
+        toggleMsgBtn.ZIndex = 25
+    end
+
+    local function onToggleMsg()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
             dropdownCloseFns[activeDropdown]()
         end
@@ -2694,7 +2756,10 @@ local function createMessageDropdown(parent, text, key, fallback)
             setExpanded(true)
             activeDropdown = row
         end
-    end)
+    end
+
+    btn.MouseButton1Click:Connect(onToggleMsg)
+    if toggleMsgBtn then toggleMsgBtn.MouseButton1Click:Connect(onToggleMsg) end
 end
 
 local function createButton(parent, text, callback)
