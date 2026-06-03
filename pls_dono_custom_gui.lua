@@ -1576,7 +1576,6 @@ loadingOverlay.Size = UDim2.new(1, 0, 1, 0)
 loadingOverlay.Position = UDim2.new(0, 0, 0, 0)
 loadingOverlay.BackgroundColor3 = THEME.panel
 loadingOverlay.BorderSizePixel = 0
-loadingOverlay.ZIndex = 1000
 loadingOverlay.Parent = main
 
 local loadLabel = Instance.new("TextLabel")
