@@ -1724,17 +1724,19 @@ task.spawn(function()
     -- title pulsing tween
     task.spawn(function()
         while loadingActive do
-            pcall(function()
+            local ok, shouldBreak = pcall(function()
                 if title then
                     local t1 = TweenService:Create(title, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.7})
                     local t2 = TweenService:Create(title, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0})
                     t1:Play(); t1.Completed:Wait()
-                    if not loadingActive then break end
+                    if not loadingActive then return true end
                     t2:Play(); t2.Completed:Wait()
                 else
                     task.wait(0.8)
                 end
+                return false
             end)
+            if ok and shouldBreak then break end
         end
     end)
 
