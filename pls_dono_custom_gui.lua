@@ -158,6 +158,9 @@ local function parseDonationMessageText(message)
     return nil
 end
 
+-- helper text utilities (moved earlier to avoid nil calls during init)
+-- helper definitions moved earlier; later duplicate removed
+
 local function recordDonationLogMessage(message)
     local donorText, amount, recipientText = parseDonationMessageText(message)
     if donorText and amount and recipientText then
