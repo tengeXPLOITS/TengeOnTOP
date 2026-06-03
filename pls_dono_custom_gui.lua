@@ -44,56 +44,7 @@ local recentDonationLogs = {}
 local observedDonationChatChannels = {}
 
 local function notify(title, text, duration, dedupeKey, cooldown)
-    local now = tick()
-    if dedupeKey and cooldown then
-        local last = notificationTimestamps[dedupeKey] or 0
-        if now - last < cooldown then
-            return
-        end
-        notificationTimestamps[dedupeKey] = now
-    end
-
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = tostring(title or "PLS DONATE"),
-            Text = tostring(text or ""),
-            Duration = tonumber(duration) or 4,
-        })
-    end)
-end
-
-local function trimText(value)
-    return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-end
-
-local function normalizeMessageList(value, fallback)
-    local normalized = {}
-    if type(value) == "table" then
-        for _, entry in ipairs(value) do
-            local text = trimText(entry)
-            if text ~= "" then
-                table.insert(normalized, text)
-            end
-        end
-    end
-
-    if #normalized == 0 and type(fallback) == "table" then
-        for _, entry in ipairs(fallback) do
-            local text = trimText(entry)
-            if text ~= "" then
-                table.insert(normalized, text)
-            end
-        end
-    end
-
-    return normalized
-end
-
-local function normalizePlayerText(value)
-    return trimText(value):gsub("^@", ""):lower()
-end
-
-local function textMatchesLocalPlayer(value)
+    gui.Parent = GuiParent
     local normalized = normalizePlayerText(value)
     if normalized == "" then
         return false
@@ -1569,53 +1520,6 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
--- Loading overlay to delay UI appearance after exec/teleport
-local loadingOverlay = Instance.new("Frame")
-loadingOverlay.Name = "LoadingOverlay"
-loadingOverlay.Size = UDim2.new(1, 0, 1, 0)
-loadingOverlay.Position = UDim2.new(0, 0, 0, 0)
-loadingOverlay.BackgroundColor3 = THEME.panel
-loadingOverlay.BorderSizePixel = 0
-loadingOverlay.Parent = main
-
-local loadLabel = Instance.new("TextLabel")
-loadLabel.Size = UDim2.new(1, -20, 0, 40)
-loadLabel.Position = UDim2.new(0, 10, 0, (TOP_BAR_HEIGHT / 2) - 10)
-loadLabel.BackgroundTransparency = 1
-loadLabel.Font = Enum.Font.GothamBold
-loadLabel.TextSize = 16
-loadLabel.TextColor3 = THEME.topBarText
-loadLabel.Text = "loading"
-loadLabel.TextXAlignment = Enum.TextXAlignment.Center
-loadLabel.Parent = loadingOverlay
-
-local loadingActive = true
-task.spawn(function()
-    local dots = 0
-    local start = tick()
-    while loadingActive and tick() - start < 3.0 do
-        dots = dots % 3 + 1
-        loadLabel.Text = "loading" .. string.rep(".", dots)
-        task.wait(0.45)
-    end
-    -- leave overlay visible until explicitly cleared (e.g., arrival to booth or timer)
-end)
-
-local function hideLoadingOverlay()
-    if loadingOverlay and loadingOverlay.Parent then
-        loadingActive = false
-        loadingOverlay:Destroy()
-    end
-end
-
--- auto-hide after short delay if not already hidden
-task.spawn(function()
-    task.wait(2.5)
-    if loadingOverlay and loadingOverlay.Parent then
-        hideLoadingOverlay()
-    end
-end)
-
 local UI_VARIANT = (tonumber(game.PlaceId) == tonumber(THIRD_PLS_DONATE_PLACE_ID)) and "simple" or "animosity"
 
 local THEME
@@ -1728,6 +1632,53 @@ main.Visible = true
 local TOP_BAR_HEIGHT = 34
 local expandedWidth = 380
 local expandedHeight = 360
+
+-- Loading overlay to delay UI appearance after exec/teleport
+local loadingOverlay = Instance.new("Frame")
+loadingOverlay.Name = "LoadingOverlay"
+loadingOverlay.Size = UDim2.new(1, 0, 1, 0)
+loadingOverlay.Position = UDim2.new(0, 0, 0, 0)
+loadingOverlay.BackgroundColor3 = THEME.panel
+loadingOverlay.BorderSizePixel = 0
+loadingOverlay.Parent = main
+
+local loadLabel = Instance.new("TextLabel")
+loadLabel.Size = UDim2.new(1, -20, 0, 40)
+loadLabel.Position = UDim2.new(0, 10, 0, (TOP_BAR_HEIGHT / 2) - 10)
+loadLabel.BackgroundTransparency = 1
+loadLabel.Font = Enum.Font.GothamBold
+loadLabel.TextSize = 16
+loadLabel.TextColor3 = THEME.topBarText
+loadLabel.Text = "loading"
+loadLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadLabel.Parent = loadingOverlay
+
+local loadingActive = true
+task.spawn(function()
+    local dots = 0
+    local start = tick()
+    while loadingActive and tick() - start < 3.0 do
+        dots = dots % 3 + 1
+        loadLabel.Text = "loading" .. string.rep(".", dots)
+        task.wait(0.45)
+    end
+    -- leave overlay visible until explicitly cleared (e.g., arrival to booth or timer)
+end)
+
+local function hideLoadingOverlay()
+    if loadingOverlay and loadingOverlay.Parent then
+        loadingActive = false
+        loadingOverlay:Destroy()
+    end
+end
+
+-- auto-hide after short delay if not already hidden
+task.spawn(function()
+    task.wait(2.5)
+    if loadingOverlay and loadingOverlay.Parent then
+        hideLoadingOverlay()
+    end
+end)
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
