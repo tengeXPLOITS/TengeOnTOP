@@ -417,6 +417,54 @@ local function migrateLegacySettings(data)
     return data
 end
 
+local function trimText(s)
+    s = tostring(s or "")
+    local ok, out = pcall(function()
+        return s:match("^%s*(.-)%s*$") or ""
+    end)
+    return ok and out or s
+end
+
+local function normalizePlayerText(s)
+    local t = trimText(s):lower()
+    t = t:gsub("%s+", "")
+    t = t:gsub("[^%w]", "")
+    return t
+end
+
+local function textMatchesLocalPlayer(text)
+    local n = normalizePlayerText(text)
+    if n == "" then
+        return false
+    end
+    return n == normalizePlayerText(LocalPlayer.Name) or n == normalizePlayerText(LocalPlayer.DisplayName)
+end
+
+local function normalizeMessageList(value, fallback)
+    local out = {}
+    if type(value) == "string" then
+        for line in value:gmatch("[^\r\n]+") do
+            local t = trimText(line)
+            if t ~= "" then table.insert(out, t) end
+        end
+    elseif type(value) == "table" then
+        for _, v in ipairs(value) do
+            local t = trimText(v)
+            if t ~= "" then table.insert(out, t) end
+        end
+    end
+
+    if #out == 0 then
+        if type(fallback) == "table" then
+            for _, v in ipairs(fallback) do table.insert(out, tostring(v)) end
+        elseif type(fallback) == "string" and trimText(fallback) ~= "" then
+            table.insert(out, trimText(fallback))
+        end
+    end
+
+    return out
+end
+
 local function saveSettings()
     if not canUseFiles() then
         return
