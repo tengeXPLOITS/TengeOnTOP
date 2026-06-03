@@ -13,6 +13,7 @@ local TeleportService = game:GetService("TeleportService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PathfindingService = game:GetService("PathfindingService")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
 local LogService = game:GetService("LogService")
@@ -402,6 +403,7 @@ local defaults = {
     minPlayerCount = 24,
     maxPlayerCount = 26,
     AnonymousMode = false,
+    moveMode = "teleport", -- options: "teleport", "walk"
     -- helicopter and spin features removed
 }
 
@@ -1190,10 +1192,9 @@ end
 
 local function choosePlaceId()
     if settings.vcServerHopToggle then
-        return 8943844393
-    else
-        return 8737602449
+        return VC_PLS_DONATE_PLACE_ID
     end
+    return tonumber(game.PlaceId) or DEFAULT_PLS_DONATE_PLACE_ID
 end
 
 serverHopNow = function(reason)
@@ -1380,17 +1381,89 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
-    local function applyFacing()
+    local targetPos = targetCF.Position
+
+    local originalCanCollide = {}
+    local function setCharacterCollisions(enabled)
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if enabled then
+                    if originalCanCollide[part] ~= nil then
+                        part.CanCollide = originalCanCollide[part]
+                    end
+                else
+                    originalCanCollide[part] = part.CanCollide
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+
+    local jumpedFromSit = false
+    local stateConn
+    local function monitorSitting()
+        if stateConn then
+            stateConn:Disconnect()
+            stateConn = nil
+        end
+        stateConn = humanoid.StateChanged:Connect(function(old, new)
+            if new == Enum.HumanoidStateType.Seated then
+                humanoid.Jump = true
+                jumpedFromSit = true
+            end
+        end)
+    end
+
+    if tostring(settings.moveMode or "teleport") ~= "walk" then
+        -- immediate teleport/facing (legacy)
         hrp.CFrame = targetCF
         task.delay(0.15, function()
             if hrp and hrp.Parent then
                 hrp.CFrame = targetCF
             end
         end)
+        return true, "teleport"
     end
 
-    applyFacing()
-    return true, "teleport"
+    -- WALK mode: use pathfinding and disable collisions to avoid getting stuck
+    setCharacterCollisions(false)
+    monitorSitting()
+
+    local pathOk, path = pcall(function()
+        local p = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true, AgentMaxSlope = 45})
+        p:ComputeAsync(hrp.Position, targetPos)
+        return p
+    end)
+
+    if not pathOk or not path or path.Status ~= Enum.PathStatus.Success then
+        -- fallback: teleport if path failed
+        if stateConn then stateConn:Disconnect() end
+        setCharacterCollisions(true)
+        hrp.CFrame = targetCF
+        return true, "teleport"
+    end
+
+    local waypoints = path:GetWaypoints()
+    for _, wp in ipairs(waypoints) do
+        if wp.Action == Enum.PathWaypointAction.Jump then
+            humanoid.Jump = true
+        end
+        humanoid:MoveTo(wp.Position)
+        local reached = humanoid.MoveToFinished:Wait()
+        if not reached then
+            -- try short wait and continue; if repeatedly failing, break and teleport
+            task.wait(0.4)
+        end
+        -- auto jump if became seated
+        if jumpedFromSit then
+            jumpedFromSit = false
+            humanoid.Jump = true
+        end
+    end
+
+    if stateConn then stateConn:Disconnect() end
+    setCharacterCollisions(true)
+    return true, "walk"
 end
 
 local function claimBoothNow()
@@ -2353,7 +2426,7 @@ local function createDropdown(parent, text, key, options)
     local optionHeight = 22
     local optionsHeight = (#options * optionHeight) + 6
 
-    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), Color3.fromRGB(57, 196, 76), THEME.topBarText, 12, Enum.Font.Gotham)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
@@ -2756,6 +2829,7 @@ local function buildSettingsTabs()
         end
     end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
+    createDropdown(boothSection, "Move Mode", "moveMode", {"teleport", "walk"})
 
     -- test donation feature removed
 
