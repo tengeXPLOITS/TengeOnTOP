@@ -1750,7 +1750,11 @@ task.spawn(function()
 
     while loadingActive do
         dots = dots % 3 + 1
-        loadLabel.Text = "loading" .. string.rep(".", dots)
+        local txt = "loading" .. string.rep(".", dots)
+        loadLabel.Text = txt
+        pcall(function()
+            if title then title.Text = txt end
+        end)
         task.wait(0.45)
     end
     -- fade out will be handled by hideLoadingOverlay
@@ -1767,8 +1771,34 @@ local function hideLoadingOverlay()
             if title and originalTitleText then
                 title.Text = originalTitleText
             end
-            -- reveal main UI
+            -- reveal main UI and fade in controls
+            -- ensure descendants start hidden, then reveal and tween to visible
+            pcall(function()
+                for _, desc in ipairs(body:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+                        pcall(function() desc.TextTransparency = 1 end)
+                    elseif desc:IsA("Frame") or desc:IsA("ViewportFrame") or desc:IsA("ScrollingFrame") then
+                        pcall(function() desc.BackgroundTransparency = 1 end)
+                    elseif desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
+                        pcall(function() desc.ImageTransparency = 1 end)
+                    end
+                end
+            end)
             pcall(function() body.Visible = true end)
+            pcall(function()
+                local fadeTime = 0.5
+                local tweens = {}
+                for _, desc in ipairs(body:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0}))
+                    elseif desc:IsA("Frame") or desc:IsA("ViewportFrame") or desc:IsA("ScrollingFrame") then
+                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}))
+                    elseif desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
+                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {ImageTransparency = 0}))
+                    end
+                end
+                for _, t in ipairs(tweens) do t:Play() end
+            end)
             loadingOverlay:Destroy()
         end)
     end
