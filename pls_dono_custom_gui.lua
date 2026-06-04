@@ -1696,6 +1696,7 @@ loadingOverlay.BackgroundColor3 = THEME.panel
 loadingOverlay.BackgroundTransparency = 1
 loadingOverlay.BorderSizePixel = 0
 loadingOverlay.Parent = main
+loadingOverlay.ZIndex = 1
 
 local loadLabel = Instance.new("TextLabel")
 loadLabel.Size = UDim2.new(1, -20, 0, 40)
@@ -1753,7 +1754,11 @@ task.spawn(function()
         local txt = "loading" .. string.rep(".", dots)
         loadLabel.Text = txt
         pcall(function()
-            if title then title.Text = txt end
+            if title then
+                title.Text = txt
+                title.TextTransparency = 0
+                title.Visible = true
+            end
         end)
         task.wait(0.45)
     end
@@ -1771,33 +1776,18 @@ local function hideLoadingOverlay()
             if title and originalTitleText then
                 title.Text = originalTitleText
             end
-            -- reveal main UI and fade in controls
-            -- ensure descendants start hidden, then reveal and tween to visible
-            pcall(function()
-                for _, desc in ipairs(body:GetDescendants()) do
-                    if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
-                        pcall(function() desc.TextTransparency = 1 end)
-                    elseif desc:IsA("Frame") or desc:IsA("ViewportFrame") or desc:IsA("ScrollingFrame") then
-                        pcall(function() desc.BackgroundTransparency = 1 end)
-                    elseif desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
-                        pcall(function() desc.ImageTransparency = 1 end)
-                    end
-                end
-            end)
+            -- reveal main UI
             pcall(function() body.Visible = true end)
+            -- quick refresh to ensure controls render (fixes case where UI needs manual toggle)
             pcall(function()
-                local fadeTime = 0.5
-                local tweens = {}
-                for _, desc in ipairs(body:GetDescendants()) do
-                    if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
-                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0}))
-                    elseif desc:IsA("Frame") or desc:IsA("ViewportFrame") or desc:IsA("ScrollingFrame") then
-                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}))
-                    elseif desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
-                        table.insert(tweens, TweenService:Create(desc, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {ImageTransparency = 0}))
-                    end
+                body.Visible = false
+                task.wait(0.02)
+                body.Visible = true
+            end)
+            pcall(function()
+                if title then
+                    title.TextTransparency = 0
                 end
-                for _, t in ipairs(tweens) do t:Play() end
             end)
             loadingOverlay:Destroy()
         end)
@@ -1920,6 +1910,8 @@ do
     title.Text = (UI_VARIANT == "simple") and "Simply Donate! 💵" or "PLS DONATE ANIMOSITY"
     originalTitleText = title.Text
     title.Parent = topBar
+    topBar.ZIndex = 2
+    title.ZIndex = 3
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
     local subtitle = Instance.new("TextLabel")
