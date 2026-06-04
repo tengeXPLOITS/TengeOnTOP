@@ -1811,7 +1811,7 @@ end
 -- initialization wait: show loading for 5-12s depending on how fast UI/Map becomes available
 task.spawn(function()
     local start = tick()
-    local minT, maxT = 5, 12
+    local minT, maxT = 6, 14
     while true do
         local elapsed = tick() - start
         local ok, boothLoc = pcall(getBoothLocation)
@@ -1828,6 +1828,32 @@ task.spawn(function()
     if loadingOverlay and loadingOverlay.Parent then
         hideLoadingOverlay()
     end
+end)
+
+-- safety reveal: ensure UI is visible after loading completes (in case tweens fail)
+task.spawn(function()
+    while loadingActive do
+        task.wait(0.1)
+    end
+    task.wait(0.1)
+    pcall(function()
+        if topBar then topBar.Visible = true; topBar.BackgroundTransparency = 0 end
+        if body then body.Visible = true; body.BackgroundTransparency = 0 end
+        if title then title.TextTransparency = 0; title.Visible = true end
+        if subtitle then subtitle.TextTransparency = 0; subtitle.Visible = true end
+        if minimizeBtn then minimizeBtn.TextTransparency = 0; minimizeBtn.Visible = true end
+        for _, c in ipairs(body:GetChildren()) do
+            pcall(function()
+                if c:IsA("TextButton") or c:IsA("TextLabel") or c:IsA("TextBox") then
+                    c.TextTransparency = 0
+                    c.Visible = true
+                elseif c:IsA("Frame") or c:IsA("ImageLabel") or c:IsA("ImageButton") then
+                    c.BackgroundTransparency = 0
+                    c.Visible = true
+                end
+            end)
+        end
+    end)
 end)
 
 local function getViewportSize()
