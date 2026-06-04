@@ -1708,8 +1708,13 @@ loadLabel.Parent = loadingOverlay
 
 local loadingActive = true
 task.spawn(function()
-    -- initial delay, then fade in
-    task.wait(2)
+    -- initial delay (wait up to 2s for title to be created), then fade in
+    local waited = 0
+    while waited < 2 and not title do
+        task.wait(0.05)
+        waited = waited + 0.05
+    end
+    task.wait(math.max(0, 2 - waited))
     pcall(function()
         if title and originalTitleText then
             title.Text = "loading"
@@ -1885,8 +1890,13 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
-minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+if UI_VARIANT == "simple" then
+    minimizeBtn.BackgroundColor3 = THEME.control
+    minimizeBtn.TextColor3 = THEME.controlText
+else
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
 minimizeBtn.Text = "-"
@@ -1899,7 +1909,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = UI_VARIANT == "simple" and THEME.stroke or Color3.fromRGB(210, 255, 218)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -2600,15 +2610,7 @@ local function createDropdown(parent, text, key, options)
         end)
     end
 
-    local toggleBtn
-    if UI_VARIANT == "simple" then
-        -- shrink main button and add small + toggle
-        btn.Size = UDim2.new(1, -28, 0, 24)
-        toggleBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
-        toggleBtn.Text = "+"
-        toggleBtn.Parent = row
-        toggleBtn.ZIndex = 25
-    end
+    -- compact '+' toggle removed from dropdowns; only title bar/minimize uses a small button
 
     local function onToggle()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
@@ -2624,7 +2626,6 @@ local function createDropdown(parent, text, key, options)
     end
 
     btn.MouseButton1Click:Connect(onToggle)
-    if toggleBtn then toggleBtn.MouseButton1Click:Connect(onToggle) end
 end
 
 local function createMessageDropdown(parent, text, key, fallback)
@@ -2738,13 +2739,6 @@ local function createMessageDropdown(parent, text, key, fallback)
         end)
     end)
 
-    local toggleMsgBtn
-    if UI_VARIANT == "simple" then
-        btn.Size = UDim2.new(1, -28, 0, 24)
-        toggleMsgBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
-        toggleMsgBtn.ZIndex = 25
-    end
-
     local function onToggleMsg()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
             dropdownCloseFns[activeDropdown]()
@@ -2758,9 +2752,7 @@ local function createMessageDropdown(parent, text, key, fallback)
             activeDropdown = row
         end
     end
-
     btn.MouseButton1Click:Connect(onToggleMsg)
-    if toggleMsgBtn then toggleMsgBtn.MouseButton1Click:Connect(onToggleMsg) end
 end
 
 local function createButton(parent, text, callback)
@@ -2900,59 +2892,61 @@ local function buildSettingsTabs()
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
-    createToggle(boothSection, "Text Update", "textUpdateToggle")
-    createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "textColor", false)
-    createTextBox(boothSection, "Robux Goal", "goalBox", true)
-    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
-    local boothTextBox
-    createInfoLabel(boothSection, "Goal Bar Header:")
-    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-    createButton(boothSection, "Paste Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-        local nextText = buildGoalBarTemplate()
-        if #nextText > 221 then
-            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
-            return
-        end
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
-        elseif mode == "local-preview-only" then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
-        else
-            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
-        end
-    end)
-    createInfoLabel(boothSection, "Custom Booth Text:")
-    boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
-    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
-    createButton(boothSection, "Update", function()
-        local nextText = tostring(boothTextBox.Text or "")
-        if #nextText > 221 then
-            boothTextBox.Text = "Character limit reached"
-            notify("Booth Text", "Character limit reached.", 4, "booth-text-limit", 1)
-            return
-        end
+    if UI_VARIANT ~= "simple" then
+        createToggle(boothSection, "Text Update", "textUpdateToggle")
+        createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
+        createTextBox(boothSection, "Text Color", "textColor", false)
+        createTextBox(boothSection, "Robux Goal", "goalBox", true)
+        createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
+        local boothTextBox
+        createInfoLabel(boothSection, "Goal Bar Header:")
+        local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
+        createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
+        createButton(boothSection, "Paste Goal Bar", function()
+            settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+            local nextText = buildGoalBarTemplate()
+            if #nextText > 221 then
+                notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
+                return
+            end
+            settings.customBoothText = nextText
+            saveSettings()
+            local ok, mode = updateBoothTextNow()
+            if ok then
+                boothTextBox.Text = nextText
+                notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
+            elseif mode == "local-preview-only" then
+                boothTextBox.Text = nextText
+                notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
+            else
+                notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
+            end
+        end)
+        createInfoLabel(boothSection, "Custom Booth Text:")
+        boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
+        createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+        createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
+        createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
+        createButton(boothSection, "Update", function()
+            local nextText = tostring(boothTextBox.Text or "")
+            if #nextText > 221 then
+                boothTextBox.Text = "Character limit reached"
+                notify("Booth Text", "Character limit reached.", 4, "booth-text-limit", 1)
+                return
+            end
 
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
-        elseif mode == "local-preview-only" then
-            notify("Booth Text", "Preview updated, waiting for remote confirmation.", 4, "booth-text-preview", 2)
-        else
-            notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
-        end
-    end)
+            settings.customBoothText = nextText
+            saveSettings()
+            local ok, mode = updateBoothTextNow()
+            if ok then
+                notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
+            elseif mode == "local-preview-only" then
+                notify("Booth Text", "Preview updated, waiting for remote confirmation.", 4, "booth-text-preview", 2)
+            else
+                notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
+            end
+        end)
+    end
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
     createDropdown(boothSection, "Move Mode", "moveMode", {"teleport", "walk"})
 
