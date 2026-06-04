@@ -1696,7 +1696,7 @@ loadingOverlay.BackgroundColor3 = THEME.panel
 loadingOverlay.BackgroundTransparency = 1
 loadingOverlay.BorderSizePixel = 0
 loadingOverlay.Parent = main
-loadingOverlay.ZIndex = 1
+loadingOverlay.ZIndex = 50
 
 local loadLabel = Instance.new("TextLabel")
 loadLabel.Size = UDim2.new(1, -20, 0, 40)
@@ -1777,17 +1777,30 @@ local function hideLoadingOverlay()
                 title.Text = originalTitleText
             end
             -- reveal main UI
-            pcall(function() body.Visible = true end)
-            -- quick refresh to ensure controls render (fixes case where UI needs manual toggle)
+            -- reveal main UI and fade in top bar + body
             pcall(function()
-                body.Visible = false
-                task.wait(0.02)
-                body.Visible = true
-            end)
-            pcall(function()
-                if title then
-                    title.TextTransparency = 0
+                -- prepare starting transparencies
+                if topBar then
+                    topBar.Visible = true
+                    pcall(function() topBar.BackgroundTransparency = 1 end)
                 end
+                pcall(function() body.Visible = true end)
+                pcall(function() body.BackgroundTransparency = 1 end)
+                if title then pcall(function() title.TextTransparency = 1 end) end
+                if subtitle then pcall(function() subtitle.TextTransparency = 1 end) end
+                if minimizeBtn then pcall(function() minimizeBtn.TextTransparency = 1 end) end
+                -- create tweens
+                local fadeTime = 0.5
+                local t1 = topBar and TweenService:Create(topBar, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}) or nil
+                local t2 = TweenService:Create(body, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0})
+                local tt = {}
+                if title then table.insert(tt, TweenService:Create(title, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
+                if subtitle then table.insert(tt, TweenService:Create(subtitle, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
+                if minimizeBtn then table.insert(tt, TweenService:Create(minimizeBtn, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
+                if t1 then t1:Play() end
+                if t2 then t2:Play() end
+                for _, t in ipairs(tt) do t:Play() end
+                if t1 then t1.Completed:Wait() end
             end)
             loadingOverlay:Destroy()
         end)
@@ -1912,6 +1925,8 @@ do
     title.Parent = topBar
     topBar.ZIndex = 2
     title.ZIndex = 3
+    -- hide top bar until loading completes
+    topBar.Visible = false
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
     local subtitle = Instance.new("TextLabel")
