@@ -1767,14 +1767,31 @@ local function hideLoadingOverlay()
             if title and originalTitleText then
                 title.Text = originalTitleText
             end
+            -- reveal main UI
+            pcall(function() body.Visible = true end)
             loadingOverlay:Destroy()
         end)
     end
 end
 
 -- auto-hide after short delay if not already hidden
+-- initialization wait: show loading for 5-12s depending on how fast UI/Map becomes available
 task.spawn(function()
-    task.wait(20)
+    local start = tick()
+    local minT, maxT = 5, 12
+    while true do
+        local elapsed = tick() - start
+        local ok, boothLoc = pcall(getBoothLocation)
+        local hasMap = ok and boothLoc
+        local remotesReady = RemoteModules and #RemoteModules > 0
+        if elapsed >= minT and (hasMap or remotesReady) then
+            break
+        end
+        if elapsed >= maxT then
+            break
+        end
+        task.wait(0.15)
+    end
     if loadingOverlay and loadingOverlay.Parent then
         hideLoadingOverlay()
     end
@@ -1921,6 +1938,7 @@ body.Name = "Body"
 body.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
 body.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
 body.BackgroundTransparency = 1
+body.Visible = false -- hide main UI until loading completes
 body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
@@ -2047,7 +2065,7 @@ local function setMinimized(state)
         minimizeTween = nil
     end
 
-    if not state then
+    if not state and not loadingActive then
         body.Visible = true
     end
 
@@ -2075,7 +2093,7 @@ local function setMinimized(state)
             return
         end
         minimizeTween = nil
-        body.Visible = not minimized
+        body.Visible = (not minimized) and (not loadingActive)
     end)
 end
 
