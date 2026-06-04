@@ -1090,9 +1090,6 @@ end
 
 updateBoothTextNow = function()
     local text = buildBoothText()
-    if UI_VARIANT == "simple" then
-        return false, "simple-variant"
-    end
     if text == "" then
         return false, "empty-text"
     end
@@ -1696,7 +1693,6 @@ loadingOverlay.BackgroundColor3 = THEME.panel
 loadingOverlay.BackgroundTransparency = 1
 loadingOverlay.BorderSizePixel = 0
 loadingOverlay.Parent = main
-loadingOverlay.ZIndex = 50
 
 local loadLabel = Instance.new("TextLabel")
 loadLabel.Size = UDim2.new(1, -20, 0, 40)
@@ -1712,13 +1708,8 @@ loadLabel.Parent = loadingOverlay
 
 local loadingActive = true
 task.spawn(function()
-    -- initial delay (wait up to 2s for title to be created), then fade in
-    local waited = 0
-    while waited < 2 and not title do
-        task.wait(0.05)
-        waited = waited + 0.05
-    end
-    task.wait(math.max(0, 2 - waited))
+    -- initial delay, then fade in
+    task.wait(2)
     pcall(function()
         if title and originalTitleText then
             title.Text = "loading"
@@ -1751,15 +1742,7 @@ task.spawn(function()
 
     while loadingActive do
         dots = dots % 3 + 1
-        local txt = "loading" .. string.rep(".", dots)
-        loadLabel.Text = txt
-        pcall(function()
-            if title then
-                title.Text = txt
-                title.TextTransparency = 0
-                title.Visible = true
-            end
-        end)
+        loadLabel.Text = "loading" .. string.rep(".", dots)
         task.wait(0.45)
     end
     -- fade out will be handled by hideLoadingOverlay
@@ -1776,84 +1759,17 @@ local function hideLoadingOverlay()
             if title and originalTitleText then
                 title.Text = originalTitleText
             end
-            -- reveal main UI
-            -- reveal main UI and fade in top bar + body
-            pcall(function()
-                -- prepare starting transparencies
-                if topBar then
-                    topBar.Visible = true
-                    pcall(function() topBar.BackgroundTransparency = 1 end)
-                end
-                pcall(function() body.Visible = true end)
-                pcall(function() body.BackgroundTransparency = 1 end)
-                if title then pcall(function() title.TextTransparency = 1 end) end
-                if subtitle then pcall(function() subtitle.TextTransparency = 1 end) end
-                if minimizeBtn then pcall(function() minimizeBtn.TextTransparency = 1 end) end
-                -- create tweens
-                local fadeTime = 0.5
-                local t1 = topBar and TweenService:Create(topBar, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0}) or nil
-                local t2 = TweenService:Create(body, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {BackgroundTransparency = 0})
-                local tt = {}
-                if title then table.insert(tt, TweenService:Create(title, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
-                if subtitle then table.insert(tt, TweenService:Create(subtitle, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
-                if minimizeBtn then table.insert(tt, TweenService:Create(minimizeBtn, TweenInfo.new(fadeTime, Enum.EasingStyle.Quad), {TextTransparency = 0})) end
-                if t1 then t1:Play() end
-                if t2 then t2:Play() end
-                for _, t in ipairs(tt) do t:Play() end
-                if t1 then t1.Completed:Wait() end
-            end)
             loadingOverlay:Destroy()
         end)
     end
 end
 
 -- auto-hide after short delay if not already hidden
--- initialization wait: show loading for 5-12s depending on how fast UI/Map becomes available
 task.spawn(function()
-    local start = tick()
-    local minT, maxT = 6, 14
-    while true do
-        local elapsed = tick() - start
-        local ok, boothLoc = pcall(getBoothLocation)
-        local hasMap = ok and boothLoc
-        local remotesReady = RemoteModules and #RemoteModules > 0
-        if elapsed >= minT and (hasMap or remotesReady) then
-            break
-        end
-        if elapsed >= maxT then
-            break
-        end
-        task.wait(0.15)
-    end
+    task.wait(20)
     if loadingOverlay and loadingOverlay.Parent then
         hideLoadingOverlay()
     end
-end)
-
--- safety reveal: ensure UI is visible after loading completes (in case tweens fail)
-task.spawn(function()
-    while loadingActive do
-        task.wait(0.1)
-    end
-    task.wait(0.1)
-    pcall(function()
-        if topBar then topBar.Visible = true; topBar.BackgroundTransparency = 0 end
-        if body then body.Visible = true; body.BackgroundTransparency = 0 end
-        if title then title.TextTransparency = 0; title.Visible = true end
-        if subtitle then subtitle.TextTransparency = 0; subtitle.Visible = true end
-        if minimizeBtn then minimizeBtn.TextTransparency = 0; minimizeBtn.Visible = true end
-        for _, c in ipairs(body:GetDescendants()) do
-            pcall(function()
-                if c:IsA("TextButton") or c:IsA("TextLabel") or c:IsA("TextBox") then
-                    c.TextTransparency = 0
-                    c.Visible = true
-                elseif c:IsA("Frame") or c:IsA("ImageLabel") or c:IsA("ImageButton") or c:IsA("ScrollingFrame") then
-                    c.BackgroundTransparency = 0
-                    c.Visible = true
-                end
-            end)
-        end
-    end)
 end)
 
 local function getViewportSize()
@@ -1949,10 +1865,6 @@ do
     title.Text = (UI_VARIANT == "simple") and "Simply Donate! 💵" or "PLS DONATE ANIMOSITY"
     originalTitleText = title.Text
     title.Parent = topBar
-    topBar.ZIndex = 2
-    title.ZIndex = 3
-    -- hide top bar until loading completes
-    topBar.Visible = false
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
     local subtitle = Instance.new("TextLabel")
@@ -1973,13 +1885,8 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-if UI_VARIANT == "simple" then
-    minimizeBtn.BackgroundColor3 = THEME.control
-    minimizeBtn.TextColor3 = THEME.controlText
-else
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
-    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-end
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
 minimizeBtn.Text = "-"
@@ -1992,7 +1899,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = UI_VARIANT == "simple" and THEME.stroke or Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = Color3.fromRGB(210, 255, 218)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -2001,7 +1908,6 @@ body.Name = "Body"
 body.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
 body.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
 body.BackgroundTransparency = 1
-body.Visible = false -- hide main UI until loading completes
 body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
@@ -2128,19 +2034,13 @@ local function setMinimized(state)
         minimizeTween = nil
     end
 
-    if not state and not loadingActive then
+    if not state then
         body.Visible = true
     end
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    if UI_VARIANT == "simple" then
-        minimizeBtn.BackgroundColor3 = THEME.control
-        minimizeBtn.TextColor3 = THEME.controlText
-    else
-        minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
-        minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    end
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
 
     minimizeTween = TweenService:Create(
         main,
@@ -2156,7 +2056,7 @@ local function setMinimized(state)
             return
         end
         minimizeTween = nil
-        body.Visible = (not minimized) and (not loadingActive)
+        body.Visible = not minimized
     end)
 end
 
@@ -2489,8 +2389,7 @@ local function onBoothClaimDetected(slot)
         pcall(hideLoadingOverlay)
     end
 
-    -- Do NOT perform any booth text updates in the simple UI variant
-    if UI_VARIANT ~= "simple" and settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
             pcall(function()
                 updateBoothTextNow()
@@ -2701,7 +2600,15 @@ local function createDropdown(parent, text, key, options)
         end)
     end
 
-    -- compact '+' toggle removed from dropdowns; only title bar/minimize uses a small button
+    local toggleBtn
+    if UI_VARIANT == "simple" then
+        -- shrink main button and add small + toggle
+        btn.Size = UDim2.new(1, -28, 0, 24)
+        toggleBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
+        toggleBtn.Text = "+"
+        toggleBtn.Parent = row
+        toggleBtn.ZIndex = 25
+    end
 
     local function onToggle()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
@@ -2717,6 +2624,8 @@ local function createDropdown(parent, text, key, options)
     end
 
     btn.MouseButton1Click:Connect(onToggle)
+    if toggleBtn then toggleBtn.MouseButton1Click:Connect(onToggle) end
+    end)
 end
 
 local function createMessageDropdown(parent, text, key, fallback)
@@ -2830,6 +2739,13 @@ local function createMessageDropdown(parent, text, key, fallback)
         end)
     end)
 
+    local toggleMsgBtn
+    if UI_VARIANT == "simple" then
+        btn.Size = UDim2.new(1, -28, 0, 24)
+        toggleMsgBtn = createStyledButton(row, "+", UDim2.new(0, 24, 0, 20), UDim2.new(1, -26, 0.5, -10), THEME.control, THEME.controlText, 14, Enum.Font.Gotham)
+        toggleMsgBtn.ZIndex = 25
+    end
+
     local function onToggleMsg()
         if activeDropdown and activeDropdown ~= row and dropdownCloseFns[activeDropdown] then
             dropdownCloseFns[activeDropdown]()
@@ -2843,7 +2759,9 @@ local function createMessageDropdown(parent, text, key, fallback)
             activeDropdown = row
         end
     end
+
     btn.MouseButton1Click:Connect(onToggleMsg)
+    if toggleMsgBtn then toggleMsgBtn.MouseButton1Click:Connect(onToggleMsg) end
 end
 
 local function createButton(parent, text, callback)
@@ -2983,61 +2901,59 @@ local function buildSettingsTabs()
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
-    if UI_VARIANT ~= "simple" then
-        createToggle(boothSection, "Text Update", "textUpdateToggle")
-        createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-        createTextBox(boothSection, "Text Color", "textColor", false)
-        createTextBox(boothSection, "Robux Goal", "goalBox", true)
-        createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
-        local boothTextBox
-        createInfoLabel(boothSection, "Goal Bar Header:")
-        local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-        createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-        createButton(boothSection, "Paste Goal Bar", function()
-            settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-            local nextText = buildGoalBarTemplate()
-            if #nextText > 221 then
-                notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
-                return
-            end
-            settings.customBoothText = nextText
-            saveSettings()
-            local ok, mode = updateBoothTextNow()
-            if ok then
-                boothTextBox.Text = nextText
-                notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
-            elseif mode == "local-preview-only" then
-                boothTextBox.Text = nextText
-                notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
-            else
-                notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
-            end
-        end)
-        createInfoLabel(boothSection, "Custom Booth Text:")
-        boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-        createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-        createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
-        createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
-        createButton(boothSection, "Update", function()
-            local nextText = tostring(boothTextBox.Text or "")
-            if #nextText > 221 then
-                boothTextBox.Text = "Character limit reached"
-                notify("Booth Text", "Character limit reached.", 4, "booth-text-limit", 1)
-                return
-            end
+    createToggle(boothSection, "Text Update", "textUpdateToggle")
+    createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
+    createTextBox(boothSection, "Text Color", "textColor", false)
+    createTextBox(boothSection, "Robux Goal", "goalBox", true)
+    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
+    local boothTextBox
+    createInfoLabel(boothSection, "Goal Bar Header:")
+    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
+    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
+    createButton(boothSection, "Paste Goal Bar", function()
+        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+        local nextText = buildGoalBarTemplate()
+        if #nextText > 221 then
+            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
+            return
+        end
+        settings.customBoothText = nextText
+        saveSettings()
+        local ok, mode = updateBoothTextNow()
+        if ok then
+            boothTextBox.Text = nextText
+            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
+        elseif mode == "local-preview-only" then
+            boothTextBox.Text = nextText
+            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
+        else
+            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
+        end
+    end)
+    createInfoLabel(boothSection, "Custom Booth Text:")
+    boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
+    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
+    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
+    createButton(boothSection, "Update", function()
+        local nextText = tostring(boothTextBox.Text or "")
+        if #nextText > 221 then
+            boothTextBox.Text = "Character limit reached"
+            notify("Booth Text", "Character limit reached.", 4, "booth-text-limit", 1)
+            return
+        end
 
-            settings.customBoothText = nextText
-            saveSettings()
-            local ok, mode = updateBoothTextNow()
-            if ok then
-                notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
-            elseif mode == "local-preview-only" then
-                notify("Booth Text", "Preview updated, waiting for remote confirmation.", 4, "booth-text-preview", 2)
-            else
-                notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
-            end
-        end)
-    end
+        settings.customBoothText = nextText
+        saveSettings()
+        local ok, mode = updateBoothTextNow()
+        if ok then
+            notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
+        elseif mode == "local-preview-only" then
+            notify("Booth Text", "Preview updated, waiting for remote confirmation.", 4, "booth-text-preview", 2)
+        else
+            notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
+        end
+    end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
     createDropdown(boothSection, "Move Mode", "moveMode", {"teleport", "walk"})
 
