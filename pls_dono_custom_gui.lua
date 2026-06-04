@@ -1090,6 +1090,9 @@ end
 
 updateBoothTextNow = function()
     local text = buildBoothText()
+    if UI_VARIANT == "simple" then
+        return false, "simple-variant"
+    end
     if text == "" then
         return false, "empty-text"
     end
@@ -2050,7 +2053,13 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+    if UI_VARIANT == "simple" then
+        minimizeBtn.BackgroundColor3 = THEME.control
+        minimizeBtn.TextColor3 = THEME.controlText
+    else
+        minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+        minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
 
     minimizeTween = TweenService:Create(
         main,
@@ -2399,7 +2408,8 @@ local function onBoothClaimDetected(slot)
         pcall(hideLoadingOverlay)
     end
 
-    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    -- Do NOT perform any booth text updates in the simple UI variant
+    if UI_VARIANT ~= "simple" and settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
             pcall(function()
                 updateBoothTextNow()
