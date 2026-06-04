@@ -1842,12 +1842,12 @@ task.spawn(function()
         if title then title.TextTransparency = 0; title.Visible = true end
         if subtitle then subtitle.TextTransparency = 0; subtitle.Visible = true end
         if minimizeBtn then minimizeBtn.TextTransparency = 0; minimizeBtn.Visible = true end
-        for _, c in ipairs(body:GetChildren()) do
+        for _, c in ipairs(body:GetDescendants()) do
             pcall(function()
                 if c:IsA("TextButton") or c:IsA("TextLabel") or c:IsA("TextBox") then
                     c.TextTransparency = 0
                     c.Visible = true
-                elseif c:IsA("Frame") or c:IsA("ImageLabel") or c:IsA("ImageButton") then
+                elseif c:IsA("Frame") or c:IsA("ImageLabel") or c:IsA("ImageButton") or c:IsA("ScrollingFrame") then
                     c.BackgroundTransparency = 0
                     c.Visible = true
                 end
