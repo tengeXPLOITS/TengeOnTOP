@@ -364,8 +364,6 @@ local defaults = {
     textColor = "#32CD32",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
-    goalBarHeaderText = "GOAL $G",
-    goalBarColor = "blue",
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
@@ -382,11 +380,7 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    antiBotServers = false,
-    antiBotThreshold = 17,
-    antiBotInterval = 8,
-    zeroDonatedBotThreshold = 16,
-    modEvader = false,
+    -- anti-bot and auto-hop thresholds removed
     minPlayerCount = 23,
     maxPlayerCount = 24,
     AnonymousMode = false,
@@ -446,11 +440,7 @@ local function migrateLegacySettings(data)
         return data
     end
 
-    if data.textColor == nil and data.hexBox ~= nil then
-        data.textColor = data.hexBox
-    end
-
-    data.hexBox = nil
+    -- legacy hexBox removed; text color editor is no longer exposed
     return data
 end
 
@@ -537,6 +527,8 @@ local claimedBoothSlot
 local claimAttemptRunning = false
 local findOwnedBoothSlot
 local preferredRemoteModule
+-- forward declarations for UI helpers implemented later
+local showLoading, hideLoading, popOutClaimNotice, measureNetworkSpeed
 
 local function findRemoteModules()
     local modules = {}
@@ -658,10 +650,7 @@ farmSessionStats.lastSummaryHopCount = math.max(0, tonumber(farmSessionStats.las
 
 local pendingFarmSummaryHopCount
 
-local BOT_HOP_REASONS = {
-    ["bot-detection"] = true,
-    ["zero-donated-bot-server"] = true,
-}
+local BOT_HOP_REASONS = {}
 
 local function shouldTrackFarmHop(reason)
     local normalizedReason = tostring(reason or "")
@@ -923,9 +912,8 @@ local function shouldHopForBots(scan)
                 local confirmCount = tonumber(confirmScan.totalCount) or 0
                 local confirmBoothCount = tonumber(confirmScan.boothCount) or 0
                 notifyBotScanResult(confirmScan, false)
-                if confirmBoothCount >= threshold and settings.antiBotServers then
-                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
-                    requestServerHop("bot-detection")
+                if confirmBoothCount >= threshold then
+                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). (Auto-hop disabled)"):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
                 end
                 antiBotPendingConfirmation = false
             end)
@@ -1282,41 +1270,6 @@ local function color3ToRgbText(color)
     return string.format("rgb(%d,%d,%d)", r, g, b)
 end
 
-local function getGoalBarColorName()
-    local value = tostring(settings.goalBarColor or "blue"):lower()
-    local allowed = {
-        green = true,
-        blue = true,
-        red = true,
-        orange = true,
-        purple = true,
-    }
-    if allowed[value] then
-        return value
-    end
-    return "blue"
-end
-
-local function buildGoalProgressBar()
-    local current, goal, ratio = getGoalProgressSnapshot()
-    local totalSegments = 21
-    local filledSegments = math.clamp(math.floor((ratio * totalSegments) + 0.5), 0, totalSegments)
-
-    if current > 0 and goal > 0 and filledSegments == 0 then
-        filledSegments = 1
-    end
-
-    local emptySegments = math.max(0, totalSegments - filledSegments)
-    local namedColors = getNamedTextColorMap()
-    local filledColor = namedColors[getGoalBarColorName()] or namedColors.blue
-    return string.format(
-        "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
-        color3ToRgbText(filledColor),
-        string.rep("|", filledSegments),
-        string.rep("|", emptySegments)
-    )
-end
-
 countZeroDonatedPlayers = function()
     local count = 0
     for _, pl in ipairs(Players:GetPlayers()) do
@@ -1336,23 +1289,12 @@ local function buildBoothText()
 
     text = text:gsub("%$C", formatBoothNumber(current))
     text = text:gsub("%$G", formatBoothNumber(goal))
-    text = text:gsub("%$BAR", buildGoalProgressBar())
+    -- $BAR goal progress removed
     text = text:gsub("%$JPR", "1")
     return text
 end
 
-local function buildGoalBarTemplate()
-    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
-
-    return table.concat({
-        "<font size=\"22\"><b>",
-        headerText,
-        "</b></font><br/>",
-        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
-        "$BAR",
-        "</stroke>",
-    })
-end
+-- goal bar templates removed
 
 local function hexToColor3(hex)
     local namedColors = getNamedTextColorMap()
@@ -1684,6 +1626,13 @@ local function claimBoothNow()
 
     claimAttemptRunning = true
 
+    -- show a separate loading overlay while attempting claim
+    pcall(function()
+        if type(showLoading) == "function" then
+            pcall(showLoading, "claim")
+        end
+    end)
+
     local success, result, extra = pcall(function()
         if not RemoteModules or #RemoteModules == 0 then
             return false, "missing-remotes"
@@ -1746,6 +1695,12 @@ local function claimBoothNow()
     end)
 
     claimAttemptRunning = false
+
+    pcall(function()
+        if type(hideLoading) == "function" then
+            pcall(hideLoading, "claim")
+        end
+    end)
 
     if not success then
         return false, tostring(result)
@@ -2104,6 +2059,180 @@ local function makeDraggable(frame, handle)
 end
 
 makeDraggable(main, topBar)
+
+-- Helper UI functions: loading overlay, popout notice, and standalone Donate GUI
+do
+    local loadingGui, loadingFrame, loadingLabel, loadingAnimTask
+    local loadingVisible = false
+    local dotInterval = 0.45
+    local dotCount = 0
+
+    function measureNetworkSpeed()
+        local ok, elapsed = pcall(function()
+            local start = tick()
+            httpGetBody("https://httpbin.org/get")
+            return tick() - start
+        end)
+        if not ok or not elapsed then
+            return 1.0
+        end
+        return math.clamp(tonumber(elapsed) or 1.0, 0.05, 3.0)
+    end
+
+    local function createLoadingGui()
+        if loadingGui and loadingGui.Parent then
+            return
+        end
+        loadingGui = Instance.new("ScreenGui")
+        loadingGui.Name = "PlsDonoLoading"
+        loadingGui.ResetOnSpawn = false
+        loadingGui.IgnoreGuiInset = true
+        loadingGui.Parent = GuiParent
+
+        loadingFrame = Instance.new("Frame")
+        loadingFrame.Name = "LoadingFrame"
+        loadingFrame.Size = UDim2.new(0, math.min(320, expandedWidth), 0, 64)
+        loadingFrame.Position = UDim2.fromOffset(12, getViewportSize().Y - 64 - 18)
+        loadingFrame.BackgroundColor3 = THEME.panel
+        loadingFrame.BorderSizePixel = 0
+        loadingFrame.Parent = loadingGui
+        loadingFrame.ZIndex = 999
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = loadingFrame
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 1
+        stroke.Color = THEME.stroke
+        stroke.Parent = loadingFrame
+
+        loadingLabel = Instance.new("TextLabel")
+        loadingLabel.Size = UDim2.new(1, -16, 1, 0)
+        loadingLabel.Position = UDim2.new(0, 8, 0, 0)
+        loadingLabel.BackgroundTransparency = 1
+        loadingLabel.Font = Enum.Font.GothamSemibold
+        loadingLabel.TextSize = 14
+        loadingLabel.TextColor3 = THEME.topBarText
+        loadingLabel.TextXAlignment = Enum.TextXAlignment.Left
+        loadingLabel.Text = "Loading"
+        loadingLabel.Parent = loadingFrame
+        loadingLabel.ZIndex = 1000
+    end
+
+    function showLoading(context)
+        pcall(createLoadingGui)
+        if not loadingFrame then return end
+        loadingVisible = true
+        loadingFrame.Visible = true
+        loadingFrame.BackgroundTransparency = 1
+        loadingLabel.TextTransparency = 1
+
+        local tweenIn = TweenService:Create(loadingFrame, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
+        local tweenTextIn = TweenService:Create(loadingLabel, TweenInfo.new(0.28), {TextTransparency = 0})
+        tweenIn:Play(); tweenTextIn:Play()
+
+        -- start animated dots
+        if loadingAnimTask then
+            pcall(function() task.cancel(loadingAnimTask) end)
+            loadingAnimTask = nil
+        end
+        dotInterval = 0.45
+        task.spawn(function()
+            local net = measureNetworkSpeed()
+            if net < 0.25 then
+                dotInterval = 0.25
+            elseif net < 0.6 then
+                dotInterval = 0.45
+            else
+                dotInterval = 0.8
+            end
+        end)
+
+        loadingAnimTask = task.spawn(function()
+            while loadingVisible do
+                dotCount = (dotCount % 3) + 1
+                loadingLabel.Text = "Loading" .. string.rep(".", dotCount)
+                task.wait(dotInterval)
+            end
+        end)
+    end
+
+    function hideLoading()
+        loadingVisible = false
+        if loadingAnimTask then
+            pcall(function() task.cancel(loadingAnimTask) end)
+            loadingAnimTask = nil
+        end
+        if loadingFrame and loadingFrame.Parent then
+            local tweenOut = TweenService:Create(loadingFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+            local tweenTextOut = TweenService:Create(loadingLabel, TweenInfo.new(0.22), {TextTransparency = 1})
+            tweenOut:Play(); tweenTextOut:Play()
+            task.delay(0.28, function()
+                if loadingFrame and loadingFrame.Parent then
+                    loadingFrame.Visible = false
+                end
+            end)
+        end
+    end
+
+    function popOutClaimNotice(slot)
+        pcall(function()
+            local popName = "PlsDonoClaimPop"
+            local pop = gui:FindFirstChild(popName)
+            if not pop then
+                pop = Instance.new("Frame")
+                pop.Name = popName
+                pop.Size = UDim2.new(0, 260, 0, 52)
+                pop.Position = UDim2.fromOffset(main.Position.X.Offset + 12, main.Position.Y.Offset - 68)
+                pop.BackgroundColor3 = THEME.topBar
+                pop.BorderSizePixel = 0
+                pop.Parent = gui
+                pop.ZIndex = 950
+
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0, 8)
+                corner.Parent = pop
+
+                local label = Instance.new("TextLabel")
+                label.Name = "Label"
+                label.Size = UDim2.new(1, -16, 1, 0)
+                label.Position = UDim2.new(0, 8, 0, 0)
+                label.BackgroundTransparency = 1
+                label.Font = Enum.Font.GothamSemibold
+                label.TextSize = 14
+                label.TextColor3 = THEME.topBarText
+                label.TextXAlignment = Enum.TextXAlignment.Left
+                label.Text = ""
+                label.Parent = pop
+            end
+
+            local label = pop:FindFirstChild("Label")
+            label.Text = (slot and ("Booth claimed: #%d"):format(slot) or "Booth claimed")
+            pop.BackgroundTransparency = 1
+            label.TextTransparency = 1
+            pop.Visible = true
+
+            local t1 = TweenService:Create(pop, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
+            local t2 = TweenService:Create(label, TweenInfo.new(0.28), {TextTransparency = 0})
+            t1:Play(); t2:Play()
+            task.delay(2.2, function()
+                pcall(function()
+                    local t3 = TweenService:Create(pop, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+                    local t4 = TweenService:Create(label, TweenInfo.new(0.22), {TextTransparency = 1})
+                    t3:Play(); t4:Play()
+                    task.delay(0.24, function()
+                        if pop and pop.Parent then
+                            pop.Visible = false
+                        end
+                    end)
+                end)
+            end)
+        end)
+    end
+
+    -- donate UI removed: this script will not create any donate/teleport button
+end
 
 local minimized = false
 local minimizeTween
@@ -2468,7 +2597,8 @@ local function getHelicopterRiseHeight(amount, minRiseHeight)
     local donation = math.max(1, tonumber(amount) or 1)
     local minimum = math.max(0, tonumber(minRiseHeight) or 0)
     local targetHeight = 22 + (math.sqrt(donation) * 8)
-    return math.clamp(math.max(minimum, targetHeight), 28, 105)
+    -- reduce max rise height to keep helicopter visually smaller
+    return math.clamp(math.max(minimum, targetHeight), 18, 60)
 end
 
 local function getHelicopterSpinSpeedForAmount(amount)
@@ -2529,28 +2659,16 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
+        -- continuous idle spin (pulse pause removed)
+        local continuousSpeed = idleSpeed
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
+                heliBody.AngularVelocity = Vector3.new(0, continuousSpeed, 0)
             end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end)
-            task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
-
-            if not settings.helicopterEnabled or not root.Parent then
-                break
-            end
-
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
-            end
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end)
-            task.wait(HELICOPTER_IDLE_PULSE_PAUSE_DURATION)
+            task.wait(0.05)
         end
     end)
 
@@ -2935,59 +3053,13 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
-    textColor = function(value)
-        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local lower = normalized:lower()
-        local allowedNames = {
-            green = true,
-            blue = true,
-            yellow = true,
-            black = true,
-            white = true,
-            red = true,
-            orange = true,
-            pink = true,
-            purple = true,
-            gray = true,
-            grey = true,
-        }
-        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
-            settings.textColor = defaults.textColor
-            saveSettings()
-            return
-        end
-        settings.textColor = allowedNames[lower] and lower or normalized:upper()
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    goalBarColor = function(value)
-        local lower = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-        local allowed = {
-            green = true,
-            blue = true,
-            red = true,
-            orange = true,
-            purple = true,
-        }
-        settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
+    -- text color editor and goal bar color removed
     goalBox = function()
         if updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
-    goalBarHeaderText = function()
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
+    -- goal bar header removed
     fontFace = function(value)
         local fontName = tostring(value or defaults.fontFace)
         if not Enum.Font[fontName] then
@@ -3053,6 +3125,13 @@ local function onBoothClaimDetected(slot)
 
     handledClaimSlot = slot
     moveToClaimedBooth(slot)
+
+    -- show a small pop-out notice when a booth is claimed / teleported to
+    pcall(function()
+        if type(popOutClaimNotice) == "function" then
+            pcall(popOutClaimNotice, slot)
+        end
+    end)
 
     if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
@@ -3546,37 +3625,11 @@ local function buildSettingsTabs()
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "textColor", false)
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
-    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
-    createInfoLabel(boothSection, "Goal Bar Header:")
-    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-    createButton(boothSection, "Paste Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-        local nextText = buildGoalBarTemplate()
-        if #nextText > 221 then
-            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
-            return
-        end
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
-        elseif mode == "local-preview-only" then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
-        else
-            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
-        end
-    end)
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
+    createInfoLabel(boothSection, "$C = current | $G = goal")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
@@ -3639,26 +3692,27 @@ do
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
-    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
-    createToggle(serverSection, "Mod Evader", "modEvader")
-    createButton(serverSection, "Scan Bot Booths Now", function()
-        local scan = runBotDetectionScan()
-        notifyBotScanResult(scan, true)
-    end)
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
-
     -- VC Server Hop
     createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
 end
 
 end
 
+-- show loading overlay briefly to indicate script startup (not a teleport)
+pcall(function() if type(showLoading) == "function" then showLoading("startup") end end)
+
 buildSettingsTabs()
+
+-- Donate UI removed: no Donate button will be created
+
+-- hide startup loading after initialization
+task.spawn(function()
+    task.wait(1.6)
+    pcall(function() if type(hideLoading) == "function" then hideLoading() end end)
+end)
 
 task.spawn(function()
     task.wait(2)
@@ -3685,60 +3739,7 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    local lastHopTick = 0
-    while task.wait(1) do
-        if settings.antiBotServers then
-            local interval = math.max(2, tonumber(settings.antiBotInterval) or 8)
-            task.wait(interval)
-
-            local scan = runBotDetectionScan()
-            local zeroThreshold = math.max(1, tonumber(settings.zeroDonatedBotThreshold) or 16)
-            local boothThreshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-            local zeroCount = tonumber(scan.zeroCount) or 0
-            if zeroCount > zeroThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                notify("Bot Detection", ("Zero donated check tripped: %d > %d | Booths: %d | Total: %d. Hopping..."):format(zeroCount, zeroThreshold, tonumber(scan.boothCount) or 0, tonumber(scan.totalCount) or 0), 5, "zero-donated-hop", 10)
-                requestServerHop("zero-donated-bot-server")
-            elseif (tonumber(scan.boothCount) or 0) >= boothThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                shouldHopForBots(scan)
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    local lastPopulationHopTick = 0
-    while task.wait(1) do
-        task.wait(9)
-        local playerCount = #Players:GetPlayers()
-        local threshold = 15
-        if playerCount < threshold and (tick() - lastPopulationHopTick) > 10 then
-            lastPopulationHopTick = tick()
-            notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
-            requestServerHop("population-hop")
-        end
-    end
-end)
-
-task.spawn(function()
-    local lastModHopTick = 0
-    while task.wait(1) do
-        if settings.modEvader then
-            task.wait(3)
-            local detectedPlayer = findDetectedModPlayer()
-            if detectedPlayer and (tick() - lastModHopTick) > 8 then
-                local displayName = tostring(detectedPlayer.DisplayName or detectedPlayer.Name or "Unknown")
-                local username = tostring(detectedPlayer.Name or "Unknown")
-                if requestServerHop("mod-detection") then
-                    lastModHopTick = tick()
-                    notify("Mod Evader", ("Flagged user detected: %s (@%s). Hopping..."):format(displayName, username), 5, "mod-evader-hop", 8)
-                end
-            end
-        end
-    end
-end)
+-- automatic bot/population/mod server hopping removed per user request
 
 task.spawn(function()
     local lastTextUpdate = 0
