@@ -25,6 +25,7 @@ end
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
+local SIMPLY_DONATE_PLACE_ID = 84830718490377
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -387,6 +388,9 @@ local defaults = {
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
+    testDonationAmount = 6,
+    simplyDonatePlace = false,
+    walkToBooth = false,
 }
 
 local boothFontOptions = {"SciFi"}
@@ -1423,11 +1427,17 @@ updateBoothTextNow = function()
 end
 
 local function choosePlaceId()
-    if settings.vcServerHopToggle then
-        return 8943844393
-    else
-        return 8737602449
+    local currentPlace = tonumber(game.PlaceId) or 0
+    if currentPlace == SIMPLY_DONATE_PLACE_ID then
+        return SIMPLY_DONATE_PLACE_ID
     end
+    if settings.vcServerHopToggle then
+        return VC_PLS_DONATE_PLACE_ID
+    end
+    if settings.simplyDonatePlace then
+        return SIMPLY_DONATE_PLACE_ID
+    end
+    return DEFAULT_PLS_DONATE_PLACE_ID
 end
 
 serverHopNow = function(reason)
@@ -1613,6 +1623,34 @@ local function moveToClaimedBooth(slot)
                 hrp.CFrame = targetCF
             end
         end)
+    end
+
+    if settings.walkToBooth then
+        -- attempt to walk to the booth instead of instant teleport
+        local ok, walkErr = pcall(function()
+            humanoid:MoveTo(targetCF.Position)
+        end)
+        if not ok then
+            -- fallback to direct placement
+            applyFacing()
+            return true, "teleport-fallback"
+        end
+
+        local start = tick()
+        while tick() - start < 5 do
+            if not hrp or not hrp.Parent then break end
+            local dist = (hrp.Position - targetCF.Position).Magnitude
+            if dist <= 3 then
+                -- ensure facing
+                hrp.CFrame = targetCF
+                return true, "walked"
+            end
+            task.wait(0.15)
+        end
+
+        -- timed out, snap to position
+        applyFacing()
+        return true, "teleport-after-walk-timeout"
     end
 
     applyFacing()
@@ -1902,7 +1940,13 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE ANIMOSITY"
+    -- adapt title based on the current PlaceId
+    local _currentPlaceId = tonumber(game.PlaceId) or 0
+    if _currentPlaceId == SIMPLY_DONATE_PLACE_ID then
+        title.Text = "Simply Donate"
+    else
+        title.Text = "PLS DONATE ANIMOSITY"
+    end
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -3651,6 +3695,7 @@ local function buildSettingsTabs()
         end
     end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
+    createToggle(boothSection, "Walk To Booth (instead of snap)", "walkToBooth")
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
@@ -3697,6 +3742,7 @@ do
     end)
     -- VC Server Hop
     createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
+    createToggle(serverSection, "Prefer Simply Donate (Place 84830718490377)", "simplyDonatePlace")
 end
 
 end
