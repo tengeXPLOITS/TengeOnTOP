@@ -22,6 +22,17 @@ if not LocalPlayer then
     return
 end
 
+-- Allow this script to run only in these approved place IDs
+local ALLOWED_PLACE_IDS = {
+    [133296110759666] = true, -- Simply Donate!
+    [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
+    [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
+}
+
+if not ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
+    return
+end
+
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
@@ -355,13 +366,19 @@ end
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
+-- If present, destroy LiveDonations object in Workspace to avoid conflicts
+pcall(function()
+    local ld = Workspace:FindFirstChild("LiveDonations")
+    if ld and type(ld.Destroy) == "function" then
+        ld:Destroy()
+    end
+end)
+
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 
 local defaults = {
     textUpdateToggle = true,
-    textUpdateDelay = 30,
-    textColor = "#32CD32",
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarHeaderText = "GOAL $G",
@@ -369,6 +386,7 @@ local defaults = {
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
+    moveMode = "Teleport",
 
     autoThanks = true,
     thanksDelay = 3,
@@ -382,11 +400,7 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    antiBotServers = false,
-    antiBotThreshold = 17,
-    antiBotInterval = 8,
-    zeroDonatedBotThreshold = 16,
-    modEvader = false,
+    -- anti-bot and mod-evader options removed
     minPlayerCount = 23,
     maxPlayerCount = 24,
     AnonymousMode = false,
@@ -596,39 +610,6 @@ local requestServerHop
 local countZeroDonatedPlayers
 local updateBoothTextNow
 
-local flaggedBoothTexts = {
-    "helicopter",
-    "gifting",
-    "5x",
-    "multiply",
-    "multiplying",
-    "improving",
-    "raising",
-    "1R$=",
-    "1R",
-    "homeless bacon",
-    
-}
-
-local modUsernames = {
-    ["haz3mn"] = true,
-    ["zenuux"] = true,
-    ["kreekcraft"] = true,
-    ["itsmuneeeb"] = true,
-    ["p_rrgatory"] = true,
-    ["clutchquickly"] = true,
-    ["0bid0"] = true,
-    ["blastii"] = true,
-    ["olix"] = true,
-    ["subsical"] = true,
-}
-
-local antiBotLastScanCount = 0
-local antiBotLastNotifyTick = 0
-local antiBotLastNotifiedCount = -1
-local antiBotPendingConfirmation = false
-local antiBotNotifyCooldown = 30
-local antiBotConfirmationDelay = 10
 local hopCooldownSeconds = 1
 local lastHopTick = 0
 local serverHopIsActive = false
@@ -726,23 +707,6 @@ local function parseIdFromTemplate(tmpl)
     return id and tonumber(id) or nil
 end
 
-local function isTextFlagged(txt)
-    if txt == nil then
-        return false
-    end
-
-    local norm = tostring(txt):lower()
-
-    for _, keyword in ipairs(flaggedBoothTexts) do
-        local plain = tostring(keyword):lower()
-        if plain ~= "" and norm:find(plain, 1, true) then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function hasNamedAncestor(desc, wantedName)
     local current = desc and desc.Parent
     local target = tostring(wantedName or ""):lower()
@@ -785,156 +749,7 @@ local function getBoothSlotFromDescendant(desc)
         current = current.Parent
     end
     return nil
-end
-
-local function countBotLikeBooths()
-    local boothLocation = getBoothLocation()
-    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-    if not boothUiFolder then
-        return 0
-    end
-
-    local flaggedOwners = {}
-    local seenSlots = {}
-    for _, obj in ipairs(boothUiFolder:GetDescendants()) do
-        if isLikelyBoothSignLabel(obj) then
-            local slot = getBoothSlotFromDescendant(obj)
-            if slot and not seenSlots[slot] then
-                local ownerName = nil
-                local boothFrame = boothUiFolder:FindFirstChild("BoothUI" .. tostring(slot))
-                if boothFrame and boothFrame:FindFirstChild("Details") and boothFrame.Details:FindFirstChild("Owner") then
-                    ownerName = tostring(boothFrame.Details.Owner.Text or "")
-                end
-
-                local ownerLower = tostring(ownerName or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-                if ownerLower ~= "" and ownerLower ~= "unclaimed" then
-                    local textVal = tostring(obj.Text or "")
-                    if isTextFlagged(textVal) then
-                        seenSlots[slot] = true
-                        table.insert(flaggedOwners, {slot = slot, owner = ownerName})
-                    end
-                end
-            end
-        end
-    end
-
-    local uniqueSuspiciousSlots = {}
-    for _, data in ipairs(flaggedOwners) do
-        local ownerSuspicious = false
-        local ownerLower = tostring(data.owner or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-
-        if ownerLower == "" or ownerLower == "unclaimed" then
-            ownerSuspicious = true
-        else
-            local matchedPlayer = nil
-            for _, pl in ipairs(Players:GetPlayers()) do
-                local n = tostring(pl.Name or ""):lower()
-                local d = tostring(pl.DisplayName or ""):lower()
-                if n == ownerLower or d == ownerLower then
-                    matchedPlayer = pl
-                    break
-                end
-            end
-
-            if not matchedPlayer then
-                ownerSuspicious = true
-            else
-                local okAge, accAge = pcall(function()
-                    return matchedPlayer.AccountAge
-                end)
-                if okAge and type(accAge) == "number" and accAge < 3 then
-                    ownerSuspicious = true
-                end
-            end
-        end
-
-        if ownerSuspicious and data.slot then
-            uniqueSuspiciousSlots[data.slot] = true
-        end
-    end
-
-    local count = 0
-    for _ in pairs(uniqueSuspiciousSlots) do
-        count += 1
-    end
-    return count
-end
-
-local function runBotDetectionScan()
-    local boothCount = countBotLikeBooths()
-    local zeroCount = countZeroDonatedPlayers()
-    local totalCount = boothCount + zeroCount
-    antiBotLastScanCount = totalCount
-    return {
-        boothCount = boothCount,
-        zeroCount = zeroCount,
-        totalCount = totalCount,
-    }
-end
-
-local function notifyBotScanResult(scan, manual)
-    local count = type(scan) == "table" and tonumber(scan.totalCount) or tonumber(scan) or 0
-    local boothCount = type(scan) == "table" and tonumber(scan.boothCount) or count
-    local zeroCount = type(scan) == "table" and tonumber(scan.zeroCount) or 0
-    local threshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-    if manual then
-        if count > 0 then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 5, nil, nil)
-        else
-            notify("Bot Scan", "No suspicious booths found.", 4, nil, nil)
-        end
-        antiBotLastNotifiedCount = count
-        antiBotLastNotifyTick = tick()
-        return
-    end
-
-    local now = tick()
-    local crossedUp = antiBotLastNotifiedCount < threshold and count >= threshold
-    local crossedDown = antiBotLastNotifiedCount >= threshold and count < threshold
-    local changed = count ~= antiBotLastNotifiedCount
-
-    if crossedUp then
-            notify("Bot Detection", ("High bot signal (%d total: %d booths, %d zero donated). Confirming before hop."):format(count, boothCount, zeroCount), 5, "bot-cross-up", 10)
-        antiBotLastNotifyTick = now
-    elseif crossedDown then
-        notify("Bot Detection", "Bot signal dropped below threshold.", 4, "bot-cross-down", 10)
-        antiBotLastNotifyTick = now
-    elseif changed and count > 0 and (now - antiBotLastNotifyTick) >= antiBotNotifyCooldown then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 4, "bot-periodic", 20)
-        antiBotLastNotifyTick = now
-    end
-
-    antiBotLastNotifiedCount = count
-end
-
-local function shouldHopForBots(scan)
-    local boothCount = type(scan) == "table" and tonumber(scan.boothCount) or tonumber(scan) or 0
-    local zeroCount = type(scan) == "table" and tonumber(scan.zeroCount) or 0
-    local count = type(scan) == "table" and tonumber(scan.totalCount) or boothCount
-    local threshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-    notifyBotScanResult(scan, false)
-
-    if boothCount >= threshold then
-        if not antiBotPendingConfirmation then
-            antiBotPendingConfirmation = true
-            task.spawn(function()
-                task.wait(antiBotConfirmationDelay)
-                local confirmScan = runBotDetectionScan()
-                local confirmCount = tonumber(confirmScan.totalCount) or 0
-                local confirmBoothCount = tonumber(confirmScan.boothCount) or 0
-                notifyBotScanResult(confirmScan, false)
-                if confirmBoothCount >= threshold and settings.antiBotServers then
-                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
-                    requestServerHop("bot-detection")
-                end
-                antiBotPendingConfirmation = false
-            end)
-        end
-        return false
-    end
-    antiBotPendingConfirmation = false
-    return false
-end
+-- bot-detection and mod-evader functions removed
 
 local function sendChatMessage(message)
     local text = tostring(message or "")
@@ -1107,18 +922,6 @@ local function getCurrentRaisedAmount()
     return raised
 end
 
-local function findDetectedModPlayer()
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer then
-            local username = tostring(pl.Name or ""):lower()
-            if modUsernames[username] then
-                return pl
-            end
-        end
-    end
-
-    return nil
-end
 
 local function getRobloxAvatarThumbnailUrl(userId, size, isCircular)
     userId = tonumber(userId) or 0
@@ -1396,7 +1199,7 @@ updateBoothTextNow = function()
         richText = true,
         strokeColor = Color3.new(0, 0, 0),
         strokeOpacity = 0,
-        textColor = hexToColor3(settings.textColor),
+        textColor = Color3.fromRGB(255, 255, 255),
         buttonStrokeColor = Color3.new(0, 0, 0),
         buttonTextColor = Color3.new(1, 1, 1),
         buttonColor = Color3.new(98 / 255, 1, 0),
@@ -1671,6 +1474,34 @@ local function moveToClaimedBooth(slot)
                 hrp.CFrame = targetCF
             end
         end)
+    end
+
+    -- Support walk move mode: attempt to walk to the booth instead of teleporting
+    local moveMode = tostring(settings.moveMode or "Teleport")
+    if moveMode:lower() == "walk" then
+        local targetPos = targetCF.Position
+        -- Use Humanoid:MoveTo if available
+        local moved = false
+        local ok, moveErr = pcall(function()
+            humanoid:MoveTo(targetPos)
+        end)
+
+        if ok then
+            local start = tick()
+            while tick() - start < 8 do
+                if not hrp or not hrp.Parent then break end
+                local dist = (hrp.Position - targetPos).Magnitude
+                if dist <= 3 then
+                    moved = true
+                    break
+                end
+                task.wait(0.2)
+            end
+        end
+
+        -- Ensure facing regardless of movement result
+        applyFacing()
+        return true, moved and "walk" or "teleport-fallback"
     end
 
     applyFacing()
@@ -2532,25 +2363,13 @@ local function startHelicopterIdleMode()
         local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
         while settings.helicopterEnabled and root.Parent do
             if heliBody and heliBody.Parent then
+                -- Keep spinning at pulse speed continuously (no pause)
                 heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
             end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end)
             task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
-
-            if not settings.helicopterEnabled or not root.Parent then
-                break
-            end
-
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
-            end
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end)
-            task.wait(HELICOPTER_IDLE_PULSE_PAUSE_DURATION)
         end
     end)
 
@@ -2932,33 +2751,6 @@ settingHandlers = {
     end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    textColor = function(value)
-        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local lower = normalized:lower()
-        local allowedNames = {
-            green = true,
-            blue = true,
-            yellow = true,
-            black = true,
-            white = true,
-            red = true,
-            orange = true,
-            pink = true,
-            purple = true,
-            gray = true,
-            grey = true,
-        }
-        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
-            settings.textColor = defaults.textColor
-            saveSettings()
-            return
-        end
-        settings.textColor = allowedNames[lower] and lower or normalized:upper()
-        saveSettings()
-        if updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
@@ -3545,8 +3337,7 @@ local function buildSettingsTabs()
 
     local boothSection = createSection(boothTab, "Booth Settings")
     createToggle(boothSection, "Text Update", "textUpdateToggle")
-    createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
-    createTextBox(boothSection, "Text Color", "textColor", false)
+    -- Text update delay and text color controls removed
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
@@ -3576,7 +3367,6 @@ local function buildSettingsTabs()
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
     createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createInfoLabel(boothSection, "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
@@ -3598,6 +3388,7 @@ local function buildSettingsTabs()
         end
     end)
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
+    createDropdown(boothSection, "Booth Move Mode", "moveMode", {"Teleport", "Walk"})
 
     do
         local mainSection = createSection(mainTab, "Main Settings")
@@ -3639,15 +3430,7 @@ do
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
-    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
-    createToggle(serverSection, "Mod Evader", "modEvader")
-    createButton(serverSection, "Scan Bot Booths Now", function()
-        local scan = runBotDetectionScan()
-        notifyBotScanResult(scan, true)
-    end)
+    -- Anti-bot and mod-evader controls removed
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
@@ -3685,80 +3468,13 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    local lastHopTick = 0
-    while task.wait(1) do
-        if settings.antiBotServers then
-            local interval = math.max(2, tonumber(settings.antiBotInterval) or 8)
-            task.wait(interval)
-
-            local scan = runBotDetectionScan()
-            local zeroThreshold = math.max(1, tonumber(settings.zeroDonatedBotThreshold) or 16)
-            local boothThreshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-            local zeroCount = tonumber(scan.zeroCount) or 0
-            if zeroCount > zeroThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                notify("Bot Detection", ("Zero donated check tripped: %d > %d | Booths: %d | Total: %d. Hopping..."):format(zeroCount, zeroThreshold, tonumber(scan.boothCount) or 0, tonumber(scan.totalCount) or 0), 5, "zero-donated-hop", 10)
-                requestServerHop("zero-donated-bot-server")
-            elseif (tonumber(scan.boothCount) or 0) >= boothThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                shouldHopForBots(scan)
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    local lastPopulationHopTick = 0
-    while task.wait(1) do
-        task.wait(9)
-        local playerCount = #Players:GetPlayers()
-        local threshold = 15
-        if playerCount < threshold and (tick() - lastPopulationHopTick) > 10 then
-            lastPopulationHopTick = tick()
-            notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
-            requestServerHop("population-hop")
-        end
-    end
-end)
-
-task.spawn(function()
-    local lastModHopTick = 0
-    while task.wait(1) do
-        if settings.modEvader then
-            task.wait(3)
-            local detectedPlayer = findDetectedModPlayer()
-            if detectedPlayer and (tick() - lastModHopTick) > 8 then
-                local displayName = tostring(detectedPlayer.DisplayName or detectedPlayer.Name or "Unknown")
-                local username = tostring(detectedPlayer.Name or "Unknown")
-                if requestServerHop("mod-detection") then
-                    lastModHopTick = tick()
-                    notify("Mod Evader", ("Flagged user detected: %s (@%s). Hopping..."):format(displayName, username), 5, "mod-evader-hop", 8)
-                end
-            end
-        end
-    end
-end)
+-- population hopper, anti-bot scans, and mod-evader loops removed
 
 task.spawn(function()
     local lastTextUpdate = 0
     while task.wait(1) do
-        if settings.textUpdateToggle then
-            local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
-            if tick() - lastTextUpdate >= delaySeconds then
-                lastTextUpdate = tick()
-                local ok = updateBoothTextNow()
-                if not ok then
-                    local boothLocation = getBoothLocation()
-                    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-                    if boothUiFolder then
-                        local owned = findOwnedBoothSlot(boothUiFolder)
-                        if owned then
-                            claimedBoothSlot = owned
-                        end
-                    end
-                end
-            end
+        if false then
+            -- text update delay loop disabled; updates happen on events now
         end
     end
 end)
