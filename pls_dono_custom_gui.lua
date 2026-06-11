@@ -417,7 +417,7 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             local function finish(success)
                 pcall(function()
                     if not label or not label.Parent then return end
-                    label.Text = success and "Donation board remove. This stabilizes game performance." or "failed to remove Donation board"
+                    label.Text = success and "Donation board removed. This stabilizes game performance!" or "failed to remove Donation board. If you are in Simply Donate, the removal doesn't work here. You can ignore this message."
                     task.delay(duration, function()
                         pcall(function()
                             if screen and screen.Parent then screen:Destroy() end
@@ -1151,15 +1151,15 @@ local function sendDonationWebhook(amount, donorInfo)
         donorLabel = donorDisplay
     end
     postWebhookJson(url, {
-        username = "PLS DONATE",
+        username = "webhook by K_0YG...",
         content = ("Donation received from %s"):format(donorLabel),
         embeds = {{
             color = 0x1E90FF,
             title = "Donation Stats",
             fields = {
                 {name = "Donor", value = donorLabel, inline = false},
-                {name = "Robux Received", value = string.format("%d", received), inline = true},
-                {name = "After Tax", value = string.format("%d", taxed), inline = true},
+                {name = "how much recepient received", value = string.format("%d", received), inline = true},
+                {name = "Tax applied ):", value = string.format("%d", taxed), inline = true},
             },
         }},
     })
@@ -1944,7 +1944,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE ANIMOSITY"
+    title.Text = "Donation Game Utility (Public)"
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -1957,7 +1957,7 @@ do
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
     subtitle.TextSize = 10
-    subtitle.Text = "developed by mattyB"
+    subtitle.Text = "if u still use this, i hate u"
     subtitle.Parent = topBar
     applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
