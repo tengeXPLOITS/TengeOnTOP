@@ -358,6 +358,28 @@ if not GuiParent then
     return
 end
 
+-- Resolve a FontFace object from settings.fontFace when available
+local function getGuiFontFace()
+    local sfn = nil
+    pcall(function()
+        sfn = tostring((settings and settings.fontFace) or "")
+    end)
+    if not sfn or sfn == "" then
+        return nil
+    end
+    local assetId = sfn:match("(%d+)")
+    if not assetId then
+        return nil
+    end
+    local ok, fontObj = pcall(function()
+        return Font and Font.new and Font.new("rbxassetid://" .. assetId)
+    end)
+    if ok then
+        return fontObj
+    end
+    return nil
+end
+
 if SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED and GuiParent:FindFirstChild("PlsDonoCustomGui") then
     return
 end
@@ -402,6 +424,10 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             label.TextScaled = false
             label.TextSize = 16
             label.Font = Enum.Font.SourceSansSemibold
+            local _notFont = getGuiFontFace()
+            if _notFont then
+                pcall(function() label.FontFace = _notFont end)
+            end
             label.TextWrapped = true
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.Parent = frame
@@ -513,10 +539,19 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
         local total = #allTargets
         local removed = false
 
-        local notifier = createLiveDonationsRemovalNotifier(6)
-        if notifier then
-            notifier.update(0)
-        end
+        local notifier = nil
+        local lastPercent = 0
+        local deletionDone = false
+        -- create notifier after 3 seconds so it pops up later
+        task.delay(3, function()
+            notifier = createLiveDonationsRemovalNotifier(6)
+            if notifier then
+                notifier.update(lastPercent)
+                if deletionDone then
+                    notifier.finish(removed)
+                end
+            end
+        end)
 
         if total > 0 then
             local idx = 0
@@ -550,14 +585,16 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
 
                 if destroyed then removed = true end
 
+                local percent = math.floor((idx / total) * 100)
+                if percent < 1 then percent = 1 end
+                lastPercent = percent
                 if notifier then
-                    local percent = math.floor((idx / total) * 100)
-                    if percent < 1 then percent = 1 end
                     notifier.update(percent)
                 end
             end
         end
 
+        deletionDone = true
         if notifier then
             notifier.finish(removed)
         end
@@ -1808,6 +1845,8 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
+local GUI_FONT_FACE = getGuiFontFace()
+
 local THEME = {
     topBar = Color3.fromRGB(96, 96, 102),
     topBarText = Color3.fromRGB(248, 255, 248),
@@ -1855,6 +1894,7 @@ local function styleTextBox(box, alignment, multiline)
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = Enum.Font.Gotham
+    if GUI_FONT_FACE then pcall(function() box.FontFace = GUI_FONT_FACE end) end
     box.TextSize = 12
     box.ClearTextOnFocus = false
     box.TextXAlignment = alignment or Enum.TextXAlignment.Center
@@ -1984,6 +2024,10 @@ do
     title.TextSize = 13
     title.Text = "PLS DONATE ANIMOSITY"
     title.Parent = topBar
+    local _fontFace = getGuiFontFace()
+    if _fontFace then
+        pcall(function() title.FontFace = _fontFace end)
+    end
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
     local subtitle = Instance.new("TextLabel")
@@ -1994,9 +2038,13 @@ do
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = Enum.Font.Gotham
+    if GUI_FONT_FACE then pcall(function() subtitle.FontFace = GUI_FONT_FACE end) end
     subtitle.TextSize = 10
     subtitle.Text = "developed by mattyB"
     subtitle.Parent = topBar
+    if _fontFace then
+        pcall(function() subtitle.FontFace = _fontFace end)
+    end
     applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
@@ -2004,9 +2052,10 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+minimizeBtn.BackgroundColor3 = THEME.control
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
+if GUI_FONT_FACE then pcall(function() minimizeBtn.FontFace = GUI_FONT_FACE end) end
 minimizeBtn.TextSize = 13
 minimizeBtn.Text = "-"
 minimizeBtn.AutoButtonColor = true
@@ -2018,7 +2067,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = THEME.stroke
     miniStroke.Parent = minimizeBtn
 end
 
@@ -2159,7 +2208,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+    minimizeBtn.BackgroundColor3 = state and THEME.tabActive or THEME.control
 
     minimizeTween = TweenService:Create(
         main,
@@ -2218,6 +2267,7 @@ local function createTab(name, buttonText)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(205, 205, 210)
     btn.Font = Enum.Font.GothamSemibold
+    if GUI_FONT_FACE then pcall(function() btn.FontFace = GUI_FONT_FACE end) end
     btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
@@ -2303,6 +2353,7 @@ local function createSection(parent, titleText)
     titleLabel.Position = UDim2.new(0, 8, 0, 6)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Font = Enum.Font.GothamSemibold
+    if GUI_FONT_FACE then pcall(function() titleLabel.FontFace = GUI_FONT_FACE end) end
     titleLabel.TextSize = 12
     titleLabel.TextColor3 = THEME.subtleText
     titleLabel.Text = titleText
@@ -2334,6 +2385,7 @@ local function createToggle(parent, text, key)
     btn.Size = UDim2.new(0, 18, 0, 18)
     btn.Position = UDim2.new(0, 2, 0.5, -9)
     btn.Font = Enum.Font.GothamBold
+    if GUI_FONT_FACE then pcall(function() btn.FontFace = GUI_FONT_FACE end) end
     btn.TextSize = 11
     btn.Parent = row
 
@@ -2350,6 +2402,8 @@ local function createToggle(parent, text, key)
     label.Position = UDim2.new(0, 26, 0, 0)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Font = Enum.Font.Gotham
+    if GUI_FONT_FACE then pcall(function() label.FontFace = GUI_FONT_FACE end) end
+    if GUI_FONT_FACE then pcall(function() label.FontFace = GUI_FONT_FACE end) end
     label.TextSize = 12
     label.TextColor3 = THEME.controlText
     label.Text = text
@@ -3315,6 +3369,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     editor.TextColor3 = THEME.controlText
     editor.PlaceholderColor3 = THEME.subtleText
     editor.Font = Enum.Font.Gotham
+    if GUI_FONT_FACE then pcall(function() editor.FontFace = GUI_FONT_FACE end) end
     editor.TextSize = 12
     editor.ClearTextOnFocus = false
     editor.TextXAlignment = Enum.TextXAlignment.Left
@@ -3424,6 +3479,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     lbl.Size = UDim2.new(1, 0, 0, 16)
     lbl.Position = UDim2.new(0, 0, 0, 0)
     lbl.Font = Enum.Font.Gotham
+    if GUI_FONT_FACE then pcall(function() lbl.FontFace = GUI_FONT_FACE end) end
     lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextColor3 = THEME.controlText
@@ -3807,6 +3863,17 @@ task.spawn(function()
 end)
 
 activateTab("Main")
+
+-- Apply GUI FontFace to all text elements after UI creation
+if GUI_FONT_FACE then
+    pcall(function()
+        for _, desc in ipairs(gui:GetDescendants()) do
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+                pcall(function() desc.FontFace = GUI_FONT_FACE end)
+            end
+        end
+    end)
+end
 
 RunService.RenderStepped:Connect(function()
     local viewport = getViewportSize()
