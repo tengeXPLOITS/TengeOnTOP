@@ -368,11 +368,118 @@ SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
 -- If present, destroy LiveDonations object in Workspace to avoid conflicts
 if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
+    local function showLiveDonationsRemovalNotification(success)
+        pcall(function()
+            if not GuiParent then return end
+            local existing = GuiParent:FindFirstChild("PlsDonoLiveDonationRemovalNotification")
+            if existing then
+                existing:Destroy()
+            end
+
+            local screen = Instance.new("ScreenGui")
+            screen.Name = "PlsDonoLiveDonationRemovalNotification"
+            screen.ResetOnSpawn = false
+            screen.Parent = GuiParent
+
+            local frame = Instance.new("Frame")
+            frame.AnchorPoint = Vector2.new(1, 1)
+            frame.Position = UDim2.new(1, -20, 1, -20)
+            frame.Size = UDim2.new(0, 360, 0, 48)
+            frame.BackgroundColor3 = Color3.fromRGB(145, 145, 150)
+            frame.BorderSizePixel = 0
+            frame.Parent = screen
+
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 6)
+            corner.Parent = frame
+
+            local label = Instance.new("TextLabel")
+            label.BackgroundTransparency = 1
+            label.Size = UDim2.new(1, -12, 1, 0)
+            label.Position = UDim2.new(0, 8, 0, 0)
+            label.Text = success and "Donation board removed! This stabilizes game performance." or "failed to remove Donation board"
+            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextScaled = false
+            label.TextSize = 16
+            label.Font = Enum.Font.SourceSansSemibold
+            label.TextWrapped = true
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = frame
+
+            task.delay(5, function()
+                pcall(function()
+                    if screen and screen.Parent then
+                        screen:Destroy()
+                    end
+                end)
+            end)
+        end)
+    end
+
     pcall(function()
-        local ld = Workspace:FindFirstChild("LiveDonations")
-        if ld and type(ld.Destroy) == "function" then
-            ld:Destroy()
+        local function tryGetPivotPosition(obj)
+            if not obj then
+                return nil
+            end
+            local ok, result = pcall(function()
+                if typeof(obj) == "Instance" then
+                    if obj:IsA("Model") then
+                        if obj.GetPivot then
+                            return obj:GetPivot().Position
+                        end
+                        if obj.PrimaryPart then
+                            return obj.PrimaryPart.Position
+                        end
+                    elseif obj:IsA("BasePart") then
+                        return obj.Position
+                    end
+                end
+                return nil
+            end)
+            if ok then
+                return result
+            end
+            return nil
         end
+
+        local parentNames = {"leaderboards", "Leaderboards", "LeaderBoard", "LeaderBoards"}
+        local parentObj = nil
+        for _, name in ipairs(parentNames) do
+            parentObj = Workspace:FindFirstChild(name)
+            if parentObj then break end
+        end
+
+        local candidates = {}
+        if parentObj then
+            local ld = parentObj:FindFirstChild("LiveDonations")
+            if ld then table.insert(candidates, ld) end
+        end
+        -- fallback: check at top-level as well
+        local topLd = Workspace:FindFirstChild("LiveDonations")
+        if topLd then table.insert(candidates, topLd) end
+
+        local targetPos = Vector3.new(166.229004, 13.5387201, 424.031067)
+        local MATCH_THRESHOLD = 0.5
+
+        local removed = false
+        for _, ld in ipairs(candidates) do
+            if ld and type(ld.Destroy) == "function" then
+                local pos = tryGetPivotPosition(ld)
+                if pos then
+                    if (pos - targetPos).Magnitude <= MATCH_THRESHOLD then
+                        pcall(function()
+                            ld:Destroy()
+                        end)
+                        removed = true
+                    end
+                else
+                    -- no pivot available; be conservative and do not destroy
+                end
+            end
+        end
+
+        -- Show a small grey notification indicating whether removal succeeded
+        showLiveDonationsRemovalNotification(removed)
     end)
 end
 
@@ -385,7 +492,7 @@ local defaults = {
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarHeaderText = "GOAL $G",
     goalBarColor = "blue",
-    fontFace = "SciFi",
+    fontFace = "Silkscreen:12187371840",
     standingPosition = "Front",
     boothPosition = 3,
     moveMode = "Teleport",
@@ -1067,7 +1174,7 @@ end
 
 local function getNamedTextColorMap()
     return {
-        green = Color3.fromRGB(50, 205, 50),
+        green = Color3.fromRGB(145, 145, 150),
         blue = Color3.fromRGB(30, 144, 255),
         yellow = Color3.fromRGB(255, 215, 0),
         black = Color3.fromRGB(0, 0, 0),
@@ -1162,7 +1269,7 @@ end
 
 local function hexToColor3(hex)
     local namedColors = getNamedTextColorMap()
-    local rawValue = tostring(hex or "#32CD32"):gsub("^%s+", ""):gsub("%s+$", "")
+    local rawValue = tostring(hex or "#919196"):gsub("^%s+", ""):gsub("%s+$", "")
     local named = namedColors[rawValue:lower()]
     if named then
         return named
@@ -1170,14 +1277,14 @@ local function hexToColor3(hex)
 
     local value = rawValue:gsub("#", "")
     if #value ~= 6 then
-        return Color3.fromRGB(50, 205, 50)
+        return Color3.fromRGB(145, 145, 150)
     end
 
     local r = tonumber(value:sub(1, 2), 16)
     local g = tonumber(value:sub(3, 4), 16)
     local b = tonumber(value:sub(5, 6), 16)
     if not r or not g or not b then
-        return Color3.fromRGB(50, 205, 50)
+        return Color3.fromRGB(145, 145, 150)
     end
     return Color3.fromRGB(r, g, b)
 end
@@ -1205,10 +1312,23 @@ updateBoothTextNow = function()
         textColor = Color3.fromRGB(255, 255, 255),
         buttonStrokeColor = Color3.new(0, 0, 0),
         buttonTextColor = Color3.new(1, 1, 1),
-        buttonColor = Color3.new(98 / 255, 1, 0),
-        buttonHoverColor = Color3.new(98 / 255, 1, 0),
+        buttonColor = Color3.fromRGB(145, 145, 150),
+        buttonHoverColor = Color3.fromRGB(145, 145, 150),
         buttonLayout = "",
     }
+
+    -- If settings.fontFace contains an asset id, attach a FontFace object for custom fonts
+    do
+        local assetId = tostring(settings.fontFace or ""):match("(%d+)")
+        if assetId then
+            local ok, fontObj = pcall(function()
+                return Font.new("rbxassetid://" .. assetId)
+            end)
+            if ok and fontObj then
+                payload.textFontFace = fontObj
+            end
+        end
+    end
 
     local applied = false
 
@@ -1608,7 +1728,7 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(28, 164, 52),
+    topBar = Color3.fromRGB(96, 96, 102),
     topBarText = Color3.fromRGB(248, 255, 248),
     panel = Color3.fromRGB(23, 23, 25),
     tabIdle = Color3.fromRGB(72, 72, 76),
@@ -1617,14 +1737,14 @@ local THEME = {
     control = Color3.fromRGB(31, 31, 34),
     controlText = Color3.fromRGB(238, 238, 238),
     subtleText = Color3.fromRGB(181, 191, 181),
-    accent = Color3.fromRGB(57, 196, 76),
+    accent = Color3.fromRGB(145, 145, 150),
     stroke = Color3.fromRGB(66, 66, 71),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
+local GLOW_COLOR = Color3.fromRGB(200, 200, 200)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(150, 150, 150)
 local GLOW_TRANSPARENCY = 0.84
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
