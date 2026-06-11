@@ -367,12 +367,14 @@ SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
 -- If present, destroy LiveDonations object in Workspace to avoid conflicts
-pcall(function()
-    local ld = Workspace:FindFirstChild("LiveDonations")
-    if ld and type(ld.Destroy) == "function" then
-        ld:Destroy()
-    end
-end)
+if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
+    pcall(function()
+        local ld = Workspace:FindFirstChild("LiveDonations")
+        if ld and type(ld.Destroy) == "function" then
+            ld:Destroy()
+        end
+    end)
+end
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
@@ -749,6 +751,7 @@ local function getBoothSlotFromDescendant(desc)
         current = current.Parent
     end
     return nil
+end
 -- bot-detection and mod-evader functions removed
 
 local function sendChatMessage(message)
