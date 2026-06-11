@@ -368,13 +368,12 @@ SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
 -- If present, destroy LiveDonations object in Workspace to avoid conflicts
 if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
-    local function showLiveDonationsRemovalNotification(success)
-        pcall(function()
-            if not GuiParent then return end
+    local function createLiveDonationsRemovalNotifier(duration)
+        duration = tonumber(duration) or 6
+        local ok, res = pcall(function()
+            if not GuiParent then return nil end
             local existing = GuiParent:FindFirstChild("PlsDonoLiveDonationRemovalNotification")
-            if existing then
-                existing:Destroy()
-            end
+            if existing then existing:Destroy() end
 
             local screen = Instance.new("ScreenGui")
             screen.Name = "PlsDonoLiveDonationRemovalNotification"
@@ -394,10 +393,11 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             corner.Parent = frame
 
             local label = Instance.new("TextLabel")
+            label.Name = "Msg"
             label.BackgroundTransparency = 1
             label.Size = UDim2.new(1, -12, 1, 0)
             label.Position = UDim2.new(0, 8, 0, 0)
-            label.Text = success and "Donation board removed! This stabilizes game performance." or "failed to remove Donation board"
+            label.Text = "Removing Donation board: 0%"
             label.TextColor3 = Color3.fromRGB(255, 255, 255)
             label.TextScaled = false
             label.TextSize = 16
@@ -406,14 +406,29 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.Parent = frame
 
-            task.delay(5, function()
+            local function update(percent)
                 pcall(function()
-                    if screen and screen.Parent then
-                        screen:Destroy()
-                    end
+                    if not label or not label.Parent then return end
+                    label.Text = string.format("Removing Donation board: %d%%", math.clamp(math.floor(percent or 0), 0, 100))
                 end)
-            end)
+            end
+
+            local function finish(success)
+                pcall(function()
+                    if not label or not label.Parent then return end
+                    label.Text = success and "Donation board remove. This stabilizes game performance." or "failed to remove Donation board"
+                    task.delay(duration, function()
+                        pcall(function()
+                            if screen and screen.Parent then screen:Destroy() end
+                        end)
+                    end)
+                end)
+            end
+
+            return { update = update, finish = finish }
         end)
+        if ok then return res end
+        return nil
     end
 
     pcall(function()
@@ -443,43 +458,109 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
         end
 
         local parentNames = {"leaderboards", "Leaderboards", "LeaderBoard", "LeaderBoards"}
-        local parentObj = nil
-        for _, name in ipairs(parentNames) do
-            parentObj = Workspace:FindFirstChild(name)
-            if parentObj then break end
-        end
 
         local candidates = {}
-        if parentObj then
-            local ld = parentObj:FindFirstChild("LiveDonations")
-            if ld then table.insert(candidates, ld) end
-        end
-        -- fallback: check at top-level as well
-        local topLd = Workspace:FindFirstChild("LiveDonations")
-        if topLd then table.insert(candidates, topLd) end
-
-        local targetPos = Vector3.new(166.229004, 13.5387201, 424.031067)
-        local MATCH_THRESHOLD = 0.5
-
-        local removed = false
-        for _, ld in ipairs(candidates) do
-            if ld and type(ld.Destroy) == "function" then
-                local pos = tryGetPivotPosition(ld)
-                if pos then
-                    if (pos - targetPos).Magnitude <= MATCH_THRESHOLD then
-                        pcall(function()
-                            ld:Destroy()
-                        end)
-                        removed = true
-                    end
-                else
-                    -- no pivot available; be conservative and do not destroy
+        -- Find LeaderBoards parents anywhere in Workspace and collect LiveDonations under them
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            for _, pname in ipairs(parentNames) do
+                if obj.Name == pname then
+                    local ld = obj:FindFirstChild("LiveDonations")
+                    if ld then table.insert(candidates, ld) end
+                    break
                 end
             end
         end
 
-        -- Show a small grey notification indicating whether removal succeeded
-        showLiveDonationsRemovalNotification(removed)
+        -- Also include any top-level LiveDonations and any LiveDonations found anywhere
+        local topLd = Workspace:FindFirstChild("LiveDonations")
+        if topLd then table.insert(candidates, topLd) end
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d.Name == "LiveDonations" then
+                table.insert(candidates, d)
+            end
+        end
+
+        -- Collect Bench models under any Benches parent (do not destroy yet)
+        local benchCandidates = {}
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj.Name == "Benches" then
+                for _, child in ipairs(obj:GetChildren()) do
+                    if child and child.Name == "Bench" and type(child.Destroy) == "function" then
+                        table.insert(benchCandidates, child)
+                    end
+                end
+            end
+        end
+
+        local targetPos = Vector3.new(166.229004, 13.5387201, 424.031067)
+        local MATCH_THRESHOLD = 0.5
+
+        -- Combine candidates and benchCandidates into a unique list
+        local allMap = {}
+        local allTargets = {}
+        for _, v in ipairs(candidates) do
+            if v and type(v.Destroy) == "function" then
+                allMap[v] = true
+            end
+        end
+        for _, v in ipairs(benchCandidates) do
+            if v and type(v.Destroy) == "function" then
+                allMap[v] = true
+            end
+        end
+        for v, _ in pairs(allMap) do table.insert(allTargets, v) end
+
+        local total = #allTargets
+        local removed = false
+
+        local notifier = createLiveDonationsRemovalNotifier(6)
+        if notifier then
+            notifier.update(0)
+        end
+
+        if total > 0 then
+            local idx = 0
+            for _, target in ipairs(allTargets) do
+                idx = idx + 1
+                local destroyed = false
+                -- If target looks like LiveDonations, prefer pivot/leaderboard checks
+                if tostring(target.Name or ""):lower() == "livedonations" then
+                    local pos = tryGetPivotPosition(target)
+                    if pos then
+                        if (pos - targetPos).Magnitude <= MATCH_THRESHOLD then
+                            pcall(function() target:Destroy() end)
+                            destroyed = true
+                        end
+                    else
+                        local parent = target.Parent
+                        while parent do
+                            local pname = tostring(parent.Name or ""):lower()
+                            if pname:find("leaderboard", 1, true) then
+                                pcall(function() target:Destroy() end)
+                                destroyed = true
+                                break
+                            end
+                            parent = parent.Parent
+                        end
+                    end
+                else
+                    pcall(function() target:Destroy() end)
+                    destroyed = true
+                end
+
+                if destroyed then removed = true end
+
+                if notifier then
+                    local percent = math.floor((idx / total) * 100)
+                    if percent < 1 then percent = 1 end
+                    notifier.update(percent)
+                end
+            end
+        end
+
+        if notifier then
+            notifier.finish(removed)
+        end
     end)
 end
 
@@ -1884,9 +1965,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 120, 125)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 100, 104)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 80, 84)),
     })
     topGradient.Parent = topBar
 end
