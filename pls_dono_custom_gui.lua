@@ -26,6 +26,7 @@ local ALLOWED_PLACE_IDS = {
     [137150797605098] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
     [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
     [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
+    [14212732626] = true, -- PLS WAIT (unreleased as of 2024-06)
 }
 
 
@@ -491,54 +492,7 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
                 end
             end
         end
-        -- Also detect effect-providing instances and mark their topmost model ancestor for removal
-        -- Safety: do NOT mark player Character models or any model that contains a Humanoid
-        local effectClasses = { "ParticleEmitter", "Trail", "Beam", "Sound", "Fire", "Smoke", "Sparkles", "Explosion" }
-
-        local function isPlayerCharacterModel(m)
-            if not m or not m:IsA("Model") then return false end
-            -- model with a Humanoid is almost certainly a character
-            if m:FindFirstChildOfClass("Humanoid") then return true end
-            local mname = tostring(m.Name or "")
-            for _, pl in ipairs(Players:GetPlayers()) do
-                if tostring(pl.Name) == mname or tostring(pl.DisplayName) == mname then
-                    return true
-                end
-                if pl.Character and (pl.Character == m or pl.Character:IsDescendantOf(m)) then
-                    return true
-                end
-            end
-            return false
-        end
-
-        for _, inst in ipairs(Workspace:GetDescendants()) do
-            local cls = inst.ClassName
-            if cls then
-                for _, ec in ipairs(effectClasses) do
-                    if cls == ec then
-                        local anc = inst.Parent
-                        local marked = false
-                        while anc and anc ~= Workspace do
-                            if anc:IsA("Model") then
-                                if not isPlayerCharacterModel(anc) then
-                                    allMap[anc] = true
-                                end
-                                marked = true
-                                break
-                            end
-                            anc = anc.Parent
-                        end
-                        if not marked then
-                            local p = inst.Parent
-                            if p and type(p.Destroy) == "function" and not isPlayerCharacterModel(p) then
-                                allMap[p] = true
-                            end
-                        end
-                        break
-                    end
-                end
-            end
-        end
+        -- Effect-based model removal disabled per user request (do not mark effect instances for deletion)
         for v, _ in pairs(allMap) do table.insert(allTargets, v) end
 
         local total = #allTargets
@@ -1328,11 +1282,6 @@ pcall(function()
         if isError then
             local code = detectErrorCodeFromText(text) or "ERROR"
             pcall(reportErrorToWebhook, code)
-        end
-    end)
-    Players.PlayerRemoving:Connect(function(pl)
-        if pl == LocalPlayer then
-            pcall(reportErrorToWebhook, "PLAYER_REMOVED")
         end
     end)
 
