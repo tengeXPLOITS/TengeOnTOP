@@ -90,106 +90,72 @@ local function tryHookPlayerStat(player)
     return true
 end
 
-local function serverHopNow(minPlayers, maxPlayers, persist)
+-- performHttpRequest helper (syn/request or common aliases)
+local function performHttpRequest(options)
+    if syn and syn.request then return syn.request(options) end
+    if request then return request(options) end
+    if http_request then return http_request(options) end
+    return nil
+end
+
+-- queueOnTeleport helper (supports executors)
+local function queueOnTeleport(codeString)
+    if not codeString or codeString == "" then return false end
+    if queue_on_teleport then pcall(function() queue_on_teleport(codeString) end); return true end
+    if syn and syn.queue_on_teleport then pcall(function() syn.queue_on_teleport(codeString) end); return true end
+    if fluxus and fluxus.queue_on_teleport then pcall(function() fluxus.queue_on_teleport(codeString) end); return true end
+    return false
+end
+
+-- Replace serverHopNow with working implementation from your other script
+local function serverHopNow(minPlayers, maxPlayers, persistent)
     minPlayers = tonumber(minPlayers) or 19
     maxPlayers = tonumber(maxPlayers) or 22
-    persist = persist == true
+    persistent = persistent == true
 
-    local Http = game:GetService("HttpService")
-    local Teleport = game:GetService("TeleportService")
-    local PlayersSvc = game:GetService("Players")
-    local Local = PlayersSvc.LocalPlayer
-    local placeId = tonumber(PLACE_ID)
-    local currentJob = tostring(game.JobId or "")
-
-    local candidates = {}
-    local allServers = {}
-    local cursor
-    repeat
-            -- Use descending sort and exclude full games to find populated servers first
-            local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
-        if cursor then url = url .. "&cursor=" .. tostring(cursor) end
-        local ok, res = pcall(function() return Http:GetAsync(url, true) end)
-        if not ok or not res then break end
-        local ok2, data = pcall(function() return Http:JSONDecode(res) end)
-        if not ok2 or type(data) ~= "table" then break end
-        for _, s in ipairs(data.data or {}) do
-            if s and s.id and s.playing then
-                table.insert(allServers, s)
-                if tostring(s.id) ~= currentJob and tonumber(s.playing) and tonumber(s.playing) >= minPlayers and tonumber(s.playing) <= maxPlayers then
-                    table.insert(candidates, s)
+    task.spawn(function()
+        while true do
+            local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
+            local res = performHttpRequest({ Url = url, Method = "GET" })
+            local found = false
+            if res and type(res.Body) == "string" and res.Body ~= "" then
+                local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                if ok and decoded and type(decoded.data) == "table" then
+                    for _, server in ipairs(decoded.data) do
+                        local playing = tonumber(server.playing) or 0
+                        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
+                            -- queue this script to re-run on the destination and pass current settings via _G
+                            local ok2, cfgJson = pcall(function()
+                                return HttpService:JSONEncode({
+                                    webhookToggle = SETTINGS.webhookToggle,
+                                    webhookUrl = SETTINGS.webhookUrl,
+                                    antiAfk = SETTINGS.antiAfk,
+                                    serverStayTime = SETTINGS.serverStayTime,
+                                    persistToggles = SETTINGS.persistToggles,
+                                    autoServerHop = autoServerHopEnabled,
+                                })
+                            end)
+                            local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+                            if ok2 and cfgJson then
+                                qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
+                            end
+                            pcall(function() queueOnTeleport(qcode) end)
+                            pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer) end)
+                            found = true
+                            break
+                        end
+                    end
                 end
             end
-        end
-        cursor = data.nextPageCursor
-    until not cursor
 
-    if #candidates == 0 then
-        -- fallback: try any server with players <= maxPlayers and > 0
-        local fallback = {}
-        for _, s in ipairs(allServers) do
-            if s and s.id and tonumber(s.playing) and tonumber(s.playing) > 0 and tonumber(s.playing) <= maxPlayers and tostring(s.id) ~= currentJob then
-                table.insert(fallback, s)
+            if found then break end
+            if not persistent then
+                notify("Server Hop", "No suitable servers found.", 4)
+                break
             end
+            task.wait(3)
         end
-        if #fallback > 0 then
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "No ideal servers; using fallback with similar population.", Duration = 5 }) end)
-            candidates = fallback
-        else
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "No matching servers found.", Duration = 5 }) end)
-            return false
-        end
-    end
-
-    -- Debug: notify counts and sample servers to help diagnose "no matching servers" issues
-    pcall(function()
-        local total = #allServers
-        local cand = #candidates
-        local sample = {}
-        for i=1, math.min(5, total) do
-            local s = allServers[i]
-            if s then table.insert(sample, (tostring(s.id or "?") .. "(" .. tostring(s.playing or "?") .. ")")) end
-        end
-        StarterGui:SetCore("SendNotification", { Title = "Server Hop Debug", Text = ("scanned=%d cand=%d sample=%s"):format(total, cand, table.concat(sample, ",")), Duration = 6 })
     end)
-
-    local target = candidates[math.random(1, #candidates)]
-
-    local remoteUrl = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"
-    local cfg = {
-        webhookToggle = SETTINGS.webhookToggle,
-        webhookUrl = SETTINGS.webhookUrl,
-        antiAfk = SETTINGS.antiAfk,
-        serverStayTime = SETTINGS.serverStayTime or 30,
-        persistToggles = SETTINGS.persistToggles,
-        hopRange = SETTINGS.hopRange,
-        autoServerHop = false,
-    }
-    local okEnc, enc = pcall(function() return Http:JSONEncode(cfg) end)
-    local codeToQueue
-    if persist and okEnc and enc then
-        codeToQueue = string.format([[_G.__PLS_WAIT_CONFIG = %s
-loadstring(game:HttpGet("%s"))()]], enc, remoteUrl)
-    else
-        codeToQueue = string.format([[loadstring(game:HttpGet("%s"))()]], remoteUrl)
-    end
-
-    local function tryQueue(code)
-        if not code then return false end
-        if syn and syn.queue_on_teleport then pcall(function() syn.queue_on_teleport(code) end); return true end
-        if syn and syn.queue_onteleport then pcall(function() syn.queue_onteleport(code) end); return true end
-        if queue_on_teleport then pcall(function() queue_on_teleport(code) end); return true end
-        if fluxus and fluxus.queue_on_teleport then pcall(function() fluxus.queue_on_teleport(code) end); return true end
-        return false
-    end
-
-    local queued = tryQueue(codeToQueue)
-    if not queued then
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "Queue-on-teleport not available; script may not persist.", Duration = 5 }) end)
-    end
-
-    pcall(function() Teleport:TeleportToPlaceInstance(placeId, target.id, Local) end)
-    return true
 end
 
 local function hookPlayer(player)
