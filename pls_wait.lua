@@ -199,8 +199,7 @@ local function claimEmptyStands()
         if not pos then return false end
         local triggered = false
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if not inst or not inst.Parent then goto cont end
-            if inst:IsA("ProximityPrompt") then
+            if inst and inst.Parent and inst:IsA("ProximityPrompt") then
                 local pname = tostring(inst.Parent.Name or ""):lower()
                 local action = tostring(inst.Action or ""):lower()
                 local name = tostring(inst.Name or ""):lower()
@@ -222,27 +221,26 @@ local function claimEmptyStands()
                     end
                 end
             end
-            ::cont::
         end
         return triggered
     end
 
     for idx, stand in ipairs(standsList) do
-        if not stand or not stand.Parent then goto cont end
+        if stand and stand.Parent then
 
-        -- skip stands that already contain a ButtonPrompt child (these should be handled via StandButtons)
-        if stand:FindFirstChild("ButtonPrompt") then
-            goto cont
-        end
+            -- skip stands that already contain a ButtonPrompt child (these should be handled via StandButtons)
+            if stand:FindFirstChild("ButtonPrompt") then
+                -- skip
+            else
 
-        -- check for ObjectValue named Wner or Owner (case-insensitive)
-        local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
-        local ownerEmpty = true
-        if ownerObj and ownerObj:IsA("ObjectValue") then
-            ownerEmpty = (ownerObj.Value == nil)
-        end
+                -- check for ObjectValue named Wner or Owner (case-insensitive)
+                local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+                local ownerEmpty = true
+                if ownerObj and ownerObj:IsA("ObjectValue") then
+                    ownerEmpty = (ownerObj.Value == nil)
+                end
 
-        if ownerEmpty then
+                if ownerEmpty then
             local pivot = tryGetPivotPosition(stand)
             if pivot then
                 moveCharacterToPosition(pivot)
