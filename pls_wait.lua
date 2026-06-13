@@ -297,7 +297,6 @@ local function claimEmptyStands()
             end
             task.wait(0.6)
         end
-        ::cont::
     end
     if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
     notify("Booth Claim", "No empty stands claimed.", 4)
