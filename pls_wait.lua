@@ -199,7 +199,7 @@ local function claimEmptyStands()
         if not pos then return false end
         local triggered = false
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if not (inst and inst.Parent and inst:IsA("ProximityPrompt")) then continue end
+            if not (inst and inst.Parent and inst:IsA("ProximityPrompt")) then goto nextprompt end
             -- match prompt by name/action/objecttext/parent naming
             local pname = tostring(inst.Parent.Name or ""):lower()
             local action = tostring(inst.Action or ""):lower()
