@@ -40,6 +40,56 @@ end
 local function enableAntiAfk() end
 local function disableAntiAfk() end
 
+-- Webhook / donation helpers
+local function postWebhookEvent(kind, data)
+    if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local payload = {
+        username = "PlsWait",
+        embeds = {{
+            title = (kind and tostring(kind) or "event"):upper(),
+            description = HttpService:JSONEncode(data or {}),
+            color = 16753920,
+        }}
+    }
+    pcall(function()
+        HttpService:PostAsync(SETTINGS.webhookUrl, HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+    end)
+end
+
+local function tryHookPlayerStat(player)
+    if not player then return false end
+    local uid = tostring(player.UserId)
+    if donationConns["stat_"..uid] then return true end
+    local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
+    if not ls then return false end
+    local stat = ls:FindFirstChild(donationStatName) or nil
+    if not stat then
+        for _, c in ipairs(ls:GetChildren()) do
+            if c:IsA("IntValue") or c:IsA("NumberValue") or c:IsA("StringValue") then
+                local n = tonumber(tostring(c.Value):gsub("[^%d]",""))
+                if n and n > 0 then
+                    stat = c
+                    break
+                end
+            end
+        end
+    end
+    if not stat then return false end
+    donationTotals[uid] = tonumber(stat.Value) or 0
+    donationConns["stat_"..uid] = stat.Changed:Connect(function()
+        local newv = tonumber(stat.Value) or tonumber(tostring(stat.Value):gsub("[^%d]","")) or 0
+        local prev = donationTotals[uid] or 0
+        if newv ~= prev then
+            local delta = newv - prev
+            donationTotals[uid] = newv
+            if delta > 0 then
+                postWebhookEvent("donation", { from = player.Name, userId = player.UserId, amount = delta, total = newv })
+            end
+        end
+    end)
+    return true
+end
+
 local function serverHopNow(minPlayers, maxPlayers, persist)
     minPlayers = tonumber(minPlayers) or 19
     maxPlayers = tonumber(maxPlayers) or 22
@@ -53,6 +103,7 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
     local currentJob = tostring(game.JobId or "")
 
     local candidates = {}
+    local allServers = {}
     local cursor
     repeat
         local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100"
@@ -63,6 +114,7 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
         if not ok2 or type(data) ~= "table" then break end
         for _, s in ipairs(data.data or {}) do
             if s and s.id and s.playing then
+                table.insert(allServers, s)
                 if tostring(s.id) ~= currentJob and tonumber(s.playing) and tonumber(s.playing) >= minPlayers and tonumber(s.playing) <= maxPlayers then
                     table.insert(candidates, s)
                 end
@@ -72,8 +124,20 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
     until not cursor
 
     if #candidates == 0 then
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "No matching servers found.", Duration = 5 }) end)
-        return false
+        -- fallback: try any server with players <= maxPlayers and > 0
+        local fallback = {}
+        for _, s in ipairs(allServers) do
+            if s and s.id and tonumber(s.playing) and tonumber(s.playing) > 0 and tonumber(s.playing) <= maxPlayers and tostring(s.id) ~= currentJob then
+                table.insert(fallback, s)
+            end
+        end
+        if #fallback > 0 then
+            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "No ideal servers; using fallback with similar population.", Duration = 5 }) end)
+            candidates = fallback
+        else
+            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Server Hop", Text = "No matching servers found.", Duration = 5 }) end)
+            return false
+        end
     end
 
     local target = candidates[math.random(1, #candidates)]
@@ -85,6 +149,7 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
         antiAfk = SETTINGS.antiAfk,
         serverStayTime = SETTINGS.serverStayTime or 30,
         persistToggles = SETTINGS.persistToggles,
+        hopRangeIndex = SETTINGS.hopRangeIndex,
         autoServerHop = false,
     }
     local okEnc, enc = pcall(function() return Http:JSONEncode(cfg) end)
@@ -329,6 +394,14 @@ do
         local CONFIG_PATH = "pls_wait_config.json"
 
         local serverStayTime = SETTINGS.serverStayTime or 30
+        local hopRangeOptions = {
+            {19,22, label = "19-22"},
+            {15,18, label = "15-18"},
+            {10,14, label = "10-14"},
+            {1,9, label = "1-9"},
+            {0,9999, label = "Any"},
+        }
+        local hopRangeIndex = tonumber(SETTINGS.hopRangeIndex) or 1
         local autoServerHopEnabled = false
         local autoServerHopTask = nil
         SETTINGS.persistToggles = SETTINGS.persistToggles or false
@@ -338,10 +411,12 @@ do
                 webhookToggle = SETTINGS.webhookToggle,
                 webhookUrl = SETTINGS.webhookUrl,
                 antiAfk = SETTINGS.antiAfk,
+                hopRangeIndex = hopRangeIndex,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
                 autoServerHop = autoServerHopEnabled,
             }
+                SETTINGS.hopRangeIndex = hopRangeIndex
             local ok, encoded = pcall(function() return Http:JSONEncode(data) end)
             if not ok then return end
             pcall(function()
@@ -368,6 +443,7 @@ do
             SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
+            hopRangeIndex = tonumber(decoded.hopRangeIndex) or hopRangeIndex
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
@@ -381,6 +457,7 @@ do
                 SETTINGS.antiAfk = cfg.antiAfk or SETTINGS.antiAfk
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
+                hopRangeIndex = tonumber(cfg.hopRangeIndex) or hopRangeIndex
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
                 _G.__PLS_WAIT_CONFIG = nil
             end
@@ -395,20 +472,30 @@ do
 
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 520, 0, 420)
-        mainFrame.Position = UDim2.new(0.5, -260, 0.5, -210)
+        mainFrame.Size = UDim2.new(0, 460, 0, 360)
+        mainFrame.Position = UDim2.new(0.5, -230, 0.5, -180)
         mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
         mainFrame.Parent = screen
+        local mainCorner = Instance.new("UICorner")
+        mainCorner.CornerRadius = UDim.new(0,10)
+        mainCorner.Parent = mainFrame
 
         local title = Instance.new("TextLabel")
-        title.Size = UDim2.new(1, 0, 0, 30)
-        title.BackgroundTransparency = 1
+        title.Size = UDim2.new(1, 0, 0, 28)
+        title.Position = UDim2.new(0,0,0,0)
+        title.BackgroundColor3 = Color3.fromRGB(22,22,22)
         title.Text = "Pls Wait - Koyg UI"
         title.TextColor3 = Color3.fromRGB(255,255,255)
+        title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = mainFrame
+        local titleCorner = Instance.new("UICorner")
+        titleCorner.CornerRadius = UDim.new(0,8)
+        titleCorner.Parent = title
+        title.TextSize = 16
+        title.TextScaled = false
 
-        local tabs = {"Main","ServerHop","Settings","Webhook"}
+        local tabs = {"Main","ServerHop","Webhook"}
         local tabButtons = {}
         local tabFrames = {}
         for i, name in ipairs(tabs) do
@@ -416,7 +503,12 @@ do
             btn.Size = UDim2.new(0, 120, 0, 30)
             btn.Position = UDim2.new(0, (i-1)*120, 0, 30)
             btn.Text = name
+            btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+            btn.TextColor3 = Color3.fromRGB(240,240,240)
+            btn.AutoButtonColor = false
             btn.Parent = mainFrame
+            local corner = Instance.new("UICorner")
+            corner.Parent = btn
             tabButtons[name] = btn
 
             local frame = Instance.new("Frame")
@@ -426,6 +518,52 @@ do
             frame.Visible = (name == "Main")
             frame.Parent = mainFrame
             tabFrames[name] = frame
+        end
+
+        -- Make the UI draggable by dragging the title bar
+        do
+            local dragging = false
+            local dragStart = Vector2.new()
+            local startPos = UDim2.new()
+            local function update(input)
+                local delta = input.Position - dragStart
+                mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+            title.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    dragging = true
+                    dragStart = input.Position
+                    startPos = mainFrame.Position
+                    input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then
+                            dragging = false
+                        end
+                    end)
+                end
+            end)
+            title.InputChanged:Connect(function(input)
+                if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                    update(input)
+                end
+            end)
+            -- also allow dragging by the mainFrame background
+            mainFrame.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    dragging = true
+                    dragStart = input.Position
+                    startPos = mainFrame.Position
+                    input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then
+                            dragging = false
+                        end
+                    end)
+                end
+            end)
+            mainFrame.InputChanged:Connect(function(input)
+                if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                    update(input)
+                end
+            end)
         end
 
         local function selectTab(name)
@@ -443,6 +581,10 @@ do
             claimBtn.Size = UDim2.new(0,200,0,40)
             claimBtn.Position = UDim2.new(0,10,0,10)
             claimBtn.Text = "Claim Booth"
+            claimBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            claimBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local c = Instance.new("UICorner")
+            c.Parent = claimBtn
             claimBtn.Parent = frame
             claimBtn.MouseButton1Click:Connect(function()
                 task.spawn(function()
@@ -464,6 +606,10 @@ do
             afkToggle.Size = UDim2.new(0,60,0,20)
             afkToggle.Position = UDim2.new(0,140,0,60)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
+            afkToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local afkCorner = Instance.new("UICorner")
+            afkCorner.Parent = afkToggle
             afkToggle.Parent = frame
             afkToggle.MouseButton1Click:Connect(function()
                 SETTINGS.antiAfk = not SETTINGS.antiAfk
@@ -496,13 +642,42 @@ do
                 if SETTINGS.persistToggles then pcall(SaveSettings) end
             end)
 
+            local rangeLabel = Instance.new("TextLabel")
+            rangeLabel.Size = UDim2.new(0,120,0,20)
+            rangeLabel.Position = UDim2.new(0,10,0,40)
+            rangeLabel.Text = "Hop Range"
+            rangeLabel.BackgroundTransparency = 1
+            rangeLabel.TextColor3 = Color3.new(1,1,1)
+            rangeLabel.Parent = frame
+
+            local rangeBtn = Instance.new("TextButton")
+            rangeBtn.Size = UDim2.new(0,140,0,24)
+            rangeBtn.Position = UDim2.new(0,140,0,40)
+            rangeBtn.Text = (hopRangeOptions[hopRangeIndex] and hopRangeOptions[hopRangeIndex].label) or "Any"
+            rangeBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            rangeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local rCorner = Instance.new("UICorner")
+            rCorner.Parent = rangeBtn
+            rangeBtn.Parent = frame
+            rangeBtn.MouseButton1Click:Connect(function()
+                hopRangeIndex = hopRangeIndex + 1
+                if hopRangeIndex > #hopRangeOptions then hopRangeIndex = 1 end
+                rangeBtn.Text = hopRangeOptions[hopRangeIndex].label
+                if SETTINGS.persistToggles then pcall(SaveSettings) end
+            end)
+
             local hopBtn = Instance.new("TextButton")
             hopBtn.Size = UDim2.new(0,200,0,40)
             hopBtn.Position = UDim2.new(0,10,0,50)
             hopBtn.Text = "Server Hop Now"
+            hopBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local hCorner = Instance.new("UICorner")
+            hCorner.Parent = hopBtn
             hopBtn.Parent = frame
             hopBtn.MouseButton1Click:Connect(function()
-                serverHopNow(19,22,true)
+                local sel = hopRangeOptions[hopRangeIndex] or {19,22}
+                serverHopNow(sel[1], sel[2], true)
             end)
 
             local autoLabel = Instance.new("TextLabel")
@@ -517,6 +692,10 @@ do
             autoToggle.Size = UDim2.new(0,60,0,20)
             autoToggle.Position = UDim2.new(0,140,0,100)
             autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
+            autoToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            autoToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local atCorner = Instance.new("UICorner")
+            atCorner.Parent = autoToggle
             autoToggle.Parent = frame
             autoToggle.MouseButton1Click:Connect(function()
                 autoServerHopEnabled = not autoServerHopEnabled
@@ -528,8 +707,9 @@ do
                             local waitTime = tonumber(serverStayTime) and (tonumber(serverStayTime) * 60) or 1800
                             notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
                             task.wait(waitTime)
-                            if not autoServerHopEnabled then break end
-                            serverHopNow(19,22,true)
+                                if not autoServerHopEnabled then break end
+                                local sel = hopRangeOptions[hopRangeIndex] or {19,22}
+                                serverHopNow(sel[1], sel[2], true)
                         end
                         autoServerHopTask = nil
                     end)
@@ -537,28 +717,7 @@ do
             end)
         end
 
-        -- Settings tab
-        do
-            local frame = tabFrames.Settings
-            local persistLabel = Instance.new("TextLabel")
-            persistLabel.Size = UDim2.new(0,200,0,20)
-            persistLabel.Position = UDim2.new(0,10,0,10)
-            persistLabel.Text = "Persist Toggles Across Hops"
-            persistLabel.BackgroundTransparency = 1
-            persistLabel.TextColor3 = Color3.new(1,1,1)
-            persistLabel.Parent = frame
-
-            local persistToggle = Instance.new("TextButton")
-            persistToggle.Size = UDim2.new(0,60,0,20)
-            persistToggle.Position = UDim2.new(0,220,0,10)
-            persistToggle.Text = SETTINGS.persistToggles and "ON" or "OFF"
-            persistToggle.Parent = frame
-            persistToggle.MouseButton1Click:Connect(function()
-                SETTINGS.persistToggles = not SETTINGS.persistToggles
-                persistToggle.Text = SETTINGS.persistToggles and "ON" or "OFF"
-                pcall(SaveSettings)
-            end)
-        end
+        -- Settings tab removed per user request
 
         -- Webhook tab
         do
@@ -613,7 +772,8 @@ do
                     local waitTime = tonumber(serverStayTime) and (tonumber(serverStayTime) * 60) or 1800
                     notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
                     task.wait(waitTime)
-                    serverHopNow(19,22,true)
+                    local sel = hopRangeOptions[hopRangeIndex] or {19,22}
+                    serverHopNow(sel[1], sel[2], true)
                 end
                 autoServerHopTask = nil
             end)
