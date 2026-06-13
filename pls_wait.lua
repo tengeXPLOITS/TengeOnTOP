@@ -10,6 +10,13 @@ if tonumber(game.PlaceId) ~= tonumber(PLACE_ID) then
 end
 
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then return end
 
@@ -18,50 +25,121 @@ local SETTINGS = {
     webhookUrl = "",
     antiAfk = true,
 }
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
--- Simple local notifier (uses SetCore SendNotification when available)
-local function notify(title, text, duration)
+
+local notificationTimestamps = {}
+local function notify(title, text, duration, dedupeKey, cooldown)
+    local now = tick()
+    if dedupeKey and cooldown then
+        local last = notificationTimestamps[dedupeKey] or 0
+        if now - last < cooldown then return end
+        notificationTimestamps[dedupeKey] = now
+    end
     pcall(function()
-        local starter = game:GetService("StarterGui")
-        starter:SetCore("SendNotification", {Title = tostring(title or "Notice"), Text = tostring(text or ""), Duration = tonumber(duration) or 3})
+        StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = tonumber(duration) or 4 })
     end)
 end
 
--- Return a reasonable pivot/position for a stand-like object
-local function tryGetPivotPosition(obj)
-    if not obj then return nil end
-    if typeof(obj) == "Instance" then
-        if obj:IsA("BasePart") then return obj.Position end
-        if obj.PrimaryPart then return obj.PrimaryPart.Position end
-        local p = obj:FindFirstChild("Pivot") or obj:FindFirstChild("Center")
-        if p and p:IsA("BasePart") then return p.Position end
-        -- fallback: first BasePart descendant
-        for _, v in ipairs(obj:GetDescendants()) do
-            if v:IsA("BasePart") then return v.Position end
-        end
-    end
+local function performHttpRequest(options)
+    if syn and syn.request then return syn.request(options) end
+    if request then return request(options) end
+    if http_request then return http_request(options) end
+    -- fallback: try game.HttpGet/HttpPost where appropriate (note: may error if not allowed)
     return nil
 end
 
--- Resolve a numeric slot id from a Stand instance using multiple fallbacks
+-- Simple server hop helper (fetches public servers for same place)
+local function serverHopNow()
+    task.spawn(function()
+        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
+        local res = performHttpRequest({ Url = url, Method = "GET" })
+        if res and type(res.Body) == "string" then
+            local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            if ok and decoded and type(decoded.data) == "table" then
+                for _, server in ipairs(decoded.data) do
+                    if server.id and server.playing and tonumber(server.playing) > 0 and server.id ~= tostring(game.JobId) then
+                        pcall(function()
+                            TeleportService:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
+                        end)
+                        return
+                    end
+                end
+            end
+        end
+        notify("Server Hop", "No suitable servers found.", 4)
+    end)
+end
+
+-- Anti-AFK (VirtualUser) simple option
+local antiAfkConn
+local function enableAntiAfk()
+    if antiAfkConn then return end
+    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+    if not ok or not vu then return end
+    antiAfkConn = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0,0))
+        end)
+    end)
+    notify("Anti-AFK", "Enabled", 2)
+end
+local function disableAntiAfk()
+    if antiAfkConn then pcall(function() antiAfkConn:Disconnect() end) antiAfkConn = nil end
+    notify("Anti-AFK", "Disabled", 2)
+end
+if SETTINGS.antiAfk then pcall(enableAntiAfk) end
+
+-- Webhook helper (minimal)
+local function postWebhookCode(code)
+    if not SETTINGS.webhookToggle then return false end
+    local url = tostring(SETTINGS.webhookUrl or ""):match("%S+")
+    if not url or url == "" then return false end
+    pcall(function()
+        performHttpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({ content = tostring(code) })
+        })
+    end)
+    return true
+end
+
+-- BOOTH CLAIMING: paste or require your booth claiming code here and call it
+-- Example placeholder function:
+-- Try to get a useful pivot/position for a Model or BasePart
+local function tryGetPivotPosition(obj)
+    if not obj then return nil end
+    local ok, res = pcall(function()
+        if typeof(obj) == "Instance" then
+            if obj:IsA("Model") then
+                if obj.GetPivot then
+                    return obj:GetPivot().Position
+                end
+                if obj.PrimaryPart then
+                    return obj.PrimaryPart.Position
+                end
+            elseif obj:IsA("BasePart") then
+                return obj.Position
+            end
+        end
+        return nil
+    end)
+    if ok then return res end
+    return nil
+end
+
 local function findSlotFromStand(stand)
     if not stand then return nil end
-    -- try name digits
-    local n = tostring(stand.Name or "")
-    local m = n:match("(%d+)")
-    if m then return tonumber(m) end
-
-    -- try attributes
+    -- try extract number from name
+    local n = tostring(stand.Name or ""):match("(%d+)")
+    if n then return tonumber(n) end
+    -- try attributes (some maps store StandId as an Attribute)
     if stand.GetAttribute then
-        local a = stand:GetAttribute("StandId") or stand:GetAttribute("Stand") or stand:GetAttribute("Slot")
-        if a then return tonumber(a) end
+        local aid = stand:GetAttribute("StandId") or stand:GetAttribute("standId") or stand:GetAttribute("Slot") or stand:GetAttribute("slot")
+        if aid and tonumber(aid) then return tonumber(aid) end
     end
-
-    -- try common Int/Number/String children
+    -- try common IntValue children
     local candidates = {"Slot","StandId","Index","Id","BoothSlot","Number"}
     for _, cname in ipairs(candidates) do
         local child = stand:FindFirstChild(cname)
@@ -75,227 +153,6 @@ local function findSlotFromStand(stand)
     end
     return nil
 end
-
--- Anti-AFK handlers
-local _antiAfkConn = nil
-local function enableAntiAfk()
-    if _antiAfkConn then return end
-    local plr = LocalPlayer
-    _antiAfkConn = plr.Idled:Connect(function()
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new(0,0))
-        end)
-    end)
-end
-local function disableAntiAfk()
-    if _antiAfkConn then
-        pcall(function() _antiAfkConn:Disconnect() end)
-        _antiAfkConn = nil
-    end
-end
-
--- Simple server hop: fetch public servers and teleport to a different instance
-local function serverHopNow()
-    local ok, data = pcall(function()
-        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(game.PlaceId))
-        local res = HttpService:GetAsync(url)
-        return HttpService:JSONDecode(res)
-    end)
-    if not ok or not data then
-        notify("ServerHop", "Failed to fetch server list.", 4)
-        return
-    end
-    for _, s in ipairs(data.data or {}) do
-        if s.id and tostring(s.id) ~= tostring(game.JobId) and (not s.playing or not s.maxPlayers or s.playing < s.maxPlayers) then
-            pcall(function()
-                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
-            end)
-            return
-        end
-    end
-    notify("ServerHop", "No suitable server found.", 4)
-end
-do
-    local ok, playerGui = pcall(function()
-        return LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 6)
-    end)
-    if not ok or not playerGui then return end
-
-    pcall(function()
-        if playerGui:FindFirstChild("PlsWaitGui") then playerGui.PlsWaitGui:Destroy() end
-
-        local screen = Instance.new("ScreenGui")
-        screen.Name = "PlsWaitGui"
-        screen.ResetOnSpawn = false
-        screen.Parent = playerGui
-
-        local main = Instance.new("Frame")
-        main.Name = "Main"
-        main.Size = UDim2.new(0, 540, 0, 360)
-        main.Position = UDim2.new(0.5, -270, 0.5, -180)
-        main.BackgroundColor3 = Color3.fromRGB(28,28,30)
-        main.BorderSizePixel = 0
-        main.Parent = screen
-        local mcorner = Instance.new("UICorner") mcorner.CornerRadius = UDim.new(0,12) mcorner.Parent = main
-
-        local sidebar = Instance.new("Frame")
-        sidebar.Size = UDim2.new(0, 140, 1, 0)
-        sidebar.Position = UDim2.new(0,0,0,0)
-        sidebar.BackgroundTransparency = 1
-        sidebar.Parent = main
-
-        local function makeTabButton(text, y)
-            local b = Instance.new("TextButton")
-            b.Size = UDim2.new(1, -16, 0, 48)
-            b.Position = UDim2.new(0,8,0,y)
-            b.BackgroundColor3 = Color3.fromRGB(40,40,44)
-            b.TextColor3 = Color3.fromRGB(240,240,240)
-            b.Font = Enum.Font.GothamSemibold
-            b.TextSize = 16
-            b.Text = text
-            b.AutoButtonColor = true
-            local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8) c.Parent = b
-            b.Parent = main
-            return b
-        end
-
-        local tabBooth = makeTabButton("Booth", 12)
-        local tabServer = makeTabButton("ServerHop", 72)
-        local tabMain = makeTabButton("Main", 132)
-
-        local content = Instance.new("Frame")
-        content.Size = UDim2.new(1, -160, 1, -24)
-        content.Position = UDim2.new(0,150,0,12)
-        content.BackgroundTransparency = 1
-        content.Parent = main
-
-        local function makeContentFrame()
-            local f = Instance.new("Frame")
-            f.Size = UDim2.new(1,0,1,0)
-            f.BackgroundTransparency = 1
-            f.Parent = content
-            f.Visible = false
-            return f
-        end
-
-        local frameBooth = makeContentFrame()
-        local frameServer = makeContentFrame()
-        local frameMain = makeContentFrame()
-        frameBooth.Visible = true
-
-        -- Booth tab
-        local claimBtn = Instance.new("TextButton")
-        claimBtn.Size = UDim2.new(1, 0, 0, 48)
-        claimBtn.Position = UDim2.new(0, 0, 0, 0)
-        claimBtn.BackgroundColor3 = Color3.fromRGB(50,50,54)
-        claimBtn.TextColor3 = Color3.fromRGB(240,240,240)
-        claimBtn.Font = Enum.Font.GothamSemibold
-        claimBtn.TextSize = 16
-        claimBtn.Text = "Claim Booth"
-        claimBtn.Parent = frameBooth
-        local cbcorner = Instance.new("UICorner") cbcorner.CornerRadius = UDim.new(0,8) cbcorner.Parent = claimBtn
-        claimBtn.MouseButton1Click:Connect(function()
-            task.spawn(function()
-                notify("Booth", "Attempting claim...", 3)
-                local ok, res = claimBooth()
-                if ok and res then
-                    notify("Booth", "Claim attempted (success).", 4)
-                else
-                    notify("Booth", "Claim attempt finished or failed.", 4)
-                end
-            end)
-        end)
-
-        local antiAfkBtn = Instance.new("TextButton")
-        antiAfkBtn.Size = UDim2.new(1, 0, 0, 40)
-        antiAfkBtn.Position = UDim2.new(0, 0, 0, 64)
-        antiAfkBtn.BackgroundColor3 = Color3.fromRGB(50,50,54)
-        antiAfkBtn.TextColor3 = Color3.fromRGB(240,240,240)
-        antiAfkBtn.Font = Enum.Font.GothamSemibold
-        antiAfkBtn.TextSize = 14
-        antiAfkBtn.Text = "Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off")
-        antiAfkBtn.Parent = frameBooth
-        local aa = Instance.new("UICorner") aa.CornerRadius = UDim.new(0,8) aa.Parent = antiAfkBtn
-        antiAfkBtn.MouseButton1Click:Connect(function()
-            SETTINGS.antiAfk = not SETTINGS.antiAfk
-            antiAfkBtn.Text = "Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off")
-            if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
-        end)
-
-        -- ServerHop tab
-        local serverHopBtn = Instance.new("TextButton")
-        serverHopBtn.Size = UDim2.new(1, 0, 0, 48)
-        serverHopBtn.Position = UDim2.new(0, 0, 0, 0)
-        serverHopBtn.BackgroundColor3 = Color3.fromRGB(50,50,54)
-        serverHopBtn.TextColor3 = Color3.fromRGB(240,240,240)
-        serverHopBtn.Font = Enum.Font.GothamSemibold
-        serverHopBtn.TextSize = 16
-        serverHopBtn.Text = "Server Hop"
-        serverHopBtn.Parent = frameServer
-        local shc = Instance.new("UICorner") shc.CornerRadius = UDim.new(0,8) shc.Parent = serverHopBtn
-        serverHopBtn.MouseButton1Click:Connect(function() task.spawn(serverHopNow) end)
-
-        -- Main tab (webhook toggle + info)
-        local webhookBtn = Instance.new("TextButton")
-        webhookBtn.Size = UDim2.new(1, 0, 0, 40)
-        webhookBtn.Position = UDim2.new(0, 0, 0, 0)
-        webhookBtn.BackgroundColor3 = Color3.fromRGB(50,50,54)
-        webhookBtn.TextColor3 = Color3.fromRGB(240,240,240)
-        webhookBtn.Font = Enum.Font.GothamSemibold
-        webhookBtn.TextSize = 14
-        webhookBtn.Text = "Webhook: Off"
-        webhookBtn.Parent = frameMain
-        local wc = Instance.new("UICorner") wc.CornerRadius = UDim.new(0,8) wc.Parent = webhookBtn
-        webhookBtn.MouseButton1Click:Connect(function()
-            SETTINGS.webhookToggle = not SETTINGS.webhookToggle
-            webhookBtn.Text = "Webhook: " .. (SETTINGS.webhookToggle and "On" or "Off")
-        end)
-
-        -- Tab switching
-        local function showTab(t)
-            frameBooth.Visible = (t == "Booth")
-            frameServer.Visible = (t == "Server")
-            frameMain.Visible = (t == "Main")
-        end
-        tabBooth.MouseButton1Click:Connect(function() showTab("Booth") end)
-        tabServer.MouseButton1Click:Connect(function() showTab("Server") end)
-        tabMain.MouseButton1Click:Connect(function() showTab("Main") end)
-
-        -- Close / toggle visibility via RightControl
-        local visible = true
-        local function setVisible(v)
-            visible = v
-            main.Visible = v
-        end
-        setVisible(true)
-        local UserInput = game:GetService("UserInputService")
-        UserInput.InputBegan:Connect(function(input, g)
-            if g then return end
-            if input.KeyCode == Enum.KeyCode.RightControl then
-                setVisible(not visible)
-            end
-        end)
-
-        -- small close button
-        local closeSmall = Instance.new("TextButton")
-        closeSmall.Size = UDim2.new(0, 28, 0, 28)
-        closeSmall.Position = UDim2.new(1, -36, 0, 8)
-        closeSmall.Text = "✕"
-        closeSmall.BackgroundColor3 = Color3.fromRGB(60,60,64)
-        closeSmall.TextColor3 = Color3.fromRGB(220,220,220)
-        closeSmall.Font = Enum.Font.GothamBold
-        closeSmall.TextSize = 16
-        closeSmall.Parent = main
-        local csc = Instance.new("UICorner") csc.CornerRadius = UDim.new(0,6) csc.Parent = closeSmall
-        closeSmall.MouseButton1Click:Connect(function() setVisible(false) end)
-
-    end)
-
-    -- fire a single booth claim on script execute
-    task.spawn(function() pcall(claimBooth) end)
-end
-    
 
 local function moveCharacterToPosition(pos)
     if not pos then return false end
@@ -418,4 +275,127 @@ end
 local function claimBooth()
     return pcall(claimEmptyStands)
 end
+
+-- Create a centered, mobile-friendly GUI
+do
+    local ok, playerGui = pcall(function()
+        return LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 6)
+    end)
+    if not (ok and playerGui) then
+        notify("Fluent UI", "PlayerGui not available; falling back to existing UI.", 5)
+    else
+        local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+        local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+        local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+        local Window = Fluent:CreateWindow({
+            Title = "Pls Wait",
+            SubTitle = "Booth Claimer",
+            TabWidth = 160,
+            Size = UDim2.fromOffset(520, 420),
+            Acrylic = true,
+            Theme = "Dark",
+            MinimizeKey = Enum.KeyCode.LeftControl
+        })
+
+        local Tabs = {
+            Main = Window:AddTab({ Title = "Main", Icon = "" }),
+            Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+        }
+
+        local Options = Fluent.Options
+
+        -- persistent toggles for auto-claim
+        local autoClaiming = false
+        local autoClaimTask = nil
+
+        -- Main tab controls
+        Tabs.Main:AddButton({
+            Title = "Claim Booth",
+            Description = "Attempt to claim nearest empty booth",
+            Callback = function()
+                task.spawn(function()
+                    notify("Booth", "Attempting claim...", 3)
+                    local ok, res = claimBooth()
+                    if ok and res then
+                        notify("Booth", "Claim attempted (success).", 4)
+                    else
+                        notify("Booth", "Claim attempt finished or failed.", 4)
+                    end
+                end)
+            end
+        })
+
+        Tabs.Main:AddButton({
+            Title = "Server Hop",
+            Description = "Teleport to another server for this place",
+            Callback = function()
+                task.spawn(serverHopNow)
+            end
+        })
+
+        local AutoToggle = Tabs.Main:AddToggle("AutoClaim", { Title = "Auto-Claim", Default = false })
+        AutoToggle:OnChanged(function()
+            autoClaiming = Options.AutoClaim.Value
+            if autoClaiming then
+                autoClaimTask = task.spawn(function()
+                    while autoClaiming do
+                        local ok, res = claimBooth()
+                        if ok and res then
+                            autoClaiming = false
+                            Options.AutoClaim:SetValue(false)
+                            break
+                        end
+                        task.wait(2.5)
+                        if Fluent.Unloaded then break end
+                    end
+                end)
+            else
+                if autoClaimTask then
+                    pcall(function() task.cancel(autoClaimTask) end)
+                    autoClaimTask = nil
+                end
+            end
+        end)
+
+        local AntiAfkToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Anti-AFK", Default = SETTINGS.antiAfk })
+        AntiAfkToggle:OnChanged(function()
+            SETTINGS.antiAfk = Options.AntiAFK.Value
+            if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
+        end)
+
+        -- Settings
+        Tabs.Settings:AddToggle("WebhookEnabled", { Title = "Webhook Enabled", Default = SETTINGS.webhookToggle })
+        Tabs.Settings:AddInput("WebhookURL", {
+            Title = "Webhook URL",
+            Default = SETTINGS.webhookUrl,
+            Placeholder = "https://discord.com/api/webhooks/...",
+            Callback = function(Value)
+                SETTINGS.webhookUrl = tostring(Value or "")
+            end
+        })
+
+        -- Hand the library over to our managers
+        SaveManager:SetLibrary(Fluent)
+        InterfaceManager:SetLibrary(Fluent)
+        SaveManager:IgnoreThemeSettings()
+        SaveManager:SetIgnoreIndexes({})
+        InterfaceManager:SetFolder("PlsWait")
+        SaveManager:SetFolder("PlsWait/specific-game")
+        InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+        SaveManager:BuildConfigSection(Tabs.Settings)
+
+        Window:SelectTab(1)
+
+        Fluent:Notify({
+            Title = "Pls Wait",
+            Content = "Fluent UI loaded.",
+            Duration = 6
+        })
+
+        -- Load autoload config if any
+        pcall(function() SaveManager:LoadAutoloadConfig() end)
+    end
+end
+
 -- Script loaded: use functions directly (not returning a module table)
