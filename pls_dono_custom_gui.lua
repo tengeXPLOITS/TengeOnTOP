@@ -22,15 +22,59 @@ if not LocalPlayer then
     return
 end
 
--- Allow this script to run only in these approved place IDs
 local ALLOWED_PLACE_IDS = {
-    [133296110759666] = true, -- Simply Donate!
+    [133296110759666] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
     [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
     [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
 }
 
-if not ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
-    return
+-- Attempt to auto-allow places listed on a Roblox community page (helps when places move/remove)
+local function fetchCommunityPlaceIdsEarly(community)
+    if not community then
+        return {}
+    end
+
+    local cid = tostring(community):match("(%d+)") or tostring(community):match("communities/(%d+)")
+    if not cid then
+        return {}
+    end
+
+    local ok, body = pcall(function()
+        return game:HttpGet("https://www.roblox.com/communities/" .. cid)
+    end)
+    if not ok or type(body) ~= "string" then
+        return {}
+    end
+
+    local found = {}
+    for pid in body:gmatch("/places/(%d+)") do
+        found[tonumber(pid)] = true
+    end
+    for pid in body:gmatch("/games/(%d+)") do
+        found[tonumber(pid)] = true
+    end
+    for pid in body:gmatch('data%-place%-id="(%d+)"') do
+        found[tonumber(pid)] = true
+    end
+
+    local list = {}
+    for k in pairs(found) do
+        table.insert(list, k)
+    end
+    return list
+end
+
+local currentPlaceId = tonumber(game.PlaceId) or 0
+if not ALLOWED_PLACE_IDS[currentPlaceId] then
+    -- community ID for Dusks Studios (from your link)
+    local communityId = 643624063
+    local places = fetchCommunityPlaceIdsEarly(communityId)
+    for _, id in ipairs(places) do
+        ALLOWED_PLACE_IDS[id] = true
+    end
+    if not ALLOWED_PLACE_IDS[currentPlaceId] then
+        return
+    end
 end
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
@@ -1201,10 +1245,15 @@ end
 
 local function choosePlaceId()
     if settings.vcServerHopToggle then
-        return 8943844393
-    else
-        return 8737602449
+        return VC_PLS_DONATE_PLACE_ID
     end
+
+    local cur = tonumber(game.PlaceId) or 0
+    if ALLOWED_PLACE_IDS[cur] then
+        return cur
+    end
+
+    return DEFAULT_PLS_DONATE_PLACE_ID
 end
 
 serverHopNow = function(reason)
