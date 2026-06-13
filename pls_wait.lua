@@ -169,7 +169,11 @@ local function moveCharacterToPosition(pos)
     return false
 end
 
+local claimLock = false
 local function claimEmptyStands()
+    if claimLock then return false end
+    claimLock = true
+    local function _run()
     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:WaitForChild("Stands", 5)
     if not standsFolder then
         notify("Booth Claim", "No Stands folder found.", 4)
@@ -250,6 +254,11 @@ local function claimEmptyStands()
         notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
         return false
     end
+    end
+    local ok, res = pcall(_run)
+    claimLock = false
+    if ok then return res end
+    return false
 end
 
 local function claimBooth()
