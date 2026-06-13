@@ -1032,7 +1032,8 @@ end
 do
     local rawEnable = enableVisualClone
     enableVisualClone = function(...)
-        local ok, err = xpcall(function() return rawEnable(...) end, function(e) return debug.traceback(e, 2) end)
+        local args = {...}
+        local ok, err = xpcall(function() return rawEnable(table.unpack(args)) end, function(e) return debug.traceback(e, 2) end)
         if not ok then
             pcall(function()
                 notify("Anti-Lag Error", tostring(err), 10, "anti-lag-err", 1)
