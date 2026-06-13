@@ -108,38 +108,7 @@ local function textMatchesLocalPlayer(value)
     return normalized == localName or normalized == localDisplayName
 end
 
-local function resolvePlayerInfoFromText(value)
-    local normalized = normalizePlayerText(value)
-    if normalized == "" then
-        return nil
-    end
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and normalizePlayerText(pl.Name) == normalized then
-            return {
-                name = tostring(pl.Name or "Unknown"),
-                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
-                userId = tonumber(pl.UserId) or 0,
-            }
-        end
-    end
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and normalizePlayerText(pl.DisplayName) == normalized then
-            return {
-                name = tostring(pl.Name or "Unknown"),
-                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
-                userId = tonumber(pl.UserId) or 0,
-            }
-        end
-    end
-
-    return {
-        name = trimText(value),
-        displayName = trimText(value),
-        userId = 0,
-    }
-end
+-- resolvePlayerInfoFromText removed: donor prediction now uses getNearestPlayerInfo()
 
 local function pruneRecentDonationLogs(now)
     now = tonumber(now) or tick()
@@ -179,7 +148,7 @@ local function recordDonationEvent(donorText, amountValue, recipientText)
 
     table.insert(recentDonationLogs, {
         amount = amount,
-        donorInfo = resolvePlayerInfoFromText(donorText),
+        donorInfo = (type(getNearestPlayerInfo) == "function") and getNearestPlayerInfo() or { name = trimText(donorText), displayName = trimText(donorText), userId = 0 },
         time = now,
     })
 
@@ -682,63 +651,15 @@ local function enableAntiLag()
         antiLagPart.Parent = Workspace
     end)
 
-    -- Fade out, switch camera, fade in
+    -- Switch camera immediately to the anti-lag anchor (no ScreenGui)
     pcall(function()
-        if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end
-        antiLagFadeGui = Instance.new("ScreenGui")
-        antiLagFadeGui.Name = "PlsDono_AntiLagFade"
-        antiLagFadeGui.ResetOnSpawn = false
-        antiLagFadeGui.Parent = GuiParent
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(1,0,1,0)
-        f.BackgroundColor3 = Color3.new(0,0,0)
-        f.BackgroundTransparency = 1
-        f.BorderSizePixel = 0
-        f.Parent = antiLagFadeGui
-        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.6}):Play()
-        task.wait(0.24)
         if cam and antiLagPart then
-            pcall(function()
-                cam.CameraSubject = antiLagPart
-                cam.CameraType = Enum.CameraType.Custom
-            end)
+            cam.CameraSubject = antiLagPart
+            cam.CameraType = Enum.CameraType.Custom
         end
-        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 1}):Play()
-        task.delay(0.5, function()
-            pcall(function() if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end end)
-        end)
     end)
 
-    -- idle timer GUI
-    pcall(function()
-        if antiLagIdleGui and antiLagIdleGui.Parent then antiLagIdleGui:Destroy() end
-        antiLagIdleGui = Instance.new("ScreenGui")
-        antiLagIdleGui.Name = "PlsDono_AntiLagIdle"
-        antiLagIdleGui.ResetOnSpawn = false
-        antiLagIdleGui.Parent = GuiParent
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0,160,0,28)
-        lbl.Position = UDim2.new(1,-180,0,8)
-        lbl.BackgroundTransparency = 0.3
-        lbl.BackgroundColor3 = Color3.fromRGB(18,18,20)
-        lbl.TextColor3 = Color3.fromRGB(240,240,240)
-        lbl.Font = Enum.Font.GothamSemibold
-        lbl.TextSize = 14
-        lbl.Text = "Idle: 00:00"
-        lbl.BorderSizePixel = 0
-        lbl.Parent = antiLagIdleGui
-        local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,6) corner.Parent = lbl
-        antiLagIdleTask = task.spawn(function()
-            local start = tick()
-            while antiLagActive and antiLagIdleGui and antiLagIdleGui.Parent do
-                local elapsed = math.floor(tick() - start)
-                local mins = math.floor(elapsed / 60)
-                local secs = elapsed % 60
-                lbl.Text = string.format("Idle: %02d:%02d", mins, secs)
-                task.wait(1)
-            end
-        end)
-    end)
+    -- No idle ScreenGui: we intentionally avoid creating HUD elements while anti-lag is active
 
     -- floating animation
     antiLagFloatTask = task.spawn(function()
@@ -780,31 +701,12 @@ local function disableAntiLag()
         end)
     end
 
-    -- fade transition when disabling
+    -- Directly restore camera without creating a ScreenGui
     pcall(function()
-        if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end
-        antiLagFadeGui = Instance.new("ScreenGui")
-        antiLagFadeGui.Name = "PlsDono_AntiLagFade"
-        antiLagFadeGui.ResetOnSpawn = false
-        antiLagFadeGui.Parent = GuiParent
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(1,0,1,0)
-        f.BackgroundColor3 = Color3.new(0,0,0)
-        f.BackgroundTransparency = 1
-        f.BorderSizePixel = 0
-        f.Parent = antiLagFadeGui
-        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.6}):Play()
-        task.wait(0.24)
         if cam then
-            pcall(function()
-                if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
-                if savedCameraType then cam.CameraType = savedCameraType end
-            end)
+            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
+            if savedCameraType then cam.CameraType = savedCameraType end
         end
-        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 1}):Play()
-        task.delay(0.5, function()
-            pcall(function() if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end end)
-        end)
     end)
 
     pcall(function() if antiLagIdleGui and antiLagIdleGui.Parent then antiLagIdleGui:Destroy() end end)
@@ -819,6 +721,32 @@ local function disableAntiLag()
     antiLagActive = false
     pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Off" end end)
     pcall(function() notify("Anti-Lag","Disabled: camera and controls restored.",3,"anti-lag",1) end)
+end
+
+-- Anti-AFK: prevent idle kick by using VirtualUser on LocalPlayer.Idled
+local antiAfkConn = nil
+local function enableAntiAfk()
+    if antiAfkConn then return true end
+    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+    if not ok or not vu then
+        return false
+    end
+    antiAfkConn = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0,0))
+        end)
+    end)
+    pcall(function() notify("Anti-AFK","Enabled: will prevent idle kick.",3,"anti-afk",1) end)
+    return true
+end
+
+local function disableAntiAfk()
+    if antiAfkConn then
+        pcall(function() antiAfkConn:Disconnect() end)
+        antiAfkConn = nil
+    end
+    pcall(function() notify("Anti-AFK","Disabled.",3,"anti-afk",1) end)
 end
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
@@ -847,6 +775,7 @@ local defaults = {
     plusHopToggle = false,
     plusHopMinPlayers = 3,
     antiLagBeta = false,
+    antiAfkToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
 }
@@ -1448,6 +1377,40 @@ local function sendDonationWebhook(amount, donorInfo)
     })
 end
 
+-- Report errors to configured webhook (rate-limited)
+local function reportErrorToWebhook(msg)
+    if not settings or not settings.webhookToggle then return end
+    local url = tostring(settings.webhookBox or ""):match("%S+")
+    if not url or url == "" then return end
+    local now = tick()
+    local last = notificationTimestamps["webhook_error"] or 0
+    if now - last < 60 then
+        return
+    end
+    notificationTimestamps["webhook_error"] = now
+    pcall(function()
+        postWebhookJson(url, {
+            username = "K_OYG's UI - Client",
+            embeds = {{
+                title = "Client Error Detected",
+                description = tostring(msg or "(no message)"),
+                color = 0xFF3333,
+            }},
+        })
+    end)
+end
+
+-- Hook LogService to send webhook on error-like messages
+pcall(function()
+    LogService.MessageOut:Connect(function(message)
+        local text = tostring(message or "")
+        local lower = text:lower()
+        if lower:find("error") or lower:find("exception") or lower:find("stack traceback") or lower:find("stack") then
+            pcall(reportErrorToWebhook, text)
+        end
+    end)
+end)
+
 
 
 local function resetHopTimer()
@@ -1575,9 +1538,7 @@ requestServerHop = function(reason)
             pcall(function()
                 notify("Plus Hop", "searching for PLUS servers, pls wait!", 6, "plus-hop-kick", 10)
             end)
-            pcall(function()
-                LocalPlayer:Kick("searching for PLUS servers, pls wait!")
-            end)
+            -- Removed forced client kick for plus-hop; user opted to avoid kicking
             return false
         end
     end
@@ -3063,6 +3024,13 @@ settingHandlers = {
             pcall(function() disableAntiLag() end)
         end
     end,
+    antiAfkToggle = function(value)
+        if value then
+            pcall(function() enableAntiAfk() end)
+        else
+            pcall(function() disableAntiAfk() end)
+        end
+    end,
 }
 
 local handledClaimSlot
@@ -3572,6 +3540,7 @@ local function buildSettingsTabs()
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
         antiLagStatusLabel = createInfoLabel(mainSection, "Anti-Lag: Off")
+        createToggle(mainSection, "Anti-AFK", "antiAfkToggle")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
