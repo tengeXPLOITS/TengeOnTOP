@@ -580,11 +580,6 @@ local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 
 local defaults = {
-    goalBox = 5,
-    customBoothText = "Please help me reach my goal! Goal: $G",
-    goalBarHeaderText = "GOAL $G",
-    goalBarColor = "blue",
-    fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
     moveMode = "Teleport",
@@ -806,8 +801,6 @@ end
 
 local serverHopNow
 local requestServerHop
-local countZeroDonatedPlayers
-local updateBoothTextNow
 
 local hopCooldownSeconds = 1
 local lastHopTick = 0
@@ -1202,246 +1195,9 @@ local function formatBoothNumber(n)
     return tostring(math.floor(value))
 end
 
-local function escapeRichTextText(value)
-    local text = tostring(value or "")
-    text = text:gsub("&", "&amp;")
-    text = text:gsub("<", "&lt;")
-    text = text:gsub(">", "&gt;")
-    text = text:gsub('"', "&quot;")
-    text = text:gsub("'", "&apos;")
-    return text
-end
+-- Booth text / goal-bar helpers removed (booth apply feature disabled)
 
-local function getGoalProgressSnapshot()
-    local current = tonumber(getCurrentRaisedAmount()) or 0
-    local goal = math.max(0, tonumber(settings.goalBox) or 0)
-    local safeGoal = math.max(goal, 1)
-    local ratio = math.clamp(current / safeGoal, 0, 1)
-    return current, goal, ratio
-end
-
-local function getNamedTextColorMap()
-    return {
-        green = Color3.fromRGB(145, 145, 150),
-        blue = Color3.fromRGB(30, 144, 255),
-        yellow = Color3.fromRGB(255, 215, 0),
-        black = Color3.fromRGB(0, 0, 0),
-        white = Color3.fromRGB(255, 255, 255),
-        red = Color3.fromRGB(255, 69, 69),
-        orange = Color3.fromRGB(255, 140, 0),
-        pink = Color3.fromRGB(255, 105, 180),
-        purple = Color3.fromRGB(170, 102, 255),
-        gray = Color3.fromRGB(145, 145, 150),
-        grey = Color3.fromRGB(145, 145, 150),
-    }
-end
-
-local function color3ToRgbText(color)
-    local r = math.floor((color.R * 255) + 0.5)
-    local g = math.floor((color.G * 255) + 0.5)
-    local b = math.floor((color.B * 255) + 0.5)
-    return string.format("rgb(%d,%d,%d)", r, g, b)
-end
-
-local function getGoalBarColorName()
-    local value = tostring(settings.goalBarColor or "blue"):lower()
-    local allowed = {
-        green = true,
-        blue = true,
-        red = true,
-        orange = true,
-        purple = true,
-    }
-    if allowed[value] then
-        return value
-    end
-    return "blue"
-end
-
-local function buildGoalProgressBar()
-    local current, goal, ratio = getGoalProgressSnapshot()
-    local totalSegments = 21
-    local filledSegments = math.clamp(math.floor((ratio * totalSegments) + 0.5), 0, totalSegments)
-
-    if current > 0 and goal > 0 and filledSegments == 0 then
-        filledSegments = 1
-    end
-
-    local emptySegments = math.max(0, totalSegments - filledSegments)
-    local namedColors = getNamedTextColorMap()
-    local filledColor = namedColors[getGoalBarColorName()] or namedColors.blue
-    return string.format(
-        "<font color=\"%s\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
-        color3ToRgbText(filledColor),
-        string.rep("|", filledSegments),
-        string.rep("|", emptySegments)
-    )
-end
-
-countZeroDonatedPlayers = function()
-    local count = 0
-    for _, pl in ipairs(Players:GetPlayers()) do
-        local ls = pl:FindFirstChild("leaderstats")
-        local donatedObj = ls and ls:FindFirstChild("Donated")
-        local donated = tonumber(donatedObj and donatedObj.Value) or 0
-        if donated <= 0 then
-            count += 1
-        end
-    end
-    return count
-end
-
-local function buildBoothText()
-    local text = tostring(settings.customBoothText or "")
-    local current, goal = getGoalProgressSnapshot()
-
-    text = text:gsub("%$C", formatBoothNumber(current))
-    text = text:gsub("%$G", formatBoothNumber(goal))
-    text = text:gsub("%$BAR", buildGoalProgressBar())
-    text = text:gsub("%$JPR", "1")
-    return text
-end
-
-local function buildGoalBarTemplate()
-    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
-
-    return table.concat({
-        "<font size=\"22\"><b>",
-        headerText,
-        "</b></font><br/>",
-        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
-        "$BAR",
-        "</stroke>",
-    })
-end
-
-local function hexToColor3(hex)
-    local namedColors = getNamedTextColorMap()
-    local rawValue = tostring(hex or "#919196"):gsub("^%s+", ""):gsub("%s+$", "")
-    local named = namedColors[rawValue:lower()]
-    if named then
-        return named
-    end
-
-    local value = rawValue:gsub("#", "")
-    if #value ~= 6 then
-        return Color3.fromRGB(145, 145, 150)
-    end
-
-    local r = tonumber(value:sub(1, 2), 16)
-    local g = tonumber(value:sub(3, 4), 16)
-    local b = tonumber(value:sub(5, 6), 16)
-    if not r or not g or not b then
-        return Color3.fromRGB(145, 145, 150)
-    end
-    return Color3.fromRGB(r, g, b)
-end
-
-updateBoothTextNow = function()
-    local text = buildBoothText()
-    if text == "" then
-        return false, "empty-text"
-    end
-
-    local boothLocation = getBoothLocation()
-    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-    if boothUiFolder and not claimedBoothSlot then
-        claimedBoothSlot = findOwnedBoothSlot(boothUiFolder)
-    end
-
-    local fontName = tostring(settings.fontFace or "SciFi")
-    local chosenFont = Enum.Font[fontName] or Enum.Font.SciFi
-    local payload = {
-        text = text,
-        textFont = chosenFont,
-        richText = true,
-        strokeColor = Color3.new(0, 0, 0),
-        strokeOpacity = 0,
-        textColor = Color3.fromRGB(255, 255, 255),
-        buttonStrokeColor = Color3.new(0, 0, 0),
-        buttonTextColor = Color3.new(1, 1, 1),
-        buttonColor = Color3.fromRGB(145, 145, 150),
-        buttonHoverColor = Color3.fromRGB(145, 145, 150),
-        buttonLayout = "",
-    }
-
-    -- Custom FontFace payload removed; use `textFont` (Enum.Font) only
-
-    local applied = false
-
-    -- old.lua-first path: SetCustomization on a validated remotes module
-    if preferredRemoteModule then
-        local ok = pcall(function()
-            preferredRemoteModule.Event("SetCustomization"):FireServer(payload, "booth")
-        end)
-        if ok then
-            applied = true
-        end
-    end
-
-    if not applied then
-        for _, remoteModule in ipairs(RemoteModules) do
-            local ok = pcall(function()
-                remoteModule.Event("SetCustomization"):FireServer(payload, "booth")
-            end)
-            if ok then
-                preferredRemoteModule = remoteModule
-                applied = true
-                break
-            end
-        end
-    end
-
-    local remoteEventNames = {
-        "SetBoothText",
-        "UpdateBooth",
-        "EditBooth",
-        "ChangeBoothText",
-    }
-
-    if not applied then
-        for _, remoteModule in ipairs(RemoteModules) do
-            for _, eventName in ipairs(remoteEventNames) do
-                local ok1, result1 = pcall(function()
-                    return remoteModule.Event(eventName):InvokeServer(text)
-                end)
-                if ok1 and result1 == true then
-                    applied = true
-                    break
-                end
-
-                if claimedBoothSlot then
-                    local ok2, result2 = pcall(function()
-                        return remoteModule.Event(eventName):InvokeServer(claimedBoothSlot, text)
-                    end)
-                    if ok2 and result2 == true then
-                        applied = true
-                        break
-                    end
-                end
-            end
-            if applied then
-                break
-            end
-        end
-    end
-
-    if boothUiFolder and claimedBoothSlot then
-        local boothFrame = boothUiFolder:FindFirstChild("BoothUI" .. tostring(claimedBoothSlot))
-        if boothFrame then
-            for _, desc in ipairs(boothFrame:GetDescendants()) do
-                if desc:IsA("TextLabel") then
-                    local nameLower = tostring(desc.Name or ""):lower()
-                    if nameLower:find("sign", 1, true) or nameLower:find("text", 1, true) then
-                        desc.Text = text
-                    end
-                end
-            end
-        end
-    end
-
-    return applied, applied and "updated" or "local-preview-only"
-end
+-- `updateBoothTextNow` removed: booth apply functionality disabled by design
 
 local function choosePlaceId()
     if settings.vcServerHopToggle then
@@ -2911,43 +2667,6 @@ settingHandlers = {
             stopAstronautIdle()
         end
     end,
-    goalBarColor = function(value)
-        local lower = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-        local allowed = {
-            green = true,
-            blue = true,
-            red = true,
-            orange = true,
-            purple = true,
-        }
-        settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    goalBox = function()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    goalBarHeaderText = function()
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    fontFace = function(value)
-        local fontName = tostring(value or defaults.fontFace)
-        if not Enum.Font[fontName] then
-            settings.fontFace = defaults.fontFace
-            saveSettings()
-            return
-        end
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
     standingPosition = function(value)
         local positionMap = {
             Front = 3,
@@ -3003,11 +2722,7 @@ local function onBoothClaimDetected(slot)
     handledClaimSlot = slot
     moveToClaimedBooth(slot)
 
-    if settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
-        task.delay(0.35, function()
-            pcall(updateBoothTextNow)
-        end)
-    end
+    -- manual update only; do not auto-update booth text on claim
 
 end
 
@@ -3111,9 +2826,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
                     return
                 end
 
-                if tostring(settings[key]) ~= "" and updateBoothTextNow then
-                    pcall(updateBoothTextNow)
-                end
+                -- manual update only; user must press the Update button to apply booth text
             end)
         end)
     end
@@ -3491,56 +3204,7 @@ local function buildSettingsTabs()
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
-    -- Text update toggle removed
-    createTextBox(boothSection, "Robux Goal", "goalBox", true)
-    createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
-    local boothTextBox
-    createInfoLabel(boothSection, "Goal Bar Header:")
-    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-    createButton(boothSection, "Paste Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-        local nextText = buildGoalBarTemplate()
-        if #nextText > 221 then
-            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
-            return
-        end
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
-        elseif mode == "local-preview-only" then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
-        else
-            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
-        end
-    end)
-    createInfoLabel(boothSection, "Custom Booth Text:")
-    boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
-    createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
-    createButton(boothSection, "Update", function()
-        local nextText = tostring(boothTextBox.Text or "")
-        if #nextText > 221 then
-            boothTextBox.Text = "Character limit reached"
-            notify("Booth Text", "Character limit reached.", 4, "booth-text-limit", 1)
-            return
-        end
-
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
-        elseif mode == "local-preview-only" then
-            notify("Booth Text", "Preview updated, waiting for remote confirmation.", 4, "booth-text-preview", 2)
-        else
-            notify("Booth Text", "Could not update booth text yet.", 4, "booth-text-fail", 2)
-        end
-    end)
+    createInfoLabel(boothSection, "Booth text features (goal bar, text, fonts) removed due to Roblox update; only standing position and move mode remain.")
     createDropdown(boothSection, "Standing Position", "standingPosition", {"Front", "Left", "Right", "Behind"})
     createDropdown(boothSection, "Booth Move Mode", "moveMode", {"Teleport", "Walk"})
 
