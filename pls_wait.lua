@@ -445,8 +445,4 @@ do
     end
 end
 
-return {
-    serverHopNow = serverHopNow,
-    postWebhookCode = postWebhookCode,
-    claimBooth = claimBooth,
-}
+-- Script loaded: use functions directly (not returning a module table)
