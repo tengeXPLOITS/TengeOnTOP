@@ -23,12 +23,11 @@ if not LocalPlayer then
 end
 
 local ALLOWED_PLACE_IDS = {
-    [133296110759666] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
+    [137150797605098] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
     [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
     [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
 }
 
--- Community-place augmentation moved below HTTP helpers to use available HTTP wrappers
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
@@ -504,6 +503,47 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
         for _, v in ipairs(benchCandidates) do
             if v and type(v.Destroy) == "function" then
                 allMap[v] = true
+            end
+        end
+        -- Also include any Workspace descendants matching nuisance names
+        local nuisanceNames = {
+            "livedonationboard", "livedonations", "livedonation", "donationboard", "donations", "global"
+        }
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if type(obj.Name) == "string" and type(obj.Destroy) == "function" then
+                local lower = tostring(obj.Name):lower()
+                for _, n in ipairs(nuisanceNames) do
+                    if lower == n then
+                        allMap[obj] = true
+                        break
+                    end
+                end
+            end
+        end
+        -- Also detect effect-providing instances and mark their topmost model ancestor for removal
+        local effectClasses = { "ParticleEmitter", "Trail", "Beam", "Sound", "Fire", "Smoke", "Sparkles", "Explosion" }
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            local cls = inst.ClassName
+            if cls then
+                for _, ec in ipairs(effectClasses) do
+                    if cls == ec then
+                        local anc = inst.Parent
+                        while anc and anc ~= Workspace do
+                            if anc:IsA("Model") then
+                                allMap[anc] = true
+                                break
+                            end
+                            anc = anc.Parent
+                        end
+                        if not anc or anc == Workspace then
+                            local p = inst.Parent
+                            if p and type(p.Destroy) == "function" then
+                                allMap[p] = true
+                            end
+                        end
+                        break
+                    end
+                end
             end
         end
         for v, _ in pairs(allMap) do table.insert(allTargets, v) end
@@ -1007,105 +1047,6 @@ local function httpGetBody(url)
     return nil
 end
 
--- Attempt to auto-allow places listed on a Roblox community page (helps when places move/remove)
-local function fetchCommunityPlaceIds(community)
-    if not community then
-        return {}
-    end
-
-    local cid = tostring(community):match("(%d+)") or tostring(community):match("communities/(%d+)")
-    if not cid then
-        return {}
-    end
-
-    local tried = {}
-    local function tryUrl(path)
-        local u = "https://www.roblox.com/communities/" .. cid .. path
-        if tried[u] then return nil end
-        tried[u] = true
-        return httpGetBody(u)
-    end
-
-    local body = tryUrl("/about") or tryUrl("/experiences") or tryUrl("/places")
-    if not body then
-        notify("Community Fetch", ("Failed to fetch community %s pages"):format(tostring(cid)), 6, "community-fetch-fail", 10)
-        return {}
-    end
-
-    local found = {}
-    for pid in body:gmatch("/places/(%d+)") do
-        found[tonumber(pid)] = true
-    end
-    for pid in body:gmatch("/games/(%d+)") do
-        found[tonumber(pid)] = true
-    end
-    for pid in body:gmatch('data%-place%-id="(%d+)"') do
-        found[tonumber(pid)] = true
-    end
-
-    -- Also look for experiences whose title contains "Simply Donate" (case-insensitive)
-    local lowerBody = body:lower()
-    local keyword = "simply donate"
-    if lowerBody:find(keyword, 1, true) then
-        local startPos = 1
-        while true do
-            local s, e = lowerBody:find(keyword, startPos, true)
-            if not s then break end
-            local a = math.max(1, s - 400)
-            local b = math.min(#body, e + 400)
-            local snippet = body:sub(a, b)
-
-            for pid in snippet:gmatch("/places/(%d+)") do
-                found[tonumber(pid)] = true
-            end
-            for pid in snippet:gmatch("/games/(%d+)") do
-                found[tonumber(pid)] = true
-            end
-            for pid in snippet:gmatch('data%-place%-id="(%d+)"') do
-                found[tonumber(pid)] = true
-            end
-            for pid in snippet:gmatch('data%-universe%-id="(%d+)"') do
-                found[tonumber(pid)] = true
-            end
-            for pid in snippet:gmatch('href="/games/(%d+)') do
-                found[tonumber(pid)] = true
-            end
-
-            startPos = e + 1
-        end
-    end
-
-    local list = {}
-    for k in pairs(found) do
-        table.insert(list, k)
-    end
-    if #list == 0 then
-        notify("Community Fetch", ("No places found for community %s"):format(tostring(cid)), 6, "community-no-places", 10)
-    else
-        local sample = {}
-        for i=1, math.min(6, #list) do
-            table.insert(sample, tostring(list[i]))
-        end
-        notify("Community Fetch", ("Found %d places (sample: %s)"):format(#list, table.concat(sample, ", ")), 6, "community-places-found", 10)
-    end
-    warn("Community places for ", cid, ": ", table.concat(list, ", "))
-    return list
-end
-
--- Try to add community places to `ALLOWED_PLACE_IDS` when running in a community
-do
-    local currentPlaceId = tonumber(game.PlaceId) or 0
-    if not ALLOWED_PLACE_IDS[currentPlaceId] then
-        local communityId = 643624063 -- Dusks Studios
-        local places = fetchCommunityPlaceIds(communityId)
-        for _, id in ipairs(places) do
-            ALLOWED_PLACE_IDS[id] = true
-        end
-        if not ALLOWED_PLACE_IDS[currentPlaceId] then
-            return
-        end
-    end
-end
 
 local function postWebhookJson(url, bodyTable)
     local payload = HttpService:JSONEncode(bodyTable)
