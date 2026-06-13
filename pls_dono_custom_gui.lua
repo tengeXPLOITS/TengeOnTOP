@@ -637,7 +637,6 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
     end)
 end
 
--- Anti-Lag (Beta) simple implementation: moves camera to sky and disables local movement
 local antiLagActive = false
 local antiLagPart = nil
 local antiLagFloatTask = nil
@@ -645,6 +644,10 @@ local antiLagStatusLabel = nil
 local savedCameraSubject = nil
 local savedCameraType = nil
 local savedHumanoidState = nil
+local antiLagFadeGui = nil
+local antiLagIdleGui = nil
+local antiLagIdleTask = nil
+local humanoidMoveToConn = nil
 
 local function enableAntiLag()
     if antiLagActive then return true end
@@ -653,21 +656,18 @@ local function enableAntiLag()
         savedCameraSubject = cam.CameraSubject
         savedCameraType = cam.CameraType
     end
-
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
-        savedHumanoidState = {
-            WalkSpeed = hum.WalkSpeed,
-            JumpPower = hum.JumpPower or hum.JumpHeight or 0,
-            PlatformStand = hum.PlatformStand,
-            AutoRotate = hum.AutoRotate,
-        }
+        savedHumanoidState = { WalkSpeed = hum.WalkSpeed }
+        -- Do not alter animations or PlatformStand; only freeze WalkSpeed after movement completes
         pcall(function()
-            hum.WalkSpeed = 0
-            if hum.JumpPower ~= nil then hum.JumpPower = 0 end
-            hum.PlatformStand = true
-            hum.AutoRotate = false
+            if humanoidMoveToConn then humanoidMoveToConn:Disconnect() end
+            humanoidMoveToConn = hum.MoveToFinished:Connect(function(reached)
+                if reached and antiLagActive then
+                    pcall(function() hum.WalkSpeed = 0 end)
+                end
+            end)
         end)
     end
 
@@ -682,16 +682,79 @@ local function enableAntiLag()
         antiLagPart.Parent = Workspace
     end)
 
-    if cam and antiLagPart then
-        pcall(function()
-            cam.CameraSubject = antiLagPart
-            cam.CameraType = Enum.CameraType.Custom
+    -- Fade out, switch camera, fade in
+    pcall(function()
+        if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end
+        antiLagFadeGui = Instance.new("ScreenGui")
+        antiLagFadeGui.Name = "PlsDono_AntiLagFade"
+        antiLagFadeGui.ResetOnSpawn = false
+        antiLagFadeGui.Parent = GuiParent
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1,0,1,0)
+        f.BackgroundColor3 = Color3.new(0,0,0)
+        f.BackgroundTransparency = 1
+        f.BorderSizePixel = 0
+        f.Parent = antiLagFadeGui
+        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.6}):Play()
+        task.wait(0.24)
+        if cam and antiLagPart then
+            pcall(function()
+                cam.CameraSubject = antiLagPart
+                cam.CameraType = Enum.CameraType.Custom
+            end)
+        end
+        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 1}):Play()
+        task.delay(0.5, function()
+            pcall(function() if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end end)
         end)
-    end
+    end)
+
+    -- idle timer GUI
+    pcall(function()
+        if antiLagIdleGui and antiLagIdleGui.Parent then antiLagIdleGui:Destroy() end
+        antiLagIdleGui = Instance.new("ScreenGui")
+        antiLagIdleGui.Name = "PlsDono_AntiLagIdle"
+        antiLagIdleGui.ResetOnSpawn = false
+        antiLagIdleGui.Parent = GuiParent
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0,160,0,28)
+        lbl.Position = UDim2.new(1,-180,0,8)
+        lbl.BackgroundTransparency = 0.3
+        lbl.BackgroundColor3 = Color3.fromRGB(18,18,20)
+        lbl.TextColor3 = Color3.fromRGB(240,240,240)
+        lbl.Font = Enum.Font.GothamSemibold
+        lbl.TextSize = 14
+        lbl.Text = "Idle: 00:00"
+        lbl.BorderSizePixel = 0
+        lbl.Parent = antiLagIdleGui
+        local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(0,6) corner.Parent = lbl
+        antiLagIdleTask = task.spawn(function()
+            local start = tick()
+            while antiLagActive and antiLagIdleGui and antiLagIdleGui.Parent do
+                local elapsed = math.floor(tick() - start)
+                local mins = math.floor(elapsed / 60)
+                local secs = elapsed % 60
+                lbl.Text = string.format("Idle: %02d:%02d", mins, secs)
+                task.wait(1)
+            end
+        end)
+    end)
+
+    -- floating animation
+    antiLagFloatTask = task.spawn(function()
+        local basePos = antiLagPart and antiLagPart.Position or Vector3.new(0,10000,0)
+        local amp = 3
+        local freq = 0.8
+        while antiLagActive and antiLagPart and antiLagPart.Parent do
+            local y = basePos.Y + math.sin(tick() * freq) * amp
+            pcall(function() antiLagPart.CFrame = CFrame.new(basePos.X, y, basePos.Z) end)
+            task.wait(0.06)
+        end
+    end)
 
     antiLagActive = true
     pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Enabled" end end)
-    pcall(function() notify("Anti-Lag","Enabled: camera moved to sky; movement disabled.",4,"anti-lag",2) end)
+    pcall(function() notify("Anti-Lag","Enabled: camera moved to sky; movement will freeze after walking completes.",4,"anti-lag",2) end)
     return true
 end
 
@@ -707,13 +770,48 @@ local function disableAntiLag()
 
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if humanoidMoveToConn then
+        pcall(function() humanoidMoveToConn:Disconnect() end)
+        humanoidMoveToConn = nil
+    end
     if hum and savedHumanoidState then
         pcall(function()
             hum.WalkSpeed = savedHumanoidState.WalkSpeed or 16
-            if hum.JumpPower ~= nil then hum.JumpPower = savedHumanoidState.JumpPower or 50 end
-            hum.PlatformStand = savedHumanoidState.PlatformStand or false
-            hum.AutoRotate = savedHumanoidState.AutoRotate
         end)
+    end
+
+    -- fade transition when disabling
+    pcall(function()
+        if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end
+        antiLagFadeGui = Instance.new("ScreenGui")
+        antiLagFadeGui.Name = "PlsDono_AntiLagFade"
+        antiLagFadeGui.ResetOnSpawn = false
+        antiLagFadeGui.Parent = GuiParent
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1,0,1,0)
+        f.BackgroundColor3 = Color3.new(0,0,0)
+        f.BackgroundTransparency = 1
+        f.BorderSizePixel = 0
+        f.Parent = antiLagFadeGui
+        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.6}):Play()
+        task.wait(0.24)
+        if cam then
+            pcall(function()
+                if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
+                if savedCameraType then cam.CameraType = savedCameraType end
+            end)
+        end
+        TweenService:Create(f, TweenInfo.new(0.22, Enum.EasingStyle.Quad), {BackgroundTransparency = 1}):Play()
+        task.delay(0.5, function()
+            pcall(function() if antiLagFadeGui and antiLagFadeGui.Parent then antiLagFadeGui:Destroy() end end)
+        end)
+    end)
+
+    pcall(function() if antiLagIdleGui and antiLagIdleGui.Parent then antiLagIdleGui:Destroy() end end)
+    antiLagIdleGui = nil
+    if antiLagIdleTask then
+        pcall(function() task.cancel(antiLagIdleTask) end)
+        antiLagIdleTask = nil
     end
 
     pcall(function() if antiLagPart and antiLagPart.Parent then antiLagPart:Destroy() end end)
