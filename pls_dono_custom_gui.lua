@@ -596,6 +596,8 @@ local defaults = {
     minPlayerCount = 23,
     maxPlayerCount = 24,
     vcServerHopToggle = false,
+    plusHopToggle = false,
+    plusHopMinPlayers = 3,
     helicopterEnabled = false,
     testDonationAmount = 6,
 }
@@ -1041,6 +1043,38 @@ local function fetchCommunityPlaceIds(community)
         found[tonumber(pid)] = true
     end
 
+    -- Also look for experiences whose title contains "Simply Donate" (case-insensitive)
+    local lowerBody = body:lower()
+    local keyword = "simply donate"
+    if lowerBody:find(keyword, 1, true) then
+        local startPos = 1
+        while true do
+            local s, e = lowerBody:find(keyword, startPos, true)
+            if not s then break end
+            local a = math.max(1, s - 400)
+            local b = math.min(#body, e + 400)
+            local snippet = body:sub(a, b)
+
+            for pid in snippet:gmatch("/places/(%d+)") do
+                found[tonumber(pid)] = true
+            end
+            for pid in snippet:gmatch("/games/(%d+)") do
+                found[tonumber(pid)] = true
+            end
+            for pid in snippet:gmatch('data%-place%-id="(%d+)"') do
+                found[tonumber(pid)] = true
+            end
+            for pid in snippet:gmatch('data%-universe%-id="(%d+)"') do
+                found[tonumber(pid)] = true
+            end
+            for pid in snippet:gmatch('href="/games/(%d+)') do
+                found[tonumber(pid)] = true
+            end
+
+            startPos = e + 1
+        end
+    end
+
     local list = {}
     for k in pairs(found) do
         table.insert(list, k)
@@ -1346,6 +1380,37 @@ requestServerHop = function(reason)
     lastHopTick = now
     return serverHopNow(reason)
 end
+
+-- Plus-hop: if enabled, upon joining a supported place, immediately hop if current server
+-- does not have enough players with Premium (Plus). This avoids servers with few Plus users.
+task.spawn(function()
+    task.wait(1.5)
+    if not settings or not settings.plusHopToggle then
+        return
+    end
+    local pid = tonumber(game.PlaceId) or 0
+    if pid ~= DEFAULT_PLS_DONATE_PLACE_ID and pid ~= VC_PLS_DONATE_PLACE_ID then
+        return
+    end
+
+    local required = tonumber(settings.plusHopMinPlayers) or 3
+    local plusCount = 0
+    for _, pl in ipairs(Players:GetPlayers()) do
+        local ok, isPremium = pcall(function()
+            return pl.MembershipType == Enum.MembershipType.Premium
+        end)
+        if ok and isPremium then
+            plusCount = plusCount + 1
+        end
+    end
+
+    if plusCount < required then
+        notify("Plus Hop", ("Found %d Plus users; require %d — hopping"):format(plusCount, required), 6, "plus-hop", 10)
+        pcall(function()
+            requestServerHop("plus-hop")
+        end)
+    end
+end)
 
 findOwnedBoothSlot = function(boothUiFolder)
     if not boothUiFolder then
