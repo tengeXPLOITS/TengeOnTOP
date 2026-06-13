@@ -134,6 +134,11 @@ local function findSlotFromStand(stand)
     -- try extract number from name
     local n = tostring(stand.Name or ""):match("(%d+)")
     if n then return tonumber(n) end
+    -- try attributes (some maps store StandId as an Attribute)
+    if stand.GetAttribute then
+        local aid = stand:GetAttribute("StandId") or stand:GetAttribute("standId") or stand:GetAttribute("Slot") or stand:GetAttribute("slot")
+        if aid and tonumber(aid) then return tonumber(aid) end
+    end
     -- try common IntValue children
     local candidates = {"Slot","StandId","Index","Id","BoothSlot","Number"}
     for _, cname in ipairs(candidates) do
@@ -243,8 +248,7 @@ local function claimEmptyStands()
                                 if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
                                 return true
                             end
-                            -- continue to next stand (we attempted a claim)
-                            return true
+                            -- otherwise continue scanning other stands
                         else
                             notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
                         end
@@ -379,9 +383,12 @@ do
                 if autoClaiming then
                     autoClaimTask = task.spawn(function()
                         while autoClaiming do
-                            pcall(function()
-                                claimBooth()
-                            end)
+                            local ok, res = claimBooth()
+                            if ok and res then
+                                autoClaiming = false
+                                autoClaimBtn.Text = "Auto‑Claim: Off"
+                                break
+                            end
                             task.wait(2.5)
                         end
                     end)
