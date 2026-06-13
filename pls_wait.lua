@@ -149,7 +149,7 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
         antiAfk = SETTINGS.antiAfk,
         serverStayTime = SETTINGS.serverStayTime or 30,
         persistToggles = SETTINGS.persistToggles,
-        hopRangeIndex = SETTINGS.hopRangeIndex,
+        hopRange = SETTINGS.hopRange,
         autoServerHop = false,
     }
     local okEnc, enc = pcall(function() return Http:JSONEncode(cfg) end)
@@ -394,14 +394,18 @@ do
         local CONFIG_PATH = "pls_wait_config.json"
 
         local serverStayTime = SETTINGS.serverStayTime or 30
-        local hopRangeOptions = {
-            {19,22, label = "19-22"},
-            {15,18, label = "15-18"},
-            {10,14, label = "10-14"},
-            {1,9, label = "1-9"},
-            {0,9999, label = "Any"},
-        }
-        local hopRangeIndex = tonumber(SETTINGS.hopRangeIndex) or 1
+        local hopRangeText = SETTINGS.hopRange or "19-22"
+        local function parseRange(str)
+            if not str or type(str) ~= "string" then return nil end
+            local a,b = str:match("%s*(%d+)%s*%-%s*(%d+)%s*")
+            if not a or not b then return nil end
+            local mn = tonumber(a)
+            local mx = tonumber(b)
+            if not mn or not mx then return nil end
+            if mn < 0 then mn = 0 end
+            if mx < mn then return nil end
+            return mn, mx
+        end
         local autoServerHopEnabled = false
         local autoServerHopTask = nil
         SETTINGS.persistToggles = SETTINGS.persistToggles or false
@@ -411,12 +415,12 @@ do
                 webhookToggle = SETTINGS.webhookToggle,
                 webhookUrl = SETTINGS.webhookUrl,
                 antiAfk = SETTINGS.antiAfk,
-                hopRangeIndex = hopRangeIndex,
+                hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
                 autoServerHop = autoServerHopEnabled,
             }
-                SETTINGS.hopRangeIndex = hopRangeIndex
+            SETTINGS.hopRange = hopRangeText
             local ok, encoded = pcall(function() return Http:JSONEncode(data) end)
             if not ok then return end
             pcall(function()
@@ -443,7 +447,7 @@ do
             SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
-            hopRangeIndex = tonumber(decoded.hopRangeIndex) or hopRangeIndex
+            hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
@@ -457,7 +461,7 @@ do
                 SETTINGS.antiAfk = cfg.antiAfk or SETTINGS.antiAfk
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
-                hopRangeIndex = tonumber(cfg.hopRangeIndex) or hopRangeIndex
+                hopRangeText = cfg.hopRange or hopRangeText
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
                 _G.__PLS_WAIT_CONFIG = nil
             end
@@ -520,48 +524,31 @@ do
             tabFrames[name] = frame
         end
 
-        -- Make the UI draggable by dragging the title bar
+        -- Make the UI draggable (supports touch and mouse)
         do
+            local UIS = game:GetService("UserInputService")
             local dragging = false
             local dragStart = Vector2.new()
             local startPos = UDim2.new()
-            local function update(input)
-                local delta = input.Position - dragStart
-                mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-            title.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    dragging = true
-                    dragStart = input.Position
-                    startPos = mainFrame.Position
-                    input.Changed:Connect(function()
-                        if input.UserInputState == Enum.UserInputState.End then
-                            dragging = false
-                        end
-                    end)
+            UIS.InputBegan:Connect(function(input, processed)
+                if processed then return end
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    if input.Target and (input.Target == title or input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
+                        dragging = true
+                        dragStart = input.Position
+                        startPos = mainFrame.Position
+                    end
                 end
             end)
-            title.InputChanged:Connect(function(input)
-                if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                    update(input)
+            UIS.InputChanged:Connect(function(input)
+                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    local delta = input.Position - dragStart
+                    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
                 end
             end)
-            -- also allow dragging by the mainFrame background
-            mainFrame.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    dragging = true
-                    dragStart = input.Position
-                    startPos = mainFrame.Position
-                    input.Changed:Connect(function()
-                        if input.UserInputState == Enum.UserInputState.End then
-                            dragging = false
-                        end
-                    end)
-                end
-            end)
-            mainFrame.InputChanged:Connect(function(input)
-                if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                    update(input)
+            UIS.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
                 end
             end)
         end
@@ -608,15 +595,7 @@ do
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local afkCorner = Instance.new("UICorner")
-            afkCorner.Parent = afkToggle
-            afkToggle.Parent = frame
-            afkToggle.MouseButton1Click:Connect(function()
-                SETTINGS.antiAfk = not SETTINGS.antiAfk
-                afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
-                if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
-            end)
+            rangeBox.Parent = frame
         end
 
         -- Server-Hop tab
@@ -644,31 +623,37 @@ do
 
             local rangeLabel = Instance.new("TextLabel")
             rangeLabel.Size = UDim2.new(0,120,0,20)
-            rangeLabel.Position = UDim2.new(0,10,0,40)
-            rangeLabel.Text = "Hop Range"
+            rangeLabel.Position = UDim2.new(0,10,0,48)
+            rangeLabel.Text = "Hop Range (min-max)"
             rangeLabel.BackgroundTransparency = 1
             rangeLabel.TextColor3 = Color3.new(1,1,1)
             rangeLabel.Parent = frame
 
-            local rangeBtn = Instance.new("TextButton")
-            rangeBtn.Size = UDim2.new(0,140,0,24)
-            rangeBtn.Position = UDim2.new(0,140,0,40)
-            rangeBtn.Text = (hopRangeOptions[hopRangeIndex] and hopRangeOptions[hopRangeIndex].label) or "Any"
-            rangeBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
-            rangeBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local rCorner = Instance.new("UICorner")
-            rCorner.Parent = rangeBtn
-            rangeBtn.Parent = frame
-            rangeBtn.MouseButton1Click:Connect(function()
-                hopRangeIndex = hopRangeIndex + 1
-                if hopRangeIndex > #hopRangeOptions then hopRangeIndex = 1 end
-                rangeBtn.Text = hopRangeOptions[hopRangeIndex].label
+            local rangeBox = Instance.new("TextBox")
+            rangeBox.Size = UDim2.new(0,160,0,28)
+            rangeBox.Position = UDim2.new(0,140,0,44)
+            rangeBox.Text = hopRangeText or "19-22"
+            rangeBox.PlaceholderText = "11-22"
+            rangeBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            rangeBox.TextColor3 = Color3.fromRGB(255,255,255)
+            local rbCorner = Instance.new("UICorner")
+            rbCorner.Parent = rangeBox
+            rangeBox.Parent = frame
+            rangeBox.FocusLost:Connect(function()
+                local txt = tostring(rangeBox.Text or "")
+                local mn,mx = parseRange(txt)
+                if not mn then
+                    notify("Server Hop", "Invalid range format. Use MIN-MAX e.g. 11-22", 4)
+                    rangeBox.Text = hopRangeText or "19-22"
+                    return
+                end
+                hopRangeText = txt
                 if SETTINGS.persistToggles then pcall(SaveSettings) end
             end)
 
             local hopBtn = Instance.new("TextButton")
             hopBtn.Size = UDim2.new(0,200,0,40)
-            hopBtn.Position = UDim2.new(0,10,0,50)
+            hopBtn.Position = UDim2.new(0,10,0,112)
             hopBtn.Text = "Server Hop Now"
             hopBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
             hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -676,13 +661,20 @@ do
             hCorner.Parent = hopBtn
             hopBtn.Parent = frame
             hopBtn.MouseButton1Click:Connect(function()
-                local sel = hopRangeOptions[hopRangeIndex] or {19,22}
-                serverHopNow(sel[1], sel[2], true)
+                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or "19-22"
+                local mn, mx = parseRange(txt)
+                if not mn then
+                    notify("Server Hop", "Invalid hop range (use MIN-MAX).", 4)
+                    return
+                end
+                hopRangeText = txt
+                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                serverHopNow(mn, mx, true)
             end)
 
             local autoLabel = Instance.new("TextLabel")
             autoLabel.Size = UDim2.new(0,120,0,20)
-            autoLabel.Position = UDim2.new(0,10,0,100)
+            autoLabel.Position = UDim2.new(0,10,0,160)
             autoLabel.Text = "Auto Server Hop"
             autoLabel.BackgroundTransparency = 1
             autoLabel.TextColor3 = Color3.new(1,1,1)
@@ -690,7 +682,7 @@ do
 
             local autoToggle = Instance.new("TextButton")
             autoToggle.Size = UDim2.new(0,60,0,20)
-            autoToggle.Position = UDim2.new(0,140,0,100)
+            autoToggle.Position = UDim2.new(0,140,0,160)
             autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
             autoToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
             autoToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -708,8 +700,9 @@ do
                             notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
                             task.wait(waitTime)
                                 if not autoServerHopEnabled then break end
-                                local sel = hopRangeOptions[hopRangeIndex] or {19,22}
-                                serverHopNow(sel[1], sel[2], true)
+                                local txt = hopRangeText or "19-22"
+                                local mn, mx = parseRange(txt)
+                                if mn then serverHopNow(mn, mx, true) end
                         end
                         autoServerHopTask = nil
                     end)
@@ -753,15 +746,7 @@ do
                 if SETTINGS.persistToggles then pcall(SaveSettings) end
             end)
 
-            local statBox = Instance.new("TextBox")
-            statBox.Size = UDim2.new(0,200,0,24)
-            statBox.Position = UDim2.new(0,10,0,80)
-            statBox.Text = donationStatName
-            statBox.Parent = frame
-            statBox.FocusLost:Connect(function()
-                donationStatName = tostring(statBox.Text or "Raised")
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
-            end)
+            -- donation stat name textbox removed per user request
         end
 
         if SETTINGS.webhookToggle then startDonationMonitor() end
@@ -772,8 +757,9 @@ do
                     local waitTime = tonumber(serverStayTime) and (tonumber(serverStayTime) * 60) or 1800
                     notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
                     task.wait(waitTime)
-                    local sel = hopRangeOptions[hopRangeIndex] or {19,22}
-                    serverHopNow(sel[1], sel[2], true)
+                    local txt = hopRangeText or "19-22"
+                    local mn, mx = parseRange(txt)
+                    if mn then serverHopNow(mn, mx, true) end
                 end
                 autoServerHopTask = nil
             end)
