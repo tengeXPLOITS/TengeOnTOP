@@ -360,7 +360,9 @@ do
             closeBtn.BackgroundTransparency = 0.6
             closeBtn.BackgroundColor3 = Color3.fromRGB(60,60,64)
             closeBtn.Parent = frame
-            local closeCorner = Instance.new("UICorner") closeCorner.CornerRadius = UDim.new(0,6); closeCorner.Parent = closeBtn
+            local closeCorner = Instance.new("UICorner")
+            closeCorner.CornerRadius = UDim.new(0,6)
+            closeCorner.Parent = closeBtn
             closeBtn.MouseButton1Click:Connect(function()
                 pcall(function() screen:Destroy() end)
             end)
@@ -386,7 +388,9 @@ do
                 btn.TextSize = 16
                 btn.Text = text
                 btn.AutoButtonColor = true
-                local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8); c.Parent = btn
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(0,8)
+                c.Parent = btn
                 btn.Parent = body
                 return btn
             end
