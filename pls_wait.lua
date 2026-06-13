@@ -228,11 +228,11 @@ local function claimEmptyStands()
     end
 
     for idx, stand in ipairs(standsList) do
-        if not stand or not stand.Parent then continue end
+        if not stand or not stand.Parent then goto cont end
 
         -- skip stands that already contain a ButtonPrompt child (these should be handled via StandButtons)
         if stand:FindFirstChild("ButtonPrompt") then
-            continue
+            goto cont
         end
 
         -- check for ObjectValue named Wner or Owner (case-insensitive)
@@ -299,6 +299,7 @@ local function claimEmptyStands()
             end
             task.wait(0.6)
         end
+        ::cont::
     end
     if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
     notify("Booth Claim", "No empty stands claimed.", 4)
