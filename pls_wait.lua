@@ -486,15 +486,15 @@ do
         mainCorner.CornerRadius = UDim.new(0,10)
         mainCorner.Parent = mainFrame
 
-        local title = Instance.new("TextLabel")
+        local title = Instance.new("TextButton")
         title.Size = UDim2.new(1, 0, 0, 28)
         title.Position = UDim2.new(0,0,0,0)
         title.BackgroundColor3 = Color3.fromRGB(22,22,22)
         title.Text = "Pls Wait - Koyg UI"
         title.TextColor3 = Color3.fromRGB(255,255,255)
         title.TextXAlignment = Enum.TextXAlignment.Left
+        title.AutoButtonColor = false
         title.Parent = mainFrame
-        title.Active = true
         local titleCorner = Instance.new("UICorner")
         titleCorner.CornerRadius = UDim.new(0,8)
         titleCorner.Parent = title
@@ -530,27 +530,58 @@ do
         do
             local UIS = game:GetService("UserInputService")
             local dragging = false
+            local dragInput = nil
             local dragStart = Vector2.new()
             local startPos = UDim2.new()
+
+            -- Fallback global handlers (keeps existing behavior)
             UIS.InputBegan:Connect(function(input, processed)
                 if processed then return end
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                     if input.Target and (input.Target == title or input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
                         dragging = true
+                        dragInput = input
                         dragStart = input.Position
                         startPos = mainFrame.Position
                     end
                 end
             end)
+
             UIS.InputChanged:Connect(function(input)
-                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                if dragging and input == dragInput and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                     local delta = input.Position - dragStart
                     mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
                 end
             end)
+
             UIS.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                if input == dragInput then
                     dragging = false
+                    dragInput = nil
+                end
+            end)
+
+            -- Ensure title also receives input events directly (more reliable on some clients)
+            title.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    dragInput = input
+                    dragStart = input.Position
+                    startPos = mainFrame.Position
+                end
+            end)
+
+            title.InputChanged:Connect(function(input)
+                if dragging and input == dragInput then
+                    local delta = input.Position - dragStart
+                    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end)
+
+            title.InputEnded:Connect(function(input)
+                if input == dragInput then
+                    dragging = false
+                    dragInput = nil
                 end
             end)
         end
