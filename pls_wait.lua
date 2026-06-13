@@ -195,51 +195,7 @@ local function claimEmptyStands()
         end)
     end
 
-    local function tryTriggerNearbyClaimPrompts(pos)
-        if not pos then return false end
-        local triggered = false
-        local descendants = Workspace:GetDescendants()
-        for _, inst in ipairs(descendants) do
-            if not (inst and inst.Parent and inst:IsA("ProximityPrompt")) then
-                -- skip non-prompts
-            else
-                -- match prompt by name/action/objecttext/parent naming
-                local pname = tostring(inst.Parent.Name or ""):lower()
-                local action = tostring(inst.Action or ""):lower()
-                local name = tostring(inst.Name or ""):lower()
-                local objectText = tostring(inst.ObjectText or ""):lower()
-                if not (name == "claim" or action:find("claim") or objectText:find("stand") or pname:find("stand")) then
-                    -- not a claim prompt
-                else
-                    local pivot = tryGetPivotPosition(inst.Parent) or tryGetPivotPosition(inst)
-                    if pivot and (pivot - pos).Magnitude <= 8 then
-                        -- perform hold using the prompt's HoldDuration (fallback to 1s)
-                        local hold = 1
-                        pcall(function()
-                            if inst.HoldDuration then hold = tonumber(inst.HoldDuration) or hold end
-                        end)
-
-                        pcall(function()
-                            if inst.InputHoldBegin and inst.InputHoldEnd then
-                                inst:InputHoldBegin()
-                                task.wait(math.max(0.05, hold))
-                                inst:InputHoldEnd()
-                            elseif inst.Trigger then
-                                inst:Trigger()
-                            end
-                        end)
-
-                        triggered = true
-                        task.wait(0.08)
-                        if claimStopFlag then
-                            return true
-                        end
-                    end
-                end
-            end
-        end
-        return triggered
-    end
+    -- ProximityPrompt triggering removed: use direct remote invoke for slots 1..24
 
     for idx, stand in ipairs(standsList) do
         if not stand or not stand.Parent then
@@ -268,24 +224,22 @@ local function claimEmptyStands()
                     end
 
                     if posForPrompt then
-                        local btnCandidate = buttonList[idx]
-                        if btnCandidate and btnCandidate.Parent then
-                            local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
-                            if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
-                                pcall(function()
-                                    if claimPrompt.Trigger then
-                                        claimPrompt:Trigger()
-                                    else
-                                        claimPrompt:InputHoldBegin()
-                                        task.wait(0.12)
-                                        claimPrompt:InputHoldEnd()
-                                    end
-                                end)
-                                task.wait(0.12)
+                        -- Instead of triggering ProximityPrompts, try invoking the ClaimStand remote for slots 1..24
+                        for slotNum = 1, 24 do
+                            if claimStopFlag then break end
+                            local ok2, res2 = pcall(function()
+                                return remote:InvokeServer(slotNum)
+                            end)
+                            if ok2 then
+                                notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slotNum, tostring(res2)), 3)
+                                if claimStopFlag or tostring(res2) == "Success" or res2 == true then
+                                    if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
+                                    return true
+                                end
+                            else
+                                notify("Booth Claim", ("Claim remote error for slot %d"):format(slotNum), 2)
                             end
-                        end
-                        if not claimStopFlag then
-                            tryTriggerNearbyClaimPrompts(posForPrompt)
+                            task.wait(0.12)
                         end
                     end
 
