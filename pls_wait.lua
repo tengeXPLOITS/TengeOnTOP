@@ -83,8 +83,21 @@ local function serverHopNow(minPlayers, maxPlayers, persistent)
                     for _, server in ipairs(decoded.data) do
                         local playing = tonumber(server.playing) or 0
                         if server.id and server.id ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
-                            -- queue this script to re-run on the destination
+                            -- queue this script to re-run on the destination and pass current settings via _G
+                            local ok, cfgJson = pcall(function()
+                                return HttpService:JSONEncode({
+                                    webhookToggle = SETTINGS.webhookToggle,
+                                    webhookUrl = SETTINGS.webhookUrl,
+                                    antiAfk = SETTINGS.antiAfk,
+                                    serverStayTime = serverStayTime,
+                                    persistToggles = SETTINGS.persistToggles,
+                                    autoServerHop = autoServerHopEnabled,
+                                })
+                            end)
                             local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+                            if ok and cfgJson then
+                                qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
+                            end
                             pcall(function() queueOnTeleport(qcode) end)
                             pcall(function()
                                 TeleportService:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
@@ -489,8 +502,10 @@ do
 
         local Options = Fluent.Options
 
-        -- server-hop / persistence defaults
+        -- server-hop / persistence defaults (serverStayTime is in minutes)
         local serverStayTime = SETTINGS.serverStayTime or 30
+        local autoServerHopEnabled = false
+        local autoServerHopTask = nil
         SETTINGS.persistToggles = SETTINGS.persistToggles or false
 
         -- Main tab controls
@@ -519,10 +534,10 @@ do
 
         -- Server-Hop tab: slider for how long to stay before hopping and button
         Tabs.ServerHop:AddSlider("ServerStayTime", {
-            Title = "Server Stay Time",
+            Title = "Server Stay Time (minutes)",
             Default = serverStayTime,
-            Min = 5,
-            Max = 600,
+            Min = 1,
+            Max = 180,
             Rounding = 0,
             Callback = function(Value)
                 serverStayTime = tonumber(Value) or serverStayTime
@@ -534,12 +549,35 @@ do
             Description = "Search for servers and teleport (19-22 players)",
             Callback = function()
                 task.spawn(function()
-                    notify("Server Hop", ("Waiting %d seconds before hopping..."):format(serverStayTime), 4)
-                    task.wait(serverStayTime)
                     serverHopNow(19, 22, true)
                 end)
             end
         })
+
+        local AutoServerHopToggle = Tabs.ServerHop:AddToggle("AutoServerHop", { Title = "Auto Server Hop", Default = false })
+        AutoServerHopToggle:OnChanged(function()
+            autoServerHopEnabled = Options.AutoServerHop and Options.AutoServerHop.Value or false
+            if autoServerHopEnabled then
+                -- start background task
+                if autoServerHopTask then return end
+                autoServerHopTask = task.spawn(function()
+                    while autoServerHopEnabled do
+                        local waitTime = tonumber(serverStayTime) and (tonumber(serverStayTime) * 60) or 1800
+                        notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
+                        task.wait(waitTime)
+                        if not autoServerHopEnabled then break end
+                        serverHopNow(19, 22, true)
+                    end
+                    autoServerHopTask = nil
+                end)
+            else
+                -- stopping
+                autoServerHopEnabled = false
+                if autoServerHopTask then
+                    autoServerHopTask = nil
+                end
+            end
+        end)
 
         -- Settings tab: persistence controls and miscellaneous options
         Tabs.Settings:AddToggle("PersistToggles", { Title = "Persist Toggles Across Hops", Default = SETTINGS.persistToggles })
@@ -593,6 +631,21 @@ do
         -- Load autoload config if any
         pcall(function() SaveManager:LoadAutoloadConfig() end)
 
+        -- If a queued teleport inserted a config into _G, apply it now so settings persist across hops
+        pcall(function()
+            if type(_G) == "table" and type(_G.__PLS_WAIT_CONFIG) == "table" then
+                local cfg = _G.__PLS_WAIT_CONFIG
+                if cfg.webhookToggle ~= nil then SETTINGS.webhookToggle = cfg.webhookToggle end
+                if cfg.webhookUrl ~= nil then SETTINGS.webhookUrl = cfg.webhookUrl end
+                if cfg.antiAfk ~= nil then SETTINGS.antiAfk = cfg.antiAfk end
+                if cfg.serverStayTime ~= nil then serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime end
+                if cfg.persistToggles ~= nil then SETTINGS.persistToggles = cfg.persistToggles end
+                if cfg.autoServerHop ~= nil then autoServerHopEnabled = cfg.autoServerHop end
+                -- clear it so it doesn't affect future runs
+                _G.__PLS_WAIT_CONFIG = nil
+            end
+        end)
+
         -- After loading saved config, handle whether toggles should persist across teleports
         pcall(function()
             local persist = SETTINGS.persistToggles
@@ -602,12 +655,15 @@ do
 
             if not persist then
                 -- prevent toggles from being saved going forward and reset toggles to defaults
-                SaveManager:SetIgnoreIndexes({ "AntiAFK", "WebhookEnabled" })
+                SaveManager:SetIgnoreIndexes({ "AntiAFK", "WebhookEnabled", "AutoServerHop" })
                 if Options and Options.AntiAFK and Options.AntiAFK.SetValue then
                     Options.AntiAFK:SetValue(SETTINGS.antiAfk)
                 end
                 if Options and Options.WebhookEnabled and Options.WebhookEnabled.SetValue then
                     Options.WebhookEnabled:SetValue(SETTINGS.webhookToggle)
+                end
+                if Options and Options.AutoServerHop and Options.AutoServerHop.SetValue then
+                    Options.AutoServerHop:SetValue(autoServerHopEnabled)
                 end
             else
                 SaveManager:SetIgnoreIndexes({})
@@ -624,6 +680,25 @@ do
                 enabled = enabled or Options.WebhookEnabled.Value
             end
             if enabled then startDonationMonitor() end
+
+            -- If AutoServerHop was requested via saved config, kick off the task
+            if autoServerHopEnabled then
+                if Options and Options.AutoServerHop and Options.AutoServerHop.SetValue then
+                    Options.AutoServerHop:SetValue(true)
+                end
+                -- start the background loop
+                if not autoServerHopTask then
+                    autoServerHopTask = task.spawn(function()
+                        while (Options and Options.AutoServerHop and Options.AutoServerHop.Value) or autoServerHopEnabled do
+                            local waitTime = tonumber(serverStayTime) and (tonumber(serverStayTime) * 60) or 1800
+                            notify("Auto Server Hop", ("Next hop in %d minutes"):format(math.floor(waitTime/60)), 5)
+                            task.wait(waitTime)
+                            serverHopNow(19, 22, true)
+                        end
+                        autoServerHopTask = nil
+                    end)
+                end
+            end
         end)
     end
 end
