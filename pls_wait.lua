@@ -177,19 +177,49 @@ local function claimEmptyStands()
         return false
     end
 
-    for _, stand in ipairs(standsFolder:GetChildren()) do
+    local standsList = standsFolder:GetChildren()
+    local standButtons = Workspace:FindFirstChild("StandButtons")
+    local buttonList = standButtons and standButtons:GetChildren() or {}
+
+    for idx, stand in ipairs(standsList) do
         if not stand or not stand.Parent then continue end
+
+        -- skip stands that already contain a ButtonPrompt child (these should be handled via StandButtons)
+        if stand:FindFirstChild("ButtonPrompt") then
+            continue
+        end
+
         -- check for ObjectValue named Wner or Owner (case-insensitive)
         local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
         local ownerEmpty = true
         if ownerObj and ownerObj:IsA("ObjectValue") then
             ownerEmpty = (ownerObj.Value == nil)
         end
+
         if ownerEmpty then
             local pivot = tryGetPivotPosition(stand)
             if pivot then
                 moveCharacterToPosition(pivot)
                 task.wait(0.25)
+            end
+
+            -- Attempt to trigger proximity prompt from StandButtons if available
+            local btnCandidate = buttonList[idx]
+            if btnCandidate and btnCandidate.Parent then
+                local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
+                if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
+                    pcall(function()
+                        -- try common trigger methods; wrap in pcall to avoid errors on unsupported methods
+                        if claimPrompt.Trigger then
+                            pcall(function() claimPrompt:Trigger() end)
+                        else
+                            pcall(function() claimPrompt:InputHoldBegin() end)
+                            task.wait(0.12)
+                            pcall(function() claimPrompt:InputHoldEnd() end)
+                        end
+                    end)
+                    task.wait(0.12)
+                end
             end
 
             local slot = findSlotFromStand(stand)
