@@ -618,7 +618,11 @@ do
         InterfaceManager:SetFolder("PlsWait")
         SaveManager:SetFolder("PlsWait/specific-game")
         InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+        InterfaceManager:BuildInterfaceSection(Tabs.ServerHop)
+        InterfaceManager:BuildInterfaceSection(Tabs.Webhook)
         SaveManager:BuildConfigSection(Tabs.Settings)
+        SaveManager:BuildConfigSection(Tabs.ServerHop)
+        SaveManager:BuildConfigSection(Tabs.Webhook)
 
         Window:SelectTab(1)
 
