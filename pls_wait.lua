@@ -482,14 +482,16 @@ do
 
         local Tabs = {
             Main = Window:AddTab({ Title = "Main", Icon = "" }),
-            Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+            ServerHop = Window:AddTab({ Title = "Server-Hop", Icon = "server" }),
+            Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+            Webhook = Window:AddTab({ Title = "Webhook", Icon = "link" })
         }
 
         local Options = Fluent.Options
 
-        -- persistent toggles for auto-claim
-        local autoClaiming = false
-        local autoClaimTask = nil
+        -- server-hop / persistence defaults
+        local serverStayTime = SETTINGS.serverStayTime or 30
+        SETTINGS.persistToggles = SETTINGS.persistToggles or false
 
         -- Main tab controls
         Tabs.Main:AddButton({
@@ -508,40 +510,43 @@ do
             end
         })
 
-        Tabs.Main:AddButton({
-            Title = "Server Hop",
-            Description = "Teleport to another server for this place",
-            Callback = function()
-                task.spawn(function() serverHopNow(19, 22, true) end)
-            end
-        })
-
-        local AutoToggle = Tabs.Main:AddToggle("AutoClaim", { Title = "Auto-Claim", Default = false })
-        AutoToggle:OnChanged(function()
-            -- Perform a single claim attempt when enabled, then reset the toggle
-            if Options.AutoClaim.Value then
-                task.spawn(function()
-                    notify("Booth", "Auto-Claim: attempting single claim...", 3)
-                    local ok, res = claimBooth()
-                    if ok and res then
-                        notify("Booth", "Auto-Claim succeeded.", 4)
-                    else
-                        notify("Booth", "Auto-Claim attempt finished or failed.", 4)
-                    end
-                    -- reset toggle regardless of result
-                    Options.AutoClaim:SetValue(false)
-                end)
-            end
-        end)
-
+        -- Main tab only keeps the Claim button and Anti-AFK toggle
         local AntiAfkToggle = Tabs.Main:AddToggle("AntiAFK", { Title = "Anti-AFK", Default = SETTINGS.antiAfk })
         AntiAfkToggle:OnChanged(function()
             SETTINGS.antiAfk = Options.AntiAFK.Value
             if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
         end)
 
-        -- Settings
-        local WebhookToggle = Tabs.Settings:AddToggle("WebhookEnabled", { Title = "Webhook Enabled", Default = SETTINGS.webhookToggle })
+        -- Server-Hop tab: slider for how long to stay before hopping and button
+        Tabs.ServerHop:AddSlider("ServerStayTime", {
+            Title = "Server Stay Time",
+            Default = serverStayTime,
+            Min = 5,
+            Max = 600,
+            Rounding = 0,
+            Callback = function(Value)
+                serverStayTime = tonumber(Value) or serverStayTime
+            end
+        })
+
+        Tabs.ServerHop:AddButton({
+            Title = "Server Hop Now",
+            Description = "Search for servers and teleport (19-22 players)",
+            Callback = function()
+                task.spawn(function()
+                    notify("Server Hop", ("Waiting %d seconds before hopping..."):format(serverStayTime), 4)
+                    task.wait(serverStayTime)
+                    serverHopNow(19, 22, true)
+                end)
+            end
+        })
+
+        -- Settings tab: persistence controls and miscellaneous options
+        Tabs.Settings:AddToggle("PersistToggles", { Title = "Persist Toggles Across Hops", Default = SETTINGS.persistToggles })
+        Tabs.Settings:AddInput("MiscNote", { Title = "Notes (not saved)", Default = "Toggle persistence controls whether toggle states persist across teleports.", Callback = function() end })
+
+        -- Webhook tab: moved webhook controls here
+        local WebhookToggle = Tabs.Webhook:AddToggle("WebhookEnabled", { Title = "Webhook Enabled", Default = SETTINGS.webhookToggle })
         WebhookToggle:OnChanged(function()
             SETTINGS.webhookToggle = Options.WebhookEnabled.Value
             if SETTINGS.webhookToggle then
@@ -550,15 +555,15 @@ do
                 stopDonationMonitor()
             end
         end)
-        Tabs.Settings:AddInput("WebhookURL", {
+        Tabs.Webhook:AddInput("WebhookURL", {
             Title = "Webhook URL",
             Default = SETTINGS.webhookUrl,
-            Placeholder = "https://discord.com/api/webhooks/...",
+            Placeholder = "https://discord.com/api/webhooks...",
             Callback = function(Value)
                 SETTINGS.webhookUrl = tostring(Value or "")
             end
         })
-        Tabs.Settings:AddInput("DonationStatName", {
+        Tabs.Webhook:AddInput("DonationStatName", {
             Title = "Donation Stat Name",
             Default = donationStatName,
             Placeholder = "Raised",
@@ -566,7 +571,6 @@ do
                 donationStatName = tostring(Value or "Raised")
             end
         })
-        -- Donation notifier automatically follows webhook setting; no extra toggle/button required
 
         -- Hand the library over to our managers
         SaveManager:SetLibrary(Fluent)
@@ -588,8 +592,33 @@ do
 
         -- Load autoload config if any
         pcall(function() SaveManager:LoadAutoloadConfig() end)
-        -- If webhook was enabled via saved config or Options, start donation monitor
+
+        -- After loading saved config, handle whether toggles should persist across teleports
         pcall(function()
+            local persist = SETTINGS.persistToggles
+            if Options and Options.PersistToggles and Options.PersistToggles.Value ~= nil then
+                persist = Options.PersistToggles.Value
+            end
+
+            if not persist then
+                -- prevent toggles from being saved going forward and reset toggles to defaults
+                SaveManager:SetIgnoreIndexes({ "AntiAFK", "WebhookEnabled" })
+                if Options and Options.AntiAFK and Options.AntiAFK.SetValue then
+                    Options.AntiAFK:SetValue(SETTINGS.antiAfk)
+                end
+                if Options and Options.WebhookEnabled and Options.WebhookEnabled.SetValue then
+                    Options.WebhookEnabled:SetValue(SETTINGS.webhookToggle)
+                end
+            else
+                SaveManager:SetIgnoreIndexes({})
+            end
+
+            -- initialize server stay time from options if present
+            if Options and Options.ServerStayTime and Options.ServerStayTime.Value then
+                serverStayTime = tonumber(Options.ServerStayTime.Value) or serverStayTime
+            end
+
+            -- If webhook was enabled via saved config or Options, start donation monitor
             local enabled = SETTINGS.webhookToggle
             if Options and Options.WebhookEnabled and Options.WebhookEnabled.Value ~= nil then
                 enabled = enabled or Options.WebhookEnabled.Value
