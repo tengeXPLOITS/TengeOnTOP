@@ -181,6 +181,52 @@ local function claimEmptyStands()
     local standButtons = Workspace:FindFirstChild("StandButtons")
     local buttonList = standButtons and standButtons:GetChildren() or {}
 
+    -- listen for server client notifications indicating a successful claim
+    local claimStopFlag = false
+    local clientNotif = ReplicatedStorage:FindFirstChild("ClientNotification")
+    local clientNotifConn
+    if clientNotif and clientNotif:IsA("RemoteEvent") then
+        clientNotifConn = clientNotif.OnClientEvent:Connect(function(...)
+            local first = select(1, ...)
+            if tostring(first) == "Success" then
+                claimStopFlag = true
+                notify("Booth Claim", "Server reports claim success.", 4)
+            end
+        end)
+    end
+
+    local function tryTriggerNearbyClaimPrompts(pos)
+        if not pos then return false end
+        local triggered = false
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            if not inst or not inst.Parent then goto cont end
+            if inst:IsA("ProximityPrompt") then
+                local pname = tostring(inst.Parent.Name or ""):lower()
+                local action = tostring(inst.Action or ""):lower()
+                local name = tostring(inst.Name or ""):lower()
+                if (pname:find("stand") or name:find("claim") or action:find("claim")) then
+                    local pivot = tryGetPivotPosition(inst.Parent) or tryGetPivotPosition(inst)
+                    if pivot and (pivot - pos).Magnitude <= 8 then
+                        pcall(function()
+                            if inst.Trigger then
+                                inst:Trigger()
+                            else
+                                inst:InputHoldBegin()
+                                task.wait(0.12)
+                                inst:InputHoldEnd()
+                            end
+                        end)
+                        triggered = true
+                        task.wait(0.08)
+                        if claimStopFlag then return true end
+                    end
+                end
+            end
+            ::cont::
+        end
+        return triggered
+    end
+
     for idx, stand in ipairs(standsList) do
         if not stand or not stand.Parent then continue end
 
@@ -203,22 +249,32 @@ local function claimEmptyStands()
                 task.wait(0.25)
             end
 
-            -- Attempt to trigger proximity prompt from StandButtons if available
-            local btnCandidate = buttonList[idx]
-            if btnCandidate and btnCandidate.Parent then
-                local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
-                if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
-                    pcall(function()
-                        -- try common trigger methods; wrap in pcall to avoid errors on unsupported methods
-                        if claimPrompt.Trigger then
-                            pcall(function() claimPrompt:Trigger() end)
-                        else
-                            pcall(function() claimPrompt:InputHoldBegin() end)
-                            task.wait(0.12)
-                            pcall(function() claimPrompt:InputHoldEnd() end)
-                        end
-                    end)
-                    task.wait(0.12)
+            -- First try to trigger any nearby Claim prompts (prefer StandButtons mapping if present)
+            local posForPrompt = pivot or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position)
+            if posForPrompt then
+                -- try mapped button first
+                local tried = false
+                local btnCandidate = buttonList[idx]
+                if btnCandidate and btnCandidate.Parent then
+                    local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
+                    if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
+                        pcall(function()
+                            if claimPrompt.Trigger then
+                                claimPrompt:Trigger()
+                            else
+                                claimPrompt:InputHoldBegin()
+                                task.wait(0.12)
+                                claimPrompt:InputHoldEnd()
+                            end
+                        end)
+                        tried = true
+                        task.wait(0.12)
+                    end
+                end
+
+                -- fallback: scan nearby prompts for ones matching Stand/Claim
+                if not claimStopFlag then
+                    tryTriggerNearbyClaimPrompts(posForPrompt)
                 end
             end
 
@@ -231,6 +287,10 @@ local function claimEmptyStands()
                 end)
                 if ok then
                     notify("Booth Claim", ("Attempted claim slot %d (response: %s)"):format(slot, tostring(res)), 4)
+                    if claimStopFlag then
+                        if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
+                        return true
+                    end
                     -- If claim likely succeeded, stop; otherwise continue
                     return true
                 else
@@ -240,6 +300,7 @@ local function claimEmptyStands()
             task.wait(0.6)
         end
     end
+    if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
     notify("Booth Claim", "No empty stands claimed.", 4)
     return false
 end
@@ -317,74 +378,4 @@ do
 
             local function makeButton(text)
                 local btn = Instance.new("TextButton")
-                btn.Size = UDim2.new(1, 0, 0, 44)
-                btn.BackgroundColor3 = Color3.fromRGB(50,50,54)
-                btn.TextColor3 = Color3.fromRGB(240,240,240)
-                btn.Font = Enum.Font.GothamSemibold
-                btn.TextSize = 16
-                btn.Text = text
-                btn.AutoButtonColor = true
-                local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8); c.Parent = btn
-                btn.Parent = body
-                return btn
-            end
-
-            local claimBtn = makeButton("Claim Booth")
-            local serverHopBtn = makeButton("Server Hop")
-
-            local autoClaimBtn = makeButton("Auto‑Claim: Off")
-            local antiAfkBtn = makeButton("Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off"))
-
-            claimBtn.MouseButton1Click:Connect(function()
-                task.spawn(function()
-                    notify("Booth", "Attempting claim...", 3)
-                    local ok, res = claimBooth()
-                    if ok and res then
-                        notify("Booth", "Claim attempted (success).", 4)
-                    else
-                        notify("Booth", "Claim attempt finished or failed.", 4)
-                    end
-                end)
-            end)
-
-            serverHopBtn.MouseButton1Click:Connect(function()
-                task.spawn(function() serverHopNow() end)
-            end)
-
-            local autoClaiming = false
-            local autoClaimTask = nil
-            autoClaimBtn.MouseButton1Click:Connect(function()
-                autoClaiming = not autoClaiming
-                autoClaimBtn.Text = "Auto‑Claim: " .. (autoClaiming and "On" or "Off")
-                if autoClaiming then
-                    autoClaimTask = task.spawn(function()
-                        while autoClaiming do
-                            pcall(function()
-                                claimBooth()
-                            end)
-                            task.wait(2.5)
-                        end
-                    end)
-                else
-                    if autoClaimTask then
-                        pcall(function() task.cancel(autoClaimTask) end)
-                        autoClaimTask = nil
-                    end
-                end
-            end)
-
-            antiAfkBtn.MouseButton1Click:Connect(function()
-                SETTINGS.antiAfk = not SETTINGS.antiAfk
-                antiAfkBtn.Text = "Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off")
-                if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
-            end)
-
-        end)
-    end
-end
-
-return {
-    serverHopNow = serverHopNow,
-    postWebhookCode = postWebhookCode,
-    claimBooth = claimBooth,
-}
+       
