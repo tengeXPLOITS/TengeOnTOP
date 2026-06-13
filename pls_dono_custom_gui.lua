@@ -866,6 +866,7 @@ local requestServerHop
 
 local plusHopAttemptCount = 0
 local antiLagScheduleId = 0
+local antiLagStatusLabel = nil
 
 local function createPersistentStatusOverlay(textMsg)
     local ok, res = pcall(function()
@@ -948,6 +949,8 @@ local function enableVisualClone()
         return
     end
 
+    pcall(function() notify("Anti-Lag","Character found — creating visual clone...",3,"anti-lag",1) end)
+
     -- create platform high in the sky
     local platform = Instance.new("Part")
     platform.Name = "PlsDono_VisualPlatform"
@@ -980,6 +983,7 @@ local function enableVisualClone()
 
     clone.Name = tostring(LocalPlayer.Name or "VisualClone") .. "_PlsDonoClone"
     clone.Parent = Workspace
+    pcall(function() notify("Anti-Lag","Clone parented to Workspace.",3,"anti-lag",1) end)
     local primary = clone:FindFirstChild("HumanoidRootPart") or clone:FindFirstChildWhichIsA("BasePart")
     if primary then
         pcall(function() clone:SetPrimaryPartCFrame(CFrame.new(platform.Position + Vector3.new(0, 3, 0))) end)
@@ -997,6 +1001,8 @@ local function enableVisualClone()
             disableEffectsOnInstance(d)
         end
     end
+
+    pcall(function() notify("Anti-Lag","Hidden local character parts and disabled local effects.",3,"anti-lag",1) end)
 
     -- switch camera to clone's humanoid if available
     local cam = workspace.CurrentCamera
@@ -1019,6 +1025,23 @@ local function enableVisualClone()
     visualClone = clone
     visualPlatform = platform
     pcall(function() notify("Anti-Lag","Visual clone enabled.",4,"anti-lag",2) end)
+    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enabled" end) end
+end
+
+-- Wrap enableVisualClone with an xpcall to capture and report tracebacks
+do
+    local rawEnable = enableVisualClone
+    enableVisualClone = function(...)
+        local ok, err = xpcall(function() return rawEnable(...) end, function(e) return debug.traceback(e, 2) end)
+        if not ok then
+            pcall(function()
+                notify("Anti-Lag Error", tostring(err), 10, "anti-lag-err", 1)
+            end)
+            warn("Anti-Lag enable error:\n", err)
+            return false, err
+        end
+        return true
+    end
 end
 
 local function disableVisualClone()
@@ -1056,6 +1079,7 @@ local function disableVisualClone()
     savedPartList = {}
     savedEffectStates = {}
     pcall(function() notify("Anti-Lag","Visual clone disabled.",3,"anti-lag",2) end)
+    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Disabled" end) end
 end
 
 local hopCooldownSeconds = 1
@@ -3025,10 +3049,22 @@ settingHandlers = {
         local myId = antiLagScheduleId
         if value then
             -- schedule enable 10 seconds later, cancelable by changing antiLagScheduleId
+            if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Scheduled (10s)" end) end
+            pcall(function() notify("Anti-Lag","Scheduled enable in 10s...",3,"anti-lag-sched",1) end)
             task.spawn(function()
                 task.wait(10)
                 if settings.antiLagBeta and myId == antiLagScheduleId then
-                    pcall(enableVisualClone)
+                    local ok, err = pcall(enableVisualClone)
+                    if ok then
+                        if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enabled" end) end
+                        pcall(function() notify("Anti-Lag","Enabled (visual clone created).",4,"anti-lag-enabled",2) end)
+                    else
+                        if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enable failed" end) end
+                        pcall(function() notify("Anti-Lag","Enable failed: " .. tostring(err),6,"anti-lag-failed",2) end)
+                    end
+                else
+                    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Disabled" end) end
+                    pcall(function() notify("Anti-Lag","Enable cancelled.",3,"anti-lag-cancel",1) end)
                 end
             end)
         else
@@ -3545,6 +3581,7 @@ local function buildSettingsTabs()
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
             createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
+            antiLagStatusLabel = createInfoLabel(mainSection, "Anti-Lag: Off")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
