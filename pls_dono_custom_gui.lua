@@ -606,122 +606,7 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
     end)
 end
 
-local antiLagActive = false
-local antiLagPart = nil
-local antiLagFloatTask = nil
-local antiLagStatusLabel = nil
-local savedCameraSubject = nil
-local savedCameraType = nil
-local savedHumanoidState = nil
-local antiLagFadeGui = nil
-local antiLagIdleGui = nil
-local antiLagIdleTask = nil
-local humanoidMoveToConn = nil
-
-local function enableAntiLag()
-    if antiLagActive then return true end
-    local cam = workspace.CurrentCamera
-    if cam then
-        savedCameraSubject = cam.CameraSubject
-        savedCameraType = cam.CameraType
-    end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        savedHumanoidState = { WalkSpeed = hum.WalkSpeed }
-        -- Do not alter animations or PlatformStand; only freeze WalkSpeed after movement completes
-        pcall(function()
-            if humanoidMoveToConn then humanoidMoveToConn:Disconnect() end
-            humanoidMoveToConn = hum.MoveToFinished:Connect(function(reached)
-                if reached and antiLagActive then
-                    pcall(function() hum.WalkSpeed = 0 end)
-                end
-            end)
-        end)
-    end
-
-    pcall(function()
-        antiLagPart = Instance.new("Part")
-        antiLagPart.Name = "PlsDono_AntiLagCam"
-        antiLagPart.Size = Vector3.new(2, 2, 2)
-        antiLagPart.Anchored = true
-        antiLagPart.CanCollide = false
-        antiLagPart.Transparency = 1
-        antiLagPart.Position = Vector3.new(0, 10000, 0)
-        antiLagPart.Parent = Workspace
-    end)
-
-    -- Switch camera immediately to the anti-lag anchor (no ScreenGui)
-    pcall(function()
-        if cam and antiLagPart then
-            cam.CameraSubject = antiLagPart
-            cam.CameraType = Enum.CameraType.Custom
-        end
-    end)
-
-    -- No idle ScreenGui: we intentionally avoid creating HUD elements while anti-lag is active
-
-    -- floating animation
-    antiLagFloatTask = task.spawn(function()
-        local basePos = antiLagPart and antiLagPart.Position or Vector3.new(0,10000,0)
-        local amp = 3
-        local freq = 0.8
-        while antiLagActive and antiLagPart and antiLagPart.Parent do
-            local y = basePos.Y + math.sin(tick() * freq) * amp
-            pcall(function() antiLagPart.CFrame = CFrame.new(basePos.X, y, basePos.Z) end)
-            task.wait(0.06)
-        end
-    end)
-
-    antiLagActive = true
-    pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Enabled" end end)
-    pcall(function() notify("Anti-Lag","Enabled: camera moved to sky; movement will freeze after walking completes.",4,"anti-lag",2) end)
-    return true
-end
-
-local function disableAntiLag()
-    if not antiLagActive then return end
-    local cam = workspace.CurrentCamera
-    if cam then
-        pcall(function()
-            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
-            if savedCameraType then cam.CameraType = savedCameraType end
-        end)
-    end
-
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if humanoidMoveToConn then
-        pcall(function() humanoidMoveToConn:Disconnect() end)
-        humanoidMoveToConn = nil
-    end
-    if hum and savedHumanoidState then
-        pcall(function()
-            hum.WalkSpeed = savedHumanoidState.WalkSpeed or 16
-        end)
-    end
-
-    -- Directly restore camera without creating a ScreenGui
-    pcall(function()
-        if cam then
-            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
-            if savedCameraType then cam.CameraType = savedCameraType end
-        end
-    end)
-
-    pcall(function() if antiLagIdleGui and antiLagIdleGui.Parent then antiLagIdleGui:Destroy() end end)
-    antiLagIdleGui = nil
-    if antiLagIdleTask then
-        pcall(function() task.cancel(antiLagIdleTask) end)
-        antiLagIdleTask = nil
-    end
-
-    pcall(function() if antiLagPart and antiLagPart.Parent then antiLagPart:Destroy() end end)
-    antiLagPart = nil
-    antiLagActive = false
-    pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Off" end end)
-    pcall(function() notify("Anti-Lag","Disabled: camera and controls restored.",3,"anti-lag",1) end)
-end
+-- Anti-Lag feature removed per user request
 
 -- Anti-AFK: prevent idle kick by using VirtualUser on LocalPlayer.Idled
 local antiAfkConn = nil
@@ -774,7 +659,7 @@ local defaults = {
     vcServerHopToggle = false,
     plusHopToggle = false,
     plusHopMinPlayers = 3,
-    antiLagBeta = false,
+    -- antiLagBeta removed
     antiAfkToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
@@ -1378,7 +1263,8 @@ local function sendDonationWebhook(amount, donorInfo)
 end
 
 -- Report errors to configured webhook (rate-limited)
-local function reportErrorToWebhook(msg)
+-- Send a concise error code to webhook (e.g. "KICK", "BAN", "SHUTDOWN", "ERROR")
+local function reportErrorToWebhook(code)
     if not settings or not settings.webhookToggle then return end
     local url = tostring(settings.webhookBox or ""):match("%S+")
     if not url or url == "" then return end
@@ -1392,12 +1278,32 @@ local function reportErrorToWebhook(msg)
         postWebhookJson(url, {
             username = "K_OYG's UI - Client",
             embeds = {{
-                title = "Client Error Detected",
-                description = tostring(msg or "(no message)"),
+                title = "Client Error Code",
+                description = tostring(code or "UNKNOWN"),
                 color = 0xFF3333,
             }},
         })
     end)
+end
+
+local function detectErrorCodeFromText(text)
+    local lower = tostring(text or ""):lower()
+    if lower:find("you have been kicked") or lower:find("you were kicked") or lower:find("kicked") then
+        return "KICK"
+    end
+    if lower:find("banned") or lower:find("ban") then
+        return "BAN"
+    end
+    if lower:find("shut down") or lower:find("shutting down") or lower:find("server is shutting") or lower:find("game closed") then
+        return "SHUTDOWN"
+    end
+    if lower:find("disconnected") or lower:find("connection closed") or lower:find("closed connection") then
+        return "DISCONNECT"
+    end
+    if lower:find("exception") or lower:find("stack traceback") or lower:find("stack") or lower:find("error") then
+        return "ERROR"
+    end
+    return nil
 end
 
 -- Hook LogService to send webhook on error-like messages
@@ -1405,8 +1311,37 @@ pcall(function()
     LogService.MessageOut:Connect(function(message)
         local text = tostring(message or "")
         local lower = text:lower()
-        if lower:find("error") or lower:find("exception") or lower:find("stack traceback") or lower:find("stack") then
-            pcall(reportErrorToWebhook, text)
+        local isError = false
+        if lower:find("kick") or lower:find("kicked") or lower:find("you have been kicked") or lower:find("you were kicked") then
+            isError = true
+        end
+        if lower:find("ban") or lower:find("banned") then
+            isError = true
+        end
+        if lower:find("disconnected") or lower:find("disconnected from") or lower:find("closed connection") or lower:find("connection closed") then
+            isError = true
+        end
+        if lower:find("shut down") or lower:find("shutting down") or lower:find("server is shutting") or lower:find("game closed") then
+            isError = true
+        end
+
+        if isError then
+            local code = detectErrorCodeFromText(text) or "ERROR"
+            pcall(reportErrorToWebhook, code)
+        end
+    end)
+    Players.PlayerRemoving:Connect(function(pl)
+        if pl == LocalPlayer then
+            pcall(reportErrorToWebhook, "PLAYER_REMOVED")
+        end
+    end)
+
+    -- Try to detect client shutdowns
+    pcall(function()
+        if type(game.BindToClose) == "function" then
+            game:BindToClose(function()
+                pcall(reportErrorToWebhook, "SHUTDOWN")
+            end)
         end
     end)
 end)
@@ -1460,10 +1395,19 @@ local function choosePlaceId()
     if settings.vcServerHopToggle then
         return VC_PLS_DONATE_PLACE_ID
     end
-
+    -- If user enabled VC server hop, use VC place
+    -- Otherwise, if current place is in allowed list, use it; else pick a random allowed place
     local cur = tonumber(game.PlaceId) or 0
     if ALLOWED_PLACE_IDS[cur] then
         return cur
+    end
+
+    local allowedList = {}
+    for k, v in pairs(ALLOWED_PLACE_IDS) do
+        if v then table.insert(allowedList, tonumber(k) or k) end
+    end
+    if #allowedList > 0 then
+        return allowedList[math.random(1, #allowedList)]
     end
 
     return DEFAULT_PLS_DONATE_PLACE_ID
@@ -1481,8 +1425,9 @@ serverHopNow = function(reason)
             local minPlayers = tonumber(settings.minPlayerCount) or 23
             local maxPlayers = tonumber(settings.maxPlayerCount) or 24
 
+            local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(tostring(placeId))
             local req = performHttpRequest({
-                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
+                Url = url,
                 Method = "GET"
             })
 
@@ -1494,6 +1439,12 @@ serverHopNow = function(reason)
                 if ok and decoded and type(decoded.data) == "table" then
                     body = decoded
                 end
+            end
+
+            if not req then
+                pcall(function()
+                    createPersistentStatusOverlay("Server hop HTTP request failed for place: " .. tostring(placeId))
+                end)
             end
 
             if body then
@@ -3017,13 +2968,7 @@ settingHandlers = {
             serverHopNow("vc-server-hop-toggle")
         end
     end,
-    antiLagBeta = function(value)
-        if value then
-            pcall(function() enableAntiLag() end)
-        else
-            pcall(function() disableAntiLag() end)
-        end
-    end,
+    -- antiLagBeta handler removed
     antiAfkToggle = function(value)
         if value then
             pcall(function() enableAntiAfk() end)
@@ -3538,8 +3483,7 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
-        createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
-        antiLagStatusLabel = createInfoLabel(mainSection, "Anti-Lag: Off")
+        -- Anti-Lag removed per user request
         createToggle(mainSection, "Anti-AFK", "antiAfkToggle")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
