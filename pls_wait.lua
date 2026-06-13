@@ -226,14 +226,12 @@ local function claimEmptyStands()
     end
 
     for idx, stand in ipairs(standsList) do
-        if stand and stand.Parent then
-
-            -- skip stands that already contain a ButtonPrompt child (these should be handled via StandButtons)
+        if not stand or not stand.Parent then
+            -- skip invalid stand
+        else
             if stand:FindFirstChild("ButtonPrompt") then
-                -- skip
+                -- handled via StandButtons; skip
             else
-
-                -- check for ObjectValue named Wner or Owner (case-insensitive)
                 local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
                 local ownerEmpty = true
                 if ownerObj and ownerObj:IsA("ObjectValue") then
@@ -241,63 +239,64 @@ local function claimEmptyStands()
                 end
 
                 if ownerEmpty then
-            local pivot = tryGetPivotPosition(stand)
-            if pivot then
-                moveCharacterToPosition(pivot)
-                task.wait(0.25)
-            end
+                    local pivot = tryGetPivotPosition(stand)
+                    if pivot then
+                        moveCharacterToPosition(pivot)
+                        task.wait(0.25)
+                    end
 
-            -- First try to trigger any nearby Claim prompts (prefer StandButtons mapping if present)
-            local posForPrompt = pivot or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position)
-            if posForPrompt then
-                -- try mapped button first
-                local tried = false
-                local btnCandidate = buttonList[idx]
-                if btnCandidate and btnCandidate.Parent then
-                    local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
-                    if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
-                        pcall(function()
-                            if claimPrompt.Trigger then
-                                claimPrompt:Trigger()
-                            else
-                                claimPrompt:InputHoldBegin()
+                    local posForPrompt = pivot
+                    if not posForPrompt and LocalPlayer.Character then
+                        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        posForPrompt = hrp and hrp.Position
+                    end
+
+                    if posForPrompt then
+                        local btnCandidate = buttonList[idx]
+                        if btnCandidate and btnCandidate.Parent then
+                            local claimPrompt = btnCandidate:FindFirstChild("Claim") or btnCandidate:FindFirstChildWhichIsA("ProximityPrompt")
+                            if claimPrompt and claimPrompt:IsA("ProximityPrompt") then
+                                pcall(function()
+                                    if claimPrompt.Trigger then
+                                        claimPrompt:Trigger()
+                                    else
+                                        claimPrompt:InputHoldBegin()
+                                        task.wait(0.12)
+                                        claimPrompt:InputHoldEnd()
+                                    end
+                                end)
                                 task.wait(0.12)
-                                claimPrompt:InputHoldEnd()
                             end
+                        end
+                        if not claimStopFlag then
+                            tryTriggerNearbyClaimPrompts(posForPrompt)
+                        end
+                    end
+
+                    local slot = findSlotFromStand(stand)
+                    if not slot then
+                        notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(stand.Name or "?")), 4)
+                    else
+                        local ok, res = pcall(function()
+                            return remote:InvokeServer(slot)
                         end)
-                        tried = true
-                        task.wait(0.12)
+                        if ok then
+                            notify("Booth Claim", ("Attempted claim slot %d (response: %s)"):format(slot, tostring(res)), 4)
+                            if claimStopFlag then
+                                if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
+                                return true
+                            end
+                            return true
+                        else
+                            notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
+                        end
                     end
-                end
-
-                -- fallback: scan nearby prompts for ones matching Stand/Claim
-                if not claimStopFlag then
-                    tryTriggerNearbyClaimPrompts(posForPrompt)
+                    task.wait(0.6)
                 end
             end
-
-            local slot = findSlotFromStand(stand)
-            if not slot then
-                notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(stand.Name or "?")), 4)
-            else
-                local ok, res = pcall(function()
-                    return remote:InvokeServer(slot)
-                end)
-                if ok then
-                    notify("Booth Claim", ("Attempted claim slot %d (response: %s)"):format(slot, tostring(res)), 4)
-                    if claimStopFlag then
-                        if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
-                        return true
-                    end
-                    -- If claim likely succeeded, stop; otherwise continue
-                    return true
-                else
-                    notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
-                end
-            end
-            task.wait(0.6)
         end
     end
+
     if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
     notify("Booth Claim", "No empty stands claimed.", 4)
     return false
