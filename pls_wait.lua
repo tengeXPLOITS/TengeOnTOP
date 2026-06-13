@@ -106,7 +106,8 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
     local allServers = {}
     local cursor
     repeat
-        local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Asc&limit=100"
+            -- Use descending sort and exclude full games to find populated servers first
+            local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"
         if cursor then url = url .. "&cursor=" .. tostring(cursor) end
         local ok, res = pcall(function() return Http:GetAsync(url, true) end)
         if not ok or not res then break end
@@ -139,6 +140,18 @@ local function serverHopNow(minPlayers, maxPlayers, persist)
             return false
         end
     end
+
+    -- Debug: notify counts and sample servers to help diagnose "no matching servers" issues
+    pcall(function()
+        local total = #allServers
+        local cand = #candidates
+        local sample = {}
+        for i=1, math.min(5, total) do
+            local s = allServers[i]
+            if s then table.insert(sample, (tostring(s.id or "?") .. "(" .. tostring(s.playing or "?") .. ")")) end
+        end
+        StarterGui:SetCore("SendNotification", { Title = "Server Hop Debug", Text = ("scanned=%d cand=%d sample=%s"):format(total, cand, table.concat(sample, ",")), Duration = 6 })
+    end)
 
     local target = candidates[math.random(1, #candidates)]
 
@@ -628,6 +641,12 @@ do
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            afkToggle.MouseButton1Click:Connect(function()
+                SETTINGS.antiAfk = not SETTINGS.antiAfk
+                afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
+            end)
         end
 
         -- Server-Hop tab
@@ -680,7 +699,7 @@ do
                     return
                 end
                 hopRangeText = txt
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                pcall(SaveSettings)
             end)
 
             local hopBtn = Instance.new("TextButton")
@@ -700,7 +719,7 @@ do
                     return
                 end
                 hopRangeText = txt
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                pcall(SaveSettings)
                 serverHopNow(mn, mx, true)
             end)
 
@@ -724,7 +743,7 @@ do
             autoToggle.MouseButton1Click:Connect(function()
                 autoServerHopEnabled = not autoServerHopEnabled
                 autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                pcall(SaveSettings)
                 if autoServerHopEnabled and not autoServerHopTask then
                     autoServerHopTask = task.spawn(function()
                         while autoServerHopEnabled do
@@ -764,18 +783,18 @@ do
                 SETTINGS.webhookToggle = not SETTINGS.webhookToggle
                 whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
                 if SETTINGS.webhookToggle then startDonationMonitor() else stopDonationMonitor() end
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                pcall(SaveSettings)
             end)
 
             local urlBox = Instance.new("TextBox")
-            urlBox.Size = UDim2.new(0,400,0,24)
+            urlBox.Size = UDim2.new(1, -20, 0, 24)
             urlBox.Position = UDim2.new(0,10,0,40)
             urlBox.Text = SETTINGS.webhookUrl
             urlBox.PlaceholderText = "https://discord.com/api/webhooks..."
             urlBox.Parent = frame
             urlBox.FocusLost:Connect(function()
                 SETTINGS.webhookUrl = tostring(urlBox.Text or "")
-                if SETTINGS.persistToggles then pcall(SaveSettings) end
+                pcall(SaveSettings)
             end)
 
             -- donation stat name textbox removed per user request
