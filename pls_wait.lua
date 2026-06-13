@@ -37,8 +37,26 @@ local function notify(title, text, duration)
     end)
 end
 
-local function enableAntiAfk() end
-local function disableAntiAfk() end
+local antiAfkConn = nil
+local function enableAntiAfk()
+    if antiAfkConn then return end
+    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+    if not ok or not vu then return end
+    antiAfkConn = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0,0))
+        end)
+    end)
+    notify("Anti-AFK", "Enabled", 2)
+end
+local function disableAntiAfk()
+    if antiAfkConn then
+        pcall(function() antiAfkConn:Disconnect() end)
+        antiAfkConn = nil
+    end
+    notify("Anti-AFK", "Disabled", 2)
+end
 
 -- Webhook / donation helpers
 local function postWebhookEvent(kind, data)
@@ -455,7 +473,7 @@ do
 
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 460, 0, 360)
+        mainFrame.Size = UDim2.new(0, 420, 0, 360)
         mainFrame.Position = UDim2.new(0.5, -230, 0.5, -180)
         mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -468,8 +486,8 @@ do
         local title = Instance.new("TextButton")
         title.Size = UDim2.new(1, 0, 0, 28)
         title.Position = UDim2.new(0,0,0,0)
-        title.BackgroundColor3 = Color3.fromRGB(22,22,22)
-        title.Text = "Pls Wait - Koyg UI"
+        title.BackgroundColor3 = Color3.fromRGB(24,160,80)
+        title.Text = "💰 Pls Wait - Koyg UI"
         title.TextColor3 = Color3.fromRGB(255,255,255)
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.AutoButtonColor = false
@@ -580,7 +598,7 @@ do
             claimBtn.Size = UDim2.new(0,200,0,40)
             claimBtn.Position = UDim2.new(0,10,0,10)
             claimBtn.Text = "Claim Booth"
-            claimBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            claimBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
             claimBtn.TextColor3 = Color3.fromRGB(255,255,255)
             local c = Instance.new("UICorner")
             c.Parent = claimBtn
@@ -605,7 +623,7 @@ do
             afkToggle.Size = UDim2.new(0,60,0,20)
             afkToggle.Position = UDim2.new(0,140,0,60)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
-            afkToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
             afkToggle.MouseButton1Click:Connect(function()
                 SETTINGS.antiAfk = not SETTINGS.antiAfk
@@ -672,7 +690,7 @@ do
             hopBtn.Size = UDim2.new(0,200,0,40)
             hopBtn.Position = UDim2.new(0,10,0,112)
             hopBtn.Text = "Server Hop Now"
-            hopBtn.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            hopBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
             hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
             local hCorner = Instance.new("UICorner")
             hCorner.Parent = hopBtn
@@ -701,7 +719,7 @@ do
             autoToggle.Size = UDim2.new(0,60,0,20)
             autoToggle.Position = UDim2.new(0,140,0,160)
             autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
-            autoToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
+            autoToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoToggle.TextColor3 = Color3.fromRGB(255,255,255)
             local atCorner = Instance.new("UICorner")
             atCorner.Parent = autoToggle
@@ -745,6 +763,7 @@ do
             whToggle.Position = UDim2.new(0,140,0,10)
             whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
             whToggle.Parent = frame
+            whToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             whToggle.MouseButton1Click:Connect(function()
                 SETTINGS.webhookToggle = not SETTINGS.webhookToggle
                 whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
