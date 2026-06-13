@@ -937,7 +937,15 @@ end
 local function enableVisualClone()
     if visualClone then return end
     local char = LocalPlayer.Character
-    if not char then return end
+    if not char then
+        pcall(function()
+            char = LocalPlayer.CharacterAdded:Wait()
+        end)
+    end
+    if not char then
+        pcall(function() notify("Anti-Lag","Failed to enable: character not ready.",4,"anti-lag",2) end)
+        return
+    end
 
     -- create platform high in the sky
     local platform = Instance.new("Part")
@@ -1009,6 +1017,7 @@ local function enableVisualClone()
 
     visualClone = clone
     visualPlatform = platform
+    pcall(function() notify("Anti-Lag","Visual clone enabled.",4,"anti-lag",2) end)
 end
 
 local function disableVisualClone()
@@ -1045,6 +1054,7 @@ local function disableVisualClone()
     savedCameraType = nil
     savedPartList = {}
     savedEffectStates = {}
+    pcall(function() notify("Anti-Lag","Visual clone disabled.",3,"anti-lag",2) end)
 end
 
 local hopCooldownSeconds = 1
@@ -3575,6 +3585,15 @@ end
 end
 
 buildSettingsTabs()
+
+-- Apply saved setting handlers so toggles like Anti-Lag reapply on load
+if settingHandlers then
+    for key, handler in pairs(settingHandlers) do
+        pcall(function()
+            handler(settings[key])
+        end)
+    end
+end
 
 task.spawn(function()
     task.wait(2)
