@@ -224,23 +224,8 @@ local function claimEmptyStands()
                     end
 
                     if posForPrompt then
-                        -- Instead of triggering ProximityPrompts, try invoking the ClaimStand remote for slots 1..24
-                        for slotNum = 1, 24 do
-                            if claimStopFlag then break end
-                            local ok2, res2 = pcall(function()
-                                return remote:InvokeServer(slotNum)
-                            end)
-                            if ok2 then
-                                notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slotNum, tostring(res2)), 3)
-                                if claimStopFlag or tostring(res2) == "Success" or res2 == true then
-                                    if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
-                                    return true
-                                end
-                            else
-                                notify("Booth Claim", ("Claim remote error for slot %d"):format(slotNum), 2)
-                            end
-                            task.wait(0.12)
-                        end
+                        -- Claim only the stand the player is currently near; slot resolved later
+                        -- (no broad 1..24 loop to avoid repeated claiming)
                     end
 
                     local slot = findSlotFromStand(stand)
