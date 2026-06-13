@@ -865,6 +865,7 @@ local serverHopNow
 local requestServerHop
 
 local plusHopAttemptCount = 0
+local antiLagScheduleId = 0
 
 local function createPersistentStatusOverlay(textMsg)
     local ok, res = pcall(function()
@@ -3019,9 +3020,20 @@ settingHandlers = {
         end
     end,
     antiLagBeta = function(value)
+        -- increment schedule id to cancel any pending tasks when toggling
+        antiLagScheduleId = (antiLagScheduleId or 0) + 1
+        local myId = antiLagScheduleId
         if value then
-            pcall(enableVisualClone)
+            -- schedule enable 10 seconds later, cancelable by changing antiLagScheduleId
+            task.spawn(function()
+                task.wait(10)
+                if settings.antiLagBeta and myId == antiLagScheduleId then
+                    pcall(enableVisualClone)
+                end
+            end)
         else
+            -- cancel pending and immediately disable
+            antiLagScheduleId = antiLagScheduleId + 1
             pcall(disableVisualClone)
         end
     end,
