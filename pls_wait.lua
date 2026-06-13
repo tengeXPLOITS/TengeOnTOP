@@ -229,8 +229,19 @@ local function claimEmptyStands()
         return false
     end
 
-    -- teleport/move near the chosen stand
-    moveCharacterToPosition(target.pivot)
+    -- teleport/move a few studs outside the chosen stand pivot (avoid getting stuck inside)
+    local safePos = target.pivot
+    local dir
+    if playerPos then
+        dir = Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z)
+    end
+    if not dir or dir.Magnitude < 0.5 then
+        dir = Vector3.new(0, 0, -1)
+    end
+    dir = dir.Unit
+    local distanceAway = 3 -- studs away from pivot
+    safePos = target.pivot + dir * distanceAway + Vector3.new(0, 2, 0)
+    moveCharacterToPosition(safePos)
     task.wait(0.25)
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
