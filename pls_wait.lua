@@ -378,4 +378,74 @@ do
 
             local function makeButton(text)
                 local btn = Instance.new("TextButton")
-       
+                btn.Size = UDim2.new(1, 0, 0, 44)
+                btn.BackgroundColor3 = Color3.fromRGB(50,50,54)
+                btn.TextColor3 = Color3.fromRGB(240,240,240)
+                btn.Font = Enum.Font.GothamSemibold
+                btn.TextSize = 16
+                btn.Text = text
+                btn.AutoButtonColor = true
+                local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8); c.Parent = btn
+                btn.Parent = body
+                return btn
+            end
+
+            local claimBtn = makeButton("Claim Booth")
+            local serverHopBtn = makeButton("Server Hop")
+
+            local autoClaimBtn = makeButton("Auto‑Claim: Off")
+            local antiAfkBtn = makeButton("Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off"))
+
+            claimBtn.MouseButton1Click:Connect(function()
+                task.spawn(function()
+                    notify("Booth", "Attempting claim...", 3)
+                    local ok, res = claimBooth()
+                    if ok and res then
+                        notify("Booth", "Claim attempted (success).", 4)
+                    else
+                        notify("Booth", "Claim attempt finished or failed.", 4)
+                    end
+                end)
+            end)
+
+            serverHopBtn.MouseButton1Click:Connect(function()
+                task.spawn(function() serverHopNow() end)
+            end)
+
+            local autoClaiming = false
+            local autoClaimTask = nil
+            autoClaimBtn.MouseButton1Click:Connect(function()
+                autoClaiming = not autoClaiming
+                autoClaimBtn.Text = "Auto‑Claim: " .. (autoClaiming and "On" or "Off")
+                if autoClaiming then
+                    autoClaimTask = task.spawn(function()
+                        while autoClaiming do
+                            pcall(function()
+                                claimBooth()
+                            end)
+                            task.wait(2.5)
+                        end
+                    end)
+                else
+                    if autoClaimTask then
+                        pcall(function() task.cancel(autoClaimTask) end)
+                        autoClaimTask = nil
+                    end
+                end
+            end)
+
+            antiAfkBtn.MouseButton1Click:Connect(function()
+                SETTINGS.antiAfk = not SETTINGS.antiAfk
+                antiAfkBtn.Text = "Anti‑AFK: " .. (SETTINGS.antiAfk and "On" or "Off")
+                if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
+            end)
+
+        end)
+    end
+end
+
+return {
+    serverHopNow = serverHopNow,
+    postWebhookCode = postWebhookCode,
+    claimBooth = claimBooth,
+}
