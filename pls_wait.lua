@@ -277,15 +277,18 @@ local function claimEmptyStands()
                     if not slot then
                         notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(stand.Name or "?")), 4)
                     else
+                        -- Prefer direct remote claim (server uses ReplicatedStorage.ClaimStand)
                         local ok, res = pcall(function()
                             return remote:InvokeServer(slot)
                         end)
                         if ok then
-                            notify("Booth Claim", ("Attempted claim slot %d (response: %s)"):format(slot, tostring(res)), 4)
-                            if claimStopFlag then
+                            notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
+                            -- stop if server reports success via ClientNotification or truthy response
+                            if claimStopFlag or tostring(res) == "Success" or res == true then
                                 if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
                                 return true
                             end
+                            -- continue to next stand (we attempted a claim)
                             return true
                         else
                             notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
