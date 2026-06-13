@@ -521,23 +521,45 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             end
         end
         -- Also detect effect-providing instances and mark their topmost model ancestor for removal
+        -- Safety: do NOT mark player Character models or any model that contains a Humanoid
         local effectClasses = { "ParticleEmitter", "Trail", "Beam", "Sound", "Fire", "Smoke", "Sparkles", "Explosion" }
+
+        local function isPlayerCharacterModel(m)
+            if not m or not m:IsA("Model") then return false end
+            -- model with a Humanoid is almost certainly a character
+            if m:FindFirstChildOfClass("Humanoid") then return true end
+            local mname = tostring(m.Name or "")
+            for _, pl in ipairs(Players:GetPlayers()) do
+                if tostring(pl.Name) == mname or tostring(pl.DisplayName) == mname then
+                    return true
+                end
+                if pl.Character and (pl.Character == m or pl.Character:IsDescendantOf(m)) then
+                    return true
+                end
+            end
+            return false
+        end
+
         for _, inst in ipairs(Workspace:GetDescendants()) do
             local cls = inst.ClassName
             if cls then
                 for _, ec in ipairs(effectClasses) do
                     if cls == ec then
                         local anc = inst.Parent
+                        local marked = false
                         while anc and anc ~= Workspace do
                             if anc:IsA("Model") then
-                                allMap[anc] = true
+                                if not isPlayerCharacterModel(anc) then
+                                    allMap[anc] = true
+                                end
+                                marked = true
                                 break
                             end
                             anc = anc.Parent
                         end
-                        if not anc or anc == Workspace then
+                        if not marked then
                             local p = inst.Parent
-                            if p and type(p.Destroy) == "function" then
+                            if p and type(p.Destroy) == "function" and not isPlayerCharacterModel(p) then
                                 allMap[p] = true
                             end
                         end
@@ -840,6 +862,51 @@ end
 
 local serverHopNow
 local requestServerHop
+
+local plusHopAttemptCount = 0
+
+local function createPersistentStatusOverlay(textMsg)
+    local ok, res = pcall(function()
+        if not GuiParent then return nil end
+        local existing = GuiParent:FindFirstChild("PlsDonoStatusOverlay")
+        if existing then existing:Destroy() end
+
+        local screen = Instance.new("ScreenGui")
+        screen.Name = "PlsDonoStatusOverlay"
+        screen.ResetOnSpawn = false
+        screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        screen.DisplayOrder = 1000
+        screen.Parent = GuiParent
+
+        local frame = Instance.new("Frame")
+        frame.AnchorPoint = Vector2.new(0.5, 0.5)
+        frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        frame.Size = UDim2.new(0, 420, 0, 80)
+        frame.BackgroundColor3 = Color3.fromRGB(24, 24, 26)
+        frame.BorderSizePixel = 0
+        frame.Parent = screen
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = frame
+
+        local label = Instance.new("TextLabel")
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1, -24, 1, -12)
+        label.Position = UDim2.new(0, 12, 0, 6)
+        label.Text = tostring(textMsg or "")
+        label.TextColor3 = Color3.fromRGB(240, 240, 240)
+        label.Font = Enum.Font.GothamSemibold
+        label.TextSize = 18
+        label.TextWrapped = true
+        label.TextXAlignment = Enum.TextXAlignment.Center
+        label.Parent = frame
+
+        return screen
+    end)
+    if ok then return res end
+    return nil
+end
 
 local hopCooldownSeconds = 1
 local lastHopTick = 0
@@ -1311,6 +1378,23 @@ serverHopNow = function(reason)
 end
 
 requestServerHop = function(reason)
+    -- Track plus-hop attempts and enforce a soft pause/kick if excessive
+    if tostring(reason or "") == "plus-hop" then
+        plusHopAttemptCount = (plusHopAttemptCount or 0) + 1
+        if plusHopAttemptCount > 5 then
+            pcall(function()
+                createPersistentStatusOverlay("searching for PLUS servers, pls wait!")
+            end)
+            pcall(function()
+                notify("Plus Hop", "searching for PLUS servers, pls wait!", 6, "plus-hop-kick", 10)
+            end)
+            pcall(function()
+                LocalPlayer:Kick("searching for PLUS servers, pls wait!")
+            end)
+            return false
+        end
+    end
+
     local now = tick()
     if now - lastHopTick < hopCooldownSeconds then
         return false
@@ -1346,12 +1430,15 @@ task.spawn(function()
         end
     end
 
-    if plusCount < required then
-        notify("Plus Hop", ("Found %d Plus users; require %d — hopping"):format(plusCount, required), 6, "plus-hop", 10)
-        pcall(function()
-            requestServerHop("plus-hop")
-        end)
+    if plusCount >= required then
+        plusHopAttemptCount = 0
+        return
     end
+
+    notify("Plus Hop", ("Found %d Plus users; require %d — hopping"):format(plusCount, required), 6, "plus-hop", 10)
+    pcall(function()
+        requestServerHop("plus-hop")
+    end)
 end)
 
 findOwnedBoothSlot = function(boothUiFolder)
@@ -3328,6 +3415,7 @@ do
     -- Plus-hop: hop away from servers with few Premium (Plus) users
     createToggle(serverSection, "Plus Hop (Prefer Plus)", "plusHopToggle")
     createTextBox(serverSection, "Min Plus Players", "plusHopMinPlayers", true)
+    createInfoLabel(serverSection, "try not to use in Simply Donate")
     -- Anti-bot and mod-evader controls removed
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
