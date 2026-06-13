@@ -449,6 +449,8 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
                 return nil
             end)
             if ok then
+
+            
                 return result
             end
             return nil
@@ -633,6 +635,92 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             notifier.finish(removed)
         end
     end)
+end
+
+-- Anti-Lag (Beta) simple implementation: moves camera to sky and disables local movement
+local antiLagActive = false
+local antiLagPart = nil
+local antiLagFloatTask = nil
+local antiLagStatusLabel = nil
+local savedCameraSubject = nil
+local savedCameraType = nil
+local savedHumanoidState = nil
+
+local function enableAntiLag()
+    if antiLagActive then return true end
+    local cam = workspace.CurrentCamera
+    if cam then
+        savedCameraSubject = cam.CameraSubject
+        savedCameraType = cam.CameraType
+    end
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        savedHumanoidState = {
+            WalkSpeed = hum.WalkSpeed,
+            JumpPower = hum.JumpPower or hum.JumpHeight or 0,
+            PlatformStand = hum.PlatformStand,
+            AutoRotate = hum.AutoRotate,
+        }
+        pcall(function()
+            hum.WalkSpeed = 0
+            if hum.JumpPower ~= nil then hum.JumpPower = 0 end
+            hum.PlatformStand = true
+            hum.AutoRotate = false
+        end)
+    end
+
+    pcall(function()
+        antiLagPart = Instance.new("Part")
+        antiLagPart.Name = "PlsDono_AntiLagCam"
+        antiLagPart.Size = Vector3.new(2, 2, 2)
+        antiLagPart.Anchored = true
+        antiLagPart.CanCollide = false
+        antiLagPart.Transparency = 1
+        antiLagPart.Position = Vector3.new(0, 10000, 0)
+        antiLagPart.Parent = Workspace
+    end)
+
+    if cam and antiLagPart then
+        pcall(function()
+            cam.CameraSubject = antiLagPart
+            cam.CameraType = Enum.CameraType.Custom
+        end)
+    end
+
+    antiLagActive = true
+    pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Enabled" end end)
+    pcall(function() notify("Anti-Lag","Enabled: camera moved to sky; movement disabled.",4,"anti-lag",2) end)
+    return true
+end
+
+local function disableAntiLag()
+    if not antiLagActive then return end
+    local cam = workspace.CurrentCamera
+    if cam then
+        pcall(function()
+            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
+            if savedCameraType then cam.CameraType = savedCameraType end
+        end)
+    end
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and savedHumanoidState then
+        pcall(function()
+            hum.WalkSpeed = savedHumanoidState.WalkSpeed or 16
+            if hum.JumpPower ~= nil then hum.JumpPower = savedHumanoidState.JumpPower or 50 end
+            hum.PlatformStand = savedHumanoidState.PlatformStand or false
+            hum.AutoRotate = savedHumanoidState.AutoRotate
+        end)
+    end
+
+    pcall(function() if antiLagPart and antiLagPart.Parent then antiLagPart:Destroy() end end)
+    antiLagPart = nil
+    antiLagActive = false
+    pcall(function() if antiLagStatusLabel then antiLagStatusLabel.Text = "Anti-Lag: Off" end end)
+    pcall(function() notify("Anti-Lag","Disabled: camera and controls restored.",3,"anti-lag",1) end)
 end
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
@@ -865,8 +953,6 @@ local serverHopNow
 local requestServerHop
 
 local plusHopAttemptCount = 0
-local antiLagScheduleId = 0
-local antiLagStatusLabel = nil
 
 local function createPersistentStatusOverlay(textMsg)
     local ok, res = pcall(function()
@@ -909,178 +995,6 @@ local function createPersistentStatusOverlay(textMsg)
     end)
     if ok then return res end
     return nil
-end
-
--- Visual clone (Anti-Lag) implementation
-local visualClone = nil
-local visualPlatform = nil
-local savedCameraSubject = nil
-local savedCameraType = nil
-local savedPartList = {}
-local savedEffectStates = {}
-
-local function disableEffectsOnInstance(inst)
-    if not inst then return end
-    if inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") then
-        local ok, prev = pcall(function() return inst.Enabled end)
-        table.insert(savedEffectStates, {inst = inst, prop = "Enabled", prev = ok and prev})
-        pcall(function() inst.Enabled = false end)
-    elseif inst:IsA("Sound") then
-        local ok, prev = pcall(function() return inst.Playing end)
-        table.insert(savedEffectStates, {inst = inst, prop = "Playing", prev = ok and prev})
-        pcall(function() inst:Stop() end)
-    elseif inst:IsA("Smoke") or inst:IsA("Fire") or inst:IsA("Sparkles") or inst:IsA("Explosion") then
-        local ok, prev = pcall(function() return inst.Enabled end)
-        table.insert(savedEffectStates, {inst = inst, prop = "Enabled", prev = ok and prev})
-        pcall(function() inst.Enabled = false end)
-    end
-end
-
-local function enableVisualClone()
-    if visualClone then return end
-    local char = LocalPlayer.Character
-    if not char then
-        pcall(function()
-            char = LocalPlayer.CharacterAdded:Wait()
-        end)
-    end
-    if not char then
-        pcall(function() notify("Anti-Lag","Failed to enable: character not ready.",4,"anti-lag",2) end)
-        return
-    end
-
-    pcall(function() notify("Anti-Lag","Character found — creating visual clone...",3,"anti-lag",1) end)
-
-    -- create platform high in the sky
-    local platform = Instance.new("Part")
-    platform.Name = "PlsDono_VisualPlatform"
-    platform.Size = Vector3.new(24, 1, 24)
-    platform.Anchored = true
-    platform.CanCollide = false
-    platform.Transparency = 1
-    platform.Position = Vector3.new(0, 5000, 0)
-    platform.Parent = Workspace
-
-    local clone = char:Clone()
-    -- strip scripts and heavy components, and make clone static
-    for _, d in ipairs(clone:GetDescendants()) do
-        if d:IsA("Script") or d:IsA("LocalScript") then
-            pcall(function() d:Destroy() end)
-        elseif d:IsA("BasePart") then
-            pcall(function()
-                d.Anchored = true
-                d.CanCollide = false
-            end)
-        elseif d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") then
-            pcall(function() d.Enabled = false end)
-        elseif d:IsA("Sound") then
-            pcall(function() d:Stop() end)
-            pcall(function() d:Destroy() end)
-        elseif d:IsA("Smoke") or d:IsA("Fire") or d:IsA("Sparkles") or d:IsA("Explosion") then
-            pcall(function() d.Enabled = false end)
-        end
-    end
-
-    clone.Name = tostring(LocalPlayer.Name or "VisualClone") .. "_PlsDonoClone"
-    clone.Parent = Workspace
-    pcall(function() notify("Anti-Lag","Clone parented to Workspace.",3,"anti-lag",1) end)
-    local primary = clone:FindFirstChild("HumanoidRootPart") or clone:FindFirstChildWhichIsA("BasePart")
-    if primary then
-        pcall(function() clone:SetPrimaryPartCFrame(CFrame.new(platform.Position + Vector3.new(0, 3, 0))) end)
-    end
-
-    -- hide local real character parts (local-only) and disable effects to reduce rendering
-    savedPartList = {}
-    savedEffectStates = {}
-    for _, d in ipairs(char:GetDescendants()) do
-        if d:IsA("BasePart") then
-            local ok, prev = pcall(function() return d.LocalTransparencyModifier end)
-            table.insert(savedPartList, {part = d, prev = ok and prev or 0})
-            pcall(function() d.LocalTransparencyModifier = 1 end)
-        else
-            disableEffectsOnInstance(d)
-        end
-    end
-
-    pcall(function() notify("Anti-Lag","Hidden local character parts and disabled local effects.",3,"anti-lag",1) end)
-
-    -- switch camera to clone's humanoid if available
-    local cam = workspace.CurrentCamera
-    if cam then
-        savedCameraSubject = cam.CameraSubject
-        savedCameraType = cam.CameraType
-        local hum = clone:FindFirstChildOfClass("Humanoid")
-        if hum then
-            pcall(function() cam.CameraSubject = hum end)
-            pcall(function() cam.CameraType = Enum.CameraType.Custom end)
-        else
-            local prim = clone:FindFirstChildWhichIsA("BasePart")
-            if prim then
-                pcall(function() cam.CameraSubject = prim end)
-                pcall(function() cam.CameraType = Enum.CameraType.Custom end)
-            end
-        end
-    end
-
-    visualClone = clone
-    visualPlatform = platform
-    pcall(function() notify("Anti-Lag","Visual clone enabled.",4,"anti-lag",2) end)
-    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enabled" end) end
-end
-
--- Wrap enableVisualClone with an xpcall to capture and report tracebacks
-do
-    local rawEnable = enableVisualClone
-    enableVisualClone = function(...)
-        local args = {...}
-        local ok, err = xpcall(function() return rawEnable(table.unpack(args)) end, function(e) return debug.traceback(e, 2) end)
-        if not ok then
-            pcall(function()
-                notify("Anti-Lag Error", tostring(err), 10, "anti-lag-err", 1)
-            end)
-            warn("Anti-Lag enable error:\n", err)
-            return false, err
-        end
-        return true
-    end
-end
-
-local function disableVisualClone()
-    if not visualClone then return end
-    -- restore local character parts transparency
-    for _, entry in ipairs(savedPartList or {}) do
-        pcall(function() if entry.part and entry.part.Parent then entry.part.LocalTransparencyModifier = entry.prev or 0 end end)
-    end
-    for _, entry in ipairs(savedEffectStates or {}) do
-        pcall(function()
-            if entry.inst and entry.inst.Parent then
-                if entry.prop == "Enabled" then entry.inst.Enabled = entry.prev end
-                if entry.prop == "Playing" and entry.prev then entry.inst:Play() end
-            end
-        end)
-    end
-
-    -- restore camera
-    local cam = workspace.CurrentCamera
-    if cam then
-        pcall(function()
-            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
-            if savedCameraType then cam.CameraType = savedCameraType end
-        end)
-    end
-
-    -- cleanup clone and platform
-    pcall(function() if visualClone and visualClone.Parent then visualClone:Destroy() end end)
-    pcall(function() if visualPlatform and visualPlatform.Parent then visualPlatform:Destroy() end end)
-
-    visualClone = nil
-    visualPlatform = nil
-    savedCameraSubject = nil
-    savedCameraType = nil
-    savedPartList = {}
-    savedEffectStates = {}
-    pcall(function() notify("Anti-Lag","Visual clone disabled.",3,"anti-lag",2) end)
-    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Disabled" end) end
 end
 
 local hopCooldownSeconds = 1
@@ -3045,33 +2959,10 @@ settingHandlers = {
         end
     end,
     antiLagBeta = function(value)
-        -- increment schedule id to cancel any pending tasks when toggling
-        antiLagScheduleId = (antiLagScheduleId or 0) + 1
-        local myId = antiLagScheduleId
         if value then
-            -- schedule enable 10 seconds later, cancelable by changing antiLagScheduleId
-            if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Scheduled (10s)" end) end
-            pcall(function() notify("Anti-Lag","Scheduled enable in 10s...",3,"anti-lag-sched",1) end)
-            task.spawn(function()
-                task.wait(10)
-                if settings.antiLagBeta and myId == antiLagScheduleId then
-                    local ok, err = pcall(enableVisualClone)
-                    if ok then
-                        if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enabled" end) end
-                        pcall(function() notify("Anti-Lag","Enabled (visual clone created).",4,"anti-lag-enabled",2) end)
-                    else
-                        if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Enable failed" end) end
-                        pcall(function() notify("Anti-Lag","Enable failed: " .. tostring(err),6,"anti-lag-failed",2) end)
-                    end
-                else
-                    if antiLagStatusLabel then pcall(function() antiLagStatusLabel.Text = "Anti-Lag: Disabled" end) end
-                    pcall(function() notify("Anti-Lag","Enable cancelled.",3,"anti-lag-cancel",1) end)
-                end
-            end)
+            pcall(function() enableAntiLag() end)
         else
-            -- cancel pending and immediately disable
-            antiLagScheduleId = antiLagScheduleId + 1
-            pcall(disableVisualClone)
+            pcall(function() disableAntiLag() end)
         end
     end,
 }
@@ -3581,8 +3472,8 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
-            createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
-            antiLagStatusLabel = createInfoLabel(mainSection, "Anti-Lag: Off")
+        createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
+        antiLagStatusLabel = createInfoLabel(mainSection, "Anti-Lag: Off")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
