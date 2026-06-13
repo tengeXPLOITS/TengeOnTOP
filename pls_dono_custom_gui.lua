@@ -1330,7 +1330,8 @@ task.spawn(function()
         return
     end
     local pid = tonumber(game.PlaceId) or 0
-    if pid ~= DEFAULT_PLS_DONATE_PLACE_ID and pid ~= VC_PLS_DONATE_PLACE_ID then
+    -- Only run plus-hop in allowed places (user-managed allowlist)
+    if not ALLOWED_PLACE_IDS[pid] then
         return
     end
 
@@ -3324,6 +3325,9 @@ do
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
+    -- Plus-hop: hop away from servers with few Premium (Plus) users
+    createToggle(serverSection, "Plus Hop (Prefer Plus)", "plusHopToggle")
+    createTextBox(serverSection, "Min Plus Players", "plusHopMinPlayers", true)
     -- Anti-bot and mod-evader controls removed
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
