@@ -481,6 +481,7 @@ do
         mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
         mainFrame.Parent = screen
+        mainFrame.Active = true
         local mainCorner = Instance.new("UICorner")
         mainCorner.CornerRadius = UDim.new(0,10)
         mainCorner.Parent = mainFrame
@@ -493,6 +494,7 @@ do
         title.TextColor3 = Color3.fromRGB(255,255,255)
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = mainFrame
+        title.Active = true
         local titleCorner = Instance.new("UICorner")
         titleCorner.CornerRadius = UDim.new(0,8)
         titleCorner.Parent = title
@@ -595,7 +597,6 @@ do
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(65,65,65)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            rangeBox.Parent = frame
         end
 
         -- Server-Hop tab
