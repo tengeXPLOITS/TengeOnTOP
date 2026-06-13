@@ -47,25 +47,62 @@ local function performHttpRequest(options)
     return nil
 end
 
+-- Queue-on-teleport helper (supports common exploit functions)
+local function queueOnTeleport(codeString)
+    if not codeString or codeString == "" then return false end
+    if queue_on_teleport then
+        pcall(function() queue_on_teleport(codeString) end)
+        return true
+    end
+    if syn and syn.queue_on_teleport then
+        pcall(function() syn.queue_on_teleport(codeString) end)
+        return true
+    end
+    if fluxus and fluxus.queue_on_teleport then
+        pcall(function() fluxus.queue_on_teleport(codeString) end)
+        return true
+    end
+    return false
+end
+
 -- Simple server hop helper (fetches public servers for same place)
-local function serverHopNow()
+-- Server hop helper; by default finds servers with players in range 19..22
+local function serverHopNow(minPlayers, maxPlayers, persistent)
+    minPlayers = tonumber(minPlayers) or 19
+    maxPlayers = tonumber(maxPlayers) or 22
+    persistent = persistent == true
+
     task.spawn(function()
-        local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
-        local res = performHttpRequest({ Url = url, Method = "GET" })
-        if res and type(res.Body) == "string" then
-            local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
-            if ok and decoded and type(decoded.data) == "table" then
-                for _, server in ipairs(decoded.data) do
-                    if server.id and server.playing and tonumber(server.playing) > 0 and server.id ~= tostring(game.JobId) then
-                        pcall(function()
-                            TeleportService:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
-                        end)
-                        return
+        while true do
+            local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
+            local res = performHttpRequest({ Url = url, Method = "GET" })
+            local found = false
+            if res and type(res.Body) == "string" then
+                local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                if ok and decoded and type(decoded.data) == "table" then
+                    for _, server in ipairs(decoded.data) do
+                        local playing = tonumber(server.playing) or 0
+                        if server.id and server.id ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
+                            -- queue this script to re-run on the destination
+                            local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+                            pcall(function() queueOnTeleport(qcode) end)
+                            pcall(function()
+                                TeleportService:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
+                            end)
+                            found = true
+                            break
+                        end
                     end
                 end
             end
+
+            if found then break end
+            if not persistent then
+                notify("Server Hop", "No suitable servers found.", 4)
+                break
+            end
+            task.wait(3)
         end
-        notify("Server Hop", "No suitable servers found.", 4)
     end)
 end
 
@@ -90,19 +127,161 @@ end
 if SETTINGS.antiAfk then pcall(enableAntiAfk) end
 
 -- Webhook helper (minimal)
-local function postWebhookCode(code)
+local function postWebhookEvent(eventType, data)
     if not SETTINGS.webhookToggle then return false end
     local url = tostring(SETTINGS.webhookUrl or ""):match("%S+")
     if not url or url == "" then return false end
+    local payload = { username = "PLS WAIT", embeds = {} }
+    local embed = { title = "", description = "", color = 0x00FF00, fields = {} }
+    if eventType == "claim" then
+        embed.title = "Booth Claimed"
+        embed.description = tostring(data.result or "")
+        table.insert(embed.fields, { name = "Slot", value = tostring(data.slot or "?"), inline = true })
+        table.insert(embed.fields, { name = "Place", value = tostring(PLACE_ID), inline = true })
+    elseif eventType == "serverhop" then
+        embed.title = "Server Hop"
+        embed.description = tostring(data.info or "")
+    elseif eventType == "donation" then
+        embed.title = "Donation"
+        embed.description = (tostring(data.player or "") .. " donated " .. tostring(data.amount or "?") )
+        table.insert(embed.fields, { name = "Total", value = tostring(data.total or "?"), inline = true })
+    else
+        embed.title = tostring(eventType)
+        embed.description = tostring(data.info or "")
+    end
+    payload.embeds[1] = embed
     pcall(function()
         performHttpRequest({
             Url = url,
             Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode({ content = tostring(code) })
+            Body = HttpService:JSONEncode(payload)
         })
     end)
     return true
+end
+
+-- Utility: trim whitespace
+local function trimText(s)
+    if not s then return "" end
+    return tostring(s):gsub("^%s+",""):gsub("%s+$","")
+end
+
+-- POST raw JSON to webhook URL
+local function postWebhookJson(url, payload)
+    if not url or url == "" then return false end
+    pcall(function()
+        performHttpRequest({
+            Url = tostring(url),
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+    return true
+end
+
+-- Donation webhook in Koyg format
+local function sendDonationWebhook(amount, donorInfo)
+    if not SETTINGS.webhookToggle then
+        return
+    end
+
+    local url = tostring(SETTINGS.webhookUrl or ""):match("%S+")
+    if not url or url == "" then
+        return
+    end
+
+    local received = math.max(0, tonumber(amount) or 0)
+    local taxed = math.floor((tonumber(amount) or 0) * 0.6)
+    local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
+    local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
+    local donorLabel
+    if donorName ~= "Unknown" and donorDisplay ~= donorName then
+        donorLabel = donorDisplay .. " (@" .. donorName .. ")"
+    elseif donorName ~= "Unknown" then
+        donorLabel = "@" .. donorName
+    else
+        donorLabel = donorDisplay
+    end
+
+    postWebhookJson(url, {
+        username = "webhook by K_0YG...",
+        embeds = {{
+            color = 0xFFAA00,
+            title = "New Donation Received! ✅",
+            fields = {
+                {name = "Donor 👤", value = donorLabel, inline = false},
+                {name = "How much recepient received 💵", value = string.format("%d", received), inline = true},
+                {name = "Tax applied ):", value = string.format("%d", taxed), inline = true},
+            },
+        }},
+    })
+end
+
+-- Donation notifier: watch players' leaderstats for a 'Raised' (or configured) value
+local donationStatName = "Raised"
+local donationEnabled = false
+local donationConns = {}
+local donationTotals = {}
+
+local function onStatChanged(player, stat)
+    local new = tonumber(stat.Value) or 0
+    local uid = tostring(player.UserId)
+    local prev = donationTotals[uid] or 0
+    if new > prev then
+        local delta = new - prev
+        -- send donation-formatted webhook
+        pcall(function()
+            sendDonationWebhook(delta, { name = player.Name, displayName = player.DisplayName })
+        end)
+    end
+    donationTotals[uid] = new
+end
+
+local function tryHookPlayerStat(player)
+    if not player then return end
+    -- init previous value
+    donationTotals[tostring(player.UserId)] = donationTotals[tostring(player.UserId)] or 0
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then
+        local stat = ls:FindFirstChild(donationStatName)
+        if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue") or stat:IsA("StringValue")) then
+            donationTotals[tostring(player.UserId)] = tonumber(stat.Value) or 0
+            donationConns["stat_"..tostring(player.UserId)] = stat.Changed:Connect(function() onStatChanged(player, stat) end)
+            return true
+        end
+    end
+    return false
+end
+
+local function hookPlayer(player)
+    if tryHookPlayerStat(player) then return end
+    -- listen for leaderstats being added
+    donationConns["child_"..tostring(player.UserId)] = player.ChildAdded:Connect(function(child)
+        if donationEnabled and child.Name == "leaderstats" then
+            task.wait(0.05)
+            tryHookPlayerStat(player)
+        end
+    end)
+end
+
+local function startDonationMonitor()
+    if donationEnabled then return end
+    donationEnabled = true
+    for _, p in pairs(Players:GetPlayers()) do
+        hookPlayer(p)
+    end
+    donationConns["playerAdded"] = Players.PlayerAdded:Connect(function(p) hookPlayer(p) end)
+end
+
+local function stopDonationMonitor()
+    donationEnabled = false
+    for k, conn in pairs(donationConns) do
+        pcall(function() conn:Disconnect() end)
+        donationConns[k] = nil
+    end
+    donationTotals = {}
 end
 
 -- BOOTH CLAIMING: paste or require your booth claiming code here and call it
@@ -258,6 +437,9 @@ local function claimEmptyStands()
     if ok then
         notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
         if tostring(res) == "Success" or res == true then
+            pcall(function()
+                postWebhookEvent("claim", { slot = slot, result = res })
+            end)
             return true
         end
         return false
@@ -330,31 +512,25 @@ do
             Title = "Server Hop",
             Description = "Teleport to another server for this place",
             Callback = function()
-                task.spawn(serverHopNow)
+                task.spawn(function() serverHopNow(19, 22, true) end)
             end
         })
 
         local AutoToggle = Tabs.Main:AddToggle("AutoClaim", { Title = "Auto-Claim", Default = false })
         AutoToggle:OnChanged(function()
-            autoClaiming = Options.AutoClaim.Value
-            if autoClaiming then
-                autoClaimTask = task.spawn(function()
-                    while autoClaiming do
-                        local ok, res = claimBooth()
-                        if ok and res then
-                            autoClaiming = false
-                            Options.AutoClaim:SetValue(false)
-                            break
-                        end
-                        task.wait(2.5)
-                        if Fluent.Unloaded then break end
+            -- Perform a single claim attempt when enabled, then reset the toggle
+            if Options.AutoClaim.Value then
+                task.spawn(function()
+                    notify("Booth", "Auto-Claim: attempting single claim...", 3)
+                    local ok, res = claimBooth()
+                    if ok and res then
+                        notify("Booth", "Auto-Claim succeeded.", 4)
+                    else
+                        notify("Booth", "Auto-Claim attempt finished or failed.", 4)
                     end
+                    -- reset toggle regardless of result
+                    Options.AutoClaim:SetValue(false)
                 end)
-            else
-                if autoClaimTask then
-                    pcall(function() task.cancel(autoClaimTask) end)
-                    autoClaimTask = nil
-                end
             end
         end)
 
@@ -365,7 +541,15 @@ do
         end)
 
         -- Settings
-        Tabs.Settings:AddToggle("WebhookEnabled", { Title = "Webhook Enabled", Default = SETTINGS.webhookToggle })
+        local WebhookToggle = Tabs.Settings:AddToggle("WebhookEnabled", { Title = "Webhook Enabled", Default = SETTINGS.webhookToggle })
+        WebhookToggle:OnChanged(function()
+            SETTINGS.webhookToggle = Options.WebhookEnabled.Value
+            if SETTINGS.webhookToggle then
+                startDonationMonitor()
+            else
+                stopDonationMonitor()
+            end
+        end)
         Tabs.Settings:AddInput("WebhookURL", {
             Title = "Webhook URL",
             Default = SETTINGS.webhookUrl,
@@ -374,6 +558,15 @@ do
                 SETTINGS.webhookUrl = tostring(Value or "")
             end
         })
+        Tabs.Settings:AddInput("DonationStatName", {
+            Title = "Donation Stat Name",
+            Default = donationStatName,
+            Placeholder = "Raised",
+            Callback = function(Value)
+                donationStatName = tostring(Value or "Raised")
+            end
+        })
+        -- Donation notifier automatically follows webhook setting; no extra toggle/button required
 
         -- Hand the library over to our managers
         SaveManager:SetLibrary(Fluent)
@@ -395,7 +588,20 @@ do
 
         -- Load autoload config if any
         pcall(function() SaveManager:LoadAutoloadConfig() end)
+        -- If webhook was enabled via saved config or Options, start donation monitor
+        pcall(function()
+            local enabled = SETTINGS.webhookToggle
+            if Options and Options.WebhookEnabled and Options.WebhookEnabled.Value ~= nil then
+                enabled = enabled or Options.WebhookEnabled.Value
+            end
+            if enabled then startDonationMonitor() end
+        end)
     end
 end
 
 -- Script loaded: use functions directly (not returning a module table)
+-- Auto-run a single claim on script execution
+task.spawn(function()
+    task.wait(1)
+    pcall(function() claimBooth() end)
+end)
