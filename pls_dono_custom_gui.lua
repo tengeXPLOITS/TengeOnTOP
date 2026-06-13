@@ -28,54 +28,7 @@ local ALLOWED_PLACE_IDS = {
     [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
 }
 
--- Attempt to auto-allow places listed on a Roblox community page (helps when places move/remove)
-local function fetchCommunityPlaceIdsEarly(community)
-    if not community then
-        return {}
-    end
-
-    local cid = tostring(community):match("(%d+)") or tostring(community):match("communities/(%d+)")
-    if not cid then
-        return {}
-    end
-
-    local ok, body = pcall(function()
-        return game:HttpGet("https://www.roblox.com/communities/" .. cid)
-    end)
-    if not ok or type(body) ~= "string" then
-        return {}
-    end
-
-    local found = {}
-    for pid in body:gmatch("/places/(%d+)") do
-        found[tonumber(pid)] = true
-    end
-    for pid in body:gmatch("/games/(%d+)") do
-        found[tonumber(pid)] = true
-    end
-    for pid in body:gmatch('data%-place%-id="(%d+)"') do
-        found[tonumber(pid)] = true
-    end
-
-    local list = {}
-    for k in pairs(found) do
-        table.insert(list, k)
-    end
-    return list
-end
-
-local currentPlaceId = tonumber(game.PlaceId) or 0
-if not ALLOWED_PLACE_IDS[currentPlaceId] then
-    -- community ID for Dusks Studios (from your link)
-    local communityId = 643624063
-    local places = fetchCommunityPlaceIdsEarly(communityId)
-    for _, id in ipairs(places) do
-        ALLOWED_PLACE_IDS[id] = true
-    end
-    if not ALLOWED_PLACE_IDS[currentPlaceId] then
-        return
-    end
-end
+-- Community-place augmentation moved below HTTP helpers to use available HTTP wrappers
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
@@ -1050,6 +1003,56 @@ local function httpGetBody(url)
     end
 
     return nil
+end
+
+-- Attempt to auto-allow places listed on a Roblox community page (helps when places move/remove)
+local function fetchCommunityPlaceIds(community)
+    if not community then
+        return {}
+    end
+
+    local cid = tostring(community):match("(%d+)") or tostring(community):match("communities/(%d+)")
+    if not cid then
+        return {}
+    end
+
+    local url = "https://www.roblox.com/communities/" .. cid .. "/about"
+    local body = httpGetBody(url)
+    if not body then
+        return {}
+    end
+
+    local found = {}
+    for pid in body:gmatch("/places/(%d+)") do
+        found[tonumber(pid)] = true
+    end
+    for pid in body:gmatch("/games/(%d+)") do
+        found[tonumber(pid)] = true
+    end
+    for pid in body:gmatch('data%-place%-id="(%d+)"') do
+        found[tonumber(pid)] = true
+    end
+
+    local list = {}
+    for k in pairs(found) do
+        table.insert(list, k)
+    end
+    return list
+end
+
+-- Try to add community places to `ALLOWED_PLACE_IDS` when running in a community
+do
+    local currentPlaceId = tonumber(game.PlaceId) or 0
+    if not ALLOWED_PLACE_IDS[currentPlaceId] then
+        local communityId = 643624063 -- Dusks Studios
+        local places = fetchCommunityPlaceIds(communityId)
+        for _, id in ipairs(places) do
+            ALLOWED_PLACE_IDS[id] = true
+        end
+        if not ALLOWED_PLACE_IDS[currentPlaceId] then
+            return
+        end
+    end
 end
 
 local function postWebhookJson(url, bodyTable)
