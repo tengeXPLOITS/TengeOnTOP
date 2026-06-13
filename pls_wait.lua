@@ -186,82 +186,70 @@ local function claimEmptyStands()
     local standButtons = Workspace:FindFirstChild("StandButtons")
     local buttonList = standButtons and standButtons:GetChildren() or {}
 
-    -- listen for server client notifications indicating a successful claim
-    local claimStopFlag = false
-    local clientNotif = ReplicatedStorage:FindFirstChild("ClientNotification")
-    local clientNotifConn
-    if clientNotif and clientNotif:IsA("RemoteEvent") then
-        clientNotifConn = clientNotif.OnClientEvent:Connect(function(...)
-            local first = select(1, ...)
-            if tostring(first) == "Success" then
-                claimStopFlag = true
-                notify("Booth Claim", "Server reports claim success.", 4)
+    -- Find nearest empty stand to player and attempt a single claim (do NOT rely on ClientNotification)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local playerPos = hrp and hrp.Position
+
+    local candidates = {}
+    for _, stand in ipairs(standsList) do
+        if stand and stand.Parent and not stand:FindFirstChild("ButtonPrompt") then
+            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+            local ownerEmpty = true
+            if ownerObj and ownerObj:IsA("ObjectValue") then
+                ownerEmpty = (ownerObj.Value == nil)
             end
-        end)
-    end
-
-    -- ProximityPrompt triggering removed: use direct remote invoke for slots 1..24
-
-    for idx, stand in ipairs(standsList) do
-        if not stand or not stand.Parent then
-            -- skip invalid stand
-        else
-            if stand:FindFirstChild("ButtonPrompt") then
-                -- handled via StandButtons; skip
-            else
-                local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
-                local ownerEmpty = true
-                if ownerObj and ownerObj:IsA("ObjectValue") then
-                    ownerEmpty = (ownerObj.Value == nil)
-                end
-
-                if ownerEmpty then
-                    local pivot = tryGetPivotPosition(stand)
-                    if pivot then
-                        moveCharacterToPosition(pivot)
-                        task.wait(0.25)
-                    end
-
-                    local posForPrompt = pivot
-                    if not posForPrompt and LocalPlayer.Character then
-                        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        posForPrompt = hrp and hrp.Position
-                    end
-
-                    if posForPrompt then
-                        -- Claim only the stand the player is currently near; slot resolved later
-                        -- (no broad 1..24 loop to avoid repeated claiming)
-                    end
-
-                    local slot = findSlotFromStand(stand)
-                    if not slot then
-                        notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(stand.Name or "?")), 4)
-                    else
-                        -- Prefer direct remote claim (server uses ReplicatedStorage.ClaimStand)
-                        local ok, res = pcall(function()
-                            return remote:InvokeServer(slot)
-                        end)
-                        if ok then
-                            notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
-                            -- stop if server reports success via ClientNotification or truthy response
-                            if claimStopFlag or tostring(res) == "Success" or res == true then
-                                if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
-                                return true
-                            end
-                            -- otherwise continue scanning other stands
-                        else
-                            notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
-                        end
-                    end
-                    task.wait(0.6)
+            if ownerEmpty then
+                local pivot = tryGetPivotPosition(stand)
+                if pivot then
+                    candidates[#candidates+1] = { stand = stand, pivot = pivot }
                 end
             end
         end
     end
 
-    if clientNotifConn then pcall(function() clientNotifConn:Disconnect() end) end
-    notify("Booth Claim", "No empty stands claimed.", 4)
-    return false
+    if #candidates == 0 then
+        notify("Booth Claim", "No empty stands available.", 4)
+        return false
+    end
+
+    -- choose nearest to player (or first if player position unknown)
+    table.sort(candidates, function(a,b)
+        if not playerPos then return true end
+        return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
+    end)
+
+    local target = candidates[1]
+    if not target or not target.stand then
+        notify("Booth Claim", "No valid stand target.", 3)
+        return false
+    end
+
+    -- teleport/move near the chosen stand
+    moveCharacterToPosition(target.pivot)
+    task.wait(0.25)
+
+    -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
+    local slot = findSlotFromStand(target.stand)
+    if not slot then
+        notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(target.stand.Name or "?")), 4)
+        return false
+    end
+
+    local args = { slot }
+    local ok, res = pcall(function()
+        return ReplicatedStorage:WaitForChild("ClaimStand"):InvokeServer(unpack(args))
+    end)
+    if ok then
+        notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
+        if tostring(res) == "Success" or res == true then
+            return true
+        end
+        return false
+    else
+        notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
+        return false
+    end
 end
 
 local function claimBooth()
