@@ -660,6 +660,7 @@ local defaults = {
     vcServerHopToggle = false,
     plusHopToggle = false,
     plusHopMinPlayers = 3,
+    antiLagBeta = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
 }
@@ -906,6 +907,144 @@ local function createPersistentStatusOverlay(textMsg)
     end)
     if ok then return res end
     return nil
+end
+
+-- Visual clone (Anti-Lag) implementation
+local visualClone = nil
+local visualPlatform = nil
+local savedCameraSubject = nil
+local savedCameraType = nil
+local savedPartList = {}
+local savedEffectStates = {}
+
+local function disableEffectsOnInstance(inst)
+    if not inst then return end
+    if inst:IsA("ParticleEmitter") or inst:IsA("Trail") or inst:IsA("Beam") then
+        local ok, prev = pcall(function() return inst.Enabled end)
+        table.insert(savedEffectStates, {inst = inst, prop = "Enabled", prev = ok and prev})
+        pcall(function() inst.Enabled = false end)
+    elseif inst:IsA("Sound") then
+        local ok, prev = pcall(function() return inst.Playing end)
+        table.insert(savedEffectStates, {inst = inst, prop = "Playing", prev = ok and prev})
+        pcall(function() inst:Stop() end)
+    elseif inst:IsA("Smoke") or inst:IsA("Fire") or inst:IsA("Sparkles") or inst:IsA("Explosion") then
+        local ok, prev = pcall(function() return inst.Enabled end)
+        table.insert(savedEffectStates, {inst = inst, prop = "Enabled", prev = ok and prev})
+        pcall(function() inst.Enabled = false end)
+    end
+end
+
+local function enableVisualClone()
+    if visualClone then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    -- create platform high in the sky
+    local platform = Instance.new("Part")
+    platform.Name = "PlsDono_VisualPlatform"
+    platform.Size = Vector3.new(24, 1, 24)
+    platform.Anchored = true
+    platform.CanCollide = false
+    platform.Transparency = 1
+    platform.Position = Vector3.new(0, 5000, 0)
+    platform.Parent = Workspace
+
+    local clone = char:Clone()
+    -- strip scripts and heavy components, and make clone static
+    for _, d in ipairs(clone:GetDescendants()) do
+        if d:IsA("Script") or d:IsA("LocalScript") then
+            pcall(function() d:Destroy() end)
+        elseif d:IsA("BasePart") then
+            pcall(function()
+                d.Anchored = true
+                d.CanCollide = false
+            end)
+        elseif d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") then
+            pcall(function() d.Enabled = false end)
+        elseif d:IsA("Sound") then
+            pcall(function() d:Stop() end)
+            pcall(function() d:Destroy() end)
+        elseif d:IsA("Smoke") or d:IsA("Fire") or d:IsA("Sparkles") or d:IsA("Explosion") then
+            pcall(function() d.Enabled = false end)
+        end
+    end
+
+    clone.Name = tostring(LocalPlayer.Name or "VisualClone") .. "_PlsDonoClone"
+    clone.Parent = Workspace
+    local primary = clone:FindFirstChild("HumanoidRootPart") or clone:FindFirstChildWhichIsA("BasePart")
+    if primary then
+        pcall(function() clone:SetPrimaryPartCFrame(CFrame.new(platform.Position + Vector3.new(0, 3, 0))) end)
+    end
+
+    -- hide local real character parts (local-only) and disable effects to reduce rendering
+    savedPartList = {}
+    savedEffectStates = {}
+    for _, d in ipairs(char:GetDescendants()) do
+        if d:IsA("BasePart") then
+            local ok, prev = pcall(function() return d.LocalTransparencyModifier end)
+            table.insert(savedPartList, {part = d, prev = ok and prev or 0})
+            pcall(function() d.LocalTransparencyModifier = 1 end)
+        else
+            disableEffectsOnInstance(d)
+        end
+    end
+
+    -- switch camera to clone's humanoid if available
+    local cam = workspace.CurrentCamera
+    if cam then
+        savedCameraSubject = cam.CameraSubject
+        savedCameraType = cam.CameraType
+        local hum = clone:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function() cam.CameraSubject = hum end)
+            pcall(function() cam.CameraType = Enum.CameraType.Custom end)
+        else
+            local prim = clone:FindFirstChildWhichIsA("BasePart")
+            if prim then
+                pcall(function() cam.CameraSubject = prim end)
+                pcall(function() cam.CameraType = Enum.CameraType.Custom end)
+            end
+        end
+    end
+
+    visualClone = clone
+    visualPlatform = platform
+end
+
+local function disableVisualClone()
+    if not visualClone then return end
+    -- restore local character parts transparency
+    for _, entry in ipairs(savedPartList or {}) do
+        pcall(function() if entry.part and entry.part.Parent then entry.part.LocalTransparencyModifier = entry.prev or 0 end end)
+    end
+    for _, entry in ipairs(savedEffectStates or {}) do
+        pcall(function()
+            if entry.inst and entry.inst.Parent then
+                if entry.prop == "Enabled" then entry.inst.Enabled = entry.prev end
+                if entry.prop == "Playing" and entry.prev then entry.inst:Play() end
+            end
+        end)
+    end
+
+    -- restore camera
+    local cam = workspace.CurrentCamera
+    if cam then
+        pcall(function()
+            if savedCameraSubject then cam.CameraSubject = savedCameraSubject end
+            if savedCameraType then cam.CameraType = savedCameraType end
+        end)
+    end
+
+    -- cleanup clone and platform
+    pcall(function() if visualClone and visualClone.Parent then visualClone:Destroy() end end)
+    pcall(function() if visualPlatform and visualPlatform.Parent then visualPlatform:Destroy() end end)
+
+    visualClone = nil
+    visualPlatform = nil
+    savedCameraSubject = nil
+    savedCameraType = nil
+    savedPartList = {}
+    savedEffectStates = {}
 end
 
 local hopCooldownSeconds = 1
@@ -2869,6 +3008,13 @@ settingHandlers = {
             serverHopNow("vc-server-hop-toggle")
         end
     end,
+    antiLagBeta = function(value)
+        if value then
+            pcall(enableVisualClone)
+        else
+            pcall(disableVisualClone)
+        end
+    end,
 }
 
 local handledClaimSlot
@@ -3376,6 +3522,7 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, "Main Settings")
         createToggle(mainSection, "Helicopter On-Donation", "helicopterEnabled")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
+            createToggle(mainSection, "Anti-Lag (Beta)", "antiLagBeta")
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
             local stat = getRaisedStatObject()
