@@ -402,7 +402,7 @@ if ALLOWED_PLACE_IDS[tonumber(game.PlaceId) or 0] then
             label.TextColor3 = Color3.fromRGB(255, 255, 255)
             label.TextScaled = false
             label.TextSize = 16
-            label.Font = Enum.Font.SourceSansSemibold
+            label.Font = Enum.Font.GothamSemibold
             label.TextWrapped = true
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.Parent = frame
@@ -580,7 +580,6 @@ local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 
 local defaults = {
-    textUpdateToggle = true,
     goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarHeaderText = "GOAL $G",
@@ -590,10 +589,10 @@ local defaults = {
     boothPosition = 3,
     moveMode = "Teleport",
 
-    autoThanks = true,
+    autoThanks = false,
     thanksDelay = 3,
     thanksMessage = {"Thank you", "Thankss!", "ty"},
-    autoBeg = true,
+    autoBeg = false,
     begDelay = 300,
     begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
 
@@ -602,10 +601,8 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    -- anti-bot and mod-evader options removed
     minPlayerCount = 23,
     maxPlayerCount = 24,
-    AnonymousMode = false,
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
@@ -1152,13 +1149,12 @@ local function sendDonationWebhook(amount, donorInfo)
     end
     postWebhookJson(url, {
         username = "webhook by K_0YG...",
-        content = ("Donation received from %s"):format(donorLabel),
         embeds = {{
-            color = 0x1E90FF,
-            title = "Donation Stats",
+            color = 0xFFAA00,
+            title = "New Donation Received! ✅",
             fields = {
-                {name = "Donor", value = donorLabel, inline = false},
-                {name = "how much recepient received", value = string.format("%d", received), inline = true},
+                {name = "Donor 👤", value = donorLabel, inline = false},
+                {name = "How much recepient received 💵", value = string.format("%d", received), inline = true},
                 {name = "Tax applied ):", value = string.format("%d", taxed), inline = true},
             },
         }},
@@ -1816,7 +1812,7 @@ local function styleTextBox(box, alignment, multiline)
     box.BackgroundColor3 = THEME.control
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
-    box.Font = Enum.Font.Gotham
+    box.Font = Enum.Font.GothamSemibold
     box.TextSize = 12
     box.ClearTextOnFocus = false
     box.TextXAlignment = alignment or Enum.TextXAlignment.Center
@@ -2915,11 +2911,6 @@ settingHandlers = {
             stopAstronautIdle()
         end
     end,
-    textUpdateToggle = function(value)
-        if value and updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
     goalBarColor = function(value)
         local lower = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
         local allowed = {
@@ -3012,11 +3003,9 @@ local function onBoothClaimDetected(slot)
     handledClaimSlot = slot
     moveToClaimedBooth(slot)
 
-    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    if settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
-            pcall(function()
-                updateBoothTextNow()
-            end)
+            pcall(updateBoothTextNow)
         end)
     end
 
@@ -3122,10 +3111,8 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
                     return
                 end
 
-                if settings.textUpdateToggle and tostring(settings[key]) ~= "" and updateBoothTextNow then
-                    pcall(function()
-                        updateBoothTextNow()
-                    end)
+                if tostring(settings[key]) ~= "" and updateBoothTextNow then
+                    pcall(updateBoothTextNow)
                 end
             end)
         end)
@@ -3276,7 +3263,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     editor.BackgroundColor3 = THEME.section
     editor.TextColor3 = THEME.controlText
     editor.PlaceholderColor3 = THEME.subtleText
-    editor.Font = Enum.Font.Gotham
+    editor.Font = Enum.Font.Code
     -- FontFace support removed; keep Enum.Font
     editor.TextSize = 12
     editor.ClearTextOnFocus = false
@@ -3504,8 +3491,7 @@ local function buildSettingsTabs()
     local serverTab = createTab("Server Hop")
 
     local boothSection = createSection(boothTab, "Booth Settings")
-    createToggle(boothSection, "Text Update", "textUpdateToggle")
-    -- Text update delay and text color controls removed
+    -- Text update toggle removed
     createTextBox(boothSection, "Robux Goal", "goalBox", true)
     createDropdown(boothSection, "Goal Bar Color", "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
