@@ -1016,9 +1016,17 @@ local function fetchCommunityPlaceIds(community)
         return {}
     end
 
-    local url = "https://www.roblox.com/communities/" .. cid .. "/about"
-    local body = httpGetBody(url)
+    local tried = {}
+    local function tryUrl(path)
+        local u = "https://www.roblox.com/communities/" .. cid .. path
+        if tried[u] then return nil end
+        tried[u] = true
+        return httpGetBody(u)
+    end
+
+    local body = tryUrl("/about") or tryUrl("/experiences") or tryUrl("/places")
     if not body then
+        notify("Community Fetch", ("Failed to fetch community %s pages"):format(tostring(cid)), 6, "community-fetch-fail", 10)
         return {}
     end
 
@@ -1037,6 +1045,16 @@ local function fetchCommunityPlaceIds(community)
     for k in pairs(found) do
         table.insert(list, k)
     end
+    if #list == 0 then
+        notify("Community Fetch", ("No places found for community %s"):format(tostring(cid)), 6, "community-no-places", 10)
+    else
+        local sample = {}
+        for i=1, math.min(6, #list) do
+            table.insert(sample, tostring(list[i]))
+        end
+        notify("Community Fetch", ("Found %d places (sample: %s)"):format(#list, table.concat(sample, ", ")), 6, "community-places-found", 10)
+    end
+    warn("Community places for ", cid, ": ", table.concat(list, ", "))
     return list
 end
 
