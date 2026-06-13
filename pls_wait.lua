@@ -199,28 +199,39 @@ local function claimEmptyStands()
         if not pos then return false end
         local triggered = false
         for _, inst in ipairs(Workspace:GetDescendants()) do
-            if inst and inst.Parent and inst:IsA("ProximityPrompt") then
-                local pname = tostring(inst.Parent.Name or ""):lower()
-                local action = tostring(inst.Action or ""):lower()
-                local name = tostring(inst.Name or ""):lower()
-                if (pname:find("stand") or name:find("claim") or action:find("claim")) then
-                    local pivot = tryGetPivotPosition(inst.Parent) or tryGetPivotPosition(inst)
-                    if pivot and (pivot - pos).Magnitude <= 8 then
-                        pcall(function()
-                            if inst.Trigger then
-                                inst:Trigger()
-                            else
-                                inst:InputHoldBegin()
-                                task.wait(0.12)
-                                inst:InputHoldEnd()
-                            end
-                        end)
-                        triggered = true
-                        task.wait(0.08)
-                        if claimStopFlag then return true end
-                    end
-                end
+            if not (inst and inst.Parent and inst:IsA("ProximityPrompt")) then continue end
+            -- match prompt by name/action/objecttext/parent naming
+            local pname = tostring(inst.Parent.Name or ""):lower()
+            local action = tostring(inst.Action or ""):lower()
+            local name = tostring(inst.Name or ""):lower()
+            local objectText = tostring(inst.ObjectText or ""):lower()
+            if not (name == "claim" or action:find("claim") or objectText:find("stand") or pname:find("stand")) then
+                goto nextprompt
             end
+
+            local pivot = tryGetPivotPosition(inst.Parent) or tryGetPivotPosition(inst)
+            if not pivot or (pivot - pos).Magnitude > 8 then goto nextprompt end
+
+            -- perform hold using the prompt's HoldDuration (fallback to 1s)
+            local hold = 1
+            pcall(function()
+                if inst.HoldDuration then hold = tonumber(inst.HoldDuration) or hold end
+            end)
+
+            pcall(function()
+                if inst.InputHoldBegin and inst.InputHoldEnd then
+                    inst:InputHoldBegin()
+                    task.wait(math.max(0.05, hold))
+                    inst:InputHoldEnd()
+                elseif inst.Trigger then
+                    inst:Trigger()
+                end
+            end)
+
+            triggered = true
+            task.wait(0.08)
+            if claimStopFlag then return true end
+            ::nextprompt::
         end
         return triggered
     end
