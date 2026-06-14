@@ -32,8 +32,49 @@ donationTotals = donationTotals or {}
 donationStatName = donationStatName or "Raised"
 
 local function notify(title, text, duration)
+    local ok, playerGui = pcall(function() return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    duration = tonumber(duration) or 4
+    if ok and playerGui and playerGui:FindFirstChild("PlsWaitUI") then
+        local screen = playerGui:FindFirstChild("PlsWaitUI")
+        local notif = Instance.new("Frame")
+        notif.Size = UDim2.new(0, 320, 0, 64)
+        notif.Position = UDim2.new(1, -340, 1, -96)
+        notif.AnchorPoint = Vector2.new(0,0)
+        notif.BackgroundColor3 = Color3.fromRGB(18,18,18)
+        notif.Parent = screen
+        local corner = Instance.new("UICorner", notif)
+        corner.CornerRadius = UDim.new(0, 8)
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Thickness = 1
+        stroke.Color = Color3.fromRGB(36,36,36)
+        local titleLbl = Instance.new("TextLabel", notif)
+        titleLbl.Size = UDim2.new(1, -16, 0, 20)
+        titleLbl.Position = UDim2.new(0, 8, 0, 6)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = tostring(title or "PLS WAIT")
+        titleLbl.TextColor3 = Color3.fromRGB(220,220,220)
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        titleLbl.Font = Enum.Font.SourceSansBold
+        titleLbl.TextSize = 14
+        local body = Instance.new("TextLabel", notif)
+        body.Size = UDim2.new(1, -16, 0, 34)
+        body.Position = UDim2.new(0, 8, 0, 26)
+        body.BackgroundTransparency = 1
+        body.Text = tostring(text or "")
+        body.TextColor3 = Color3.fromRGB(180,180,180)
+        body.TextXAlignment = Enum.TextXAlignment.Left
+        body.TextWrapped = true
+        body.Font = Enum.Font.SourceSans
+        body.TextSize = 13
+        task.spawn(function()
+            task.wait(duration)
+            pcall(function() notif:Destroy() end)
+        end)
+        return
+    end
     pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = tonumber(duration) or 4 })
+        StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
     end)
 end
 
@@ -61,6 +102,7 @@ end
 -- Webhook / donation helpers
 local function postWebhookEvent(kind, data)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local url = tostring(SETTINGS.webhookUrl or "")
     local payload = {
         username = "PlsWait",
         embeds = {{
@@ -69,8 +111,15 @@ local function postWebhookEvent(kind, data)
             color = 16753920,
         }}
     }
+    local body = HttpService:JSONEncode(payload)
     pcall(function()
-        HttpService:PostAsync(SETTINGS.webhookUrl, HttpService:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+        if syn and syn.request then
+            syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        elseif request then
+            request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        else
+            HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        end
     end)
 end
 
@@ -358,6 +407,17 @@ local function claimEmptyStands()
     if ok then
         notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
         if tostring(res) == "Success" or res == true then
+            -- try to make character look away from the booth after claiming
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                    if hrp and target and target.pivot then
+                        local awayPoint = (hrp.Position * 2) - target.pivot
+                        hrp.CFrame = CFrame.new(hrp.Position, awayPoint)
+                    end
+                end
+            end)
             pcall(function()
                 postWebhookEvent("claim", { slot = slot, result = res })
             end)
@@ -501,6 +561,17 @@ do
         local tabs = {"Main","ServerHop","Webhook"}
         local tabButtons = {}
         local tabFrames = {}
+        local function styleButton(btn, hoverColor)
+            if not btn then return end
+            local orig = btn.BackgroundColor3
+            local stroke = Instance.new("UIStroke")
+            stroke.Parent = btn
+            stroke.Color = Color3.fromRGB(24,120,70)
+            stroke.Thickness = 1
+            hoverColor = hoverColor or Color3.fromRGB(46,204,113)
+            btn.MouseEnter:Connect(function() pcall(function() btn.BackgroundColor3 = hoverColor end) end)
+            btn.MouseLeave:Connect(function() pcall(function() btn.BackgroundColor3 = orig end) end)
+        end
         for i, name in ipairs(tabs) do
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(0, 120, 0, 30)
@@ -510,6 +581,7 @@ do
             btn.TextColor3 = Color3.fromRGB(240,240,240)
             btn.AutoButtonColor = false
             btn.Parent = mainFrame
+            styleButton(btn, Color3.fromRGB(60,60,60))
             local corner = Instance.new("UICorner")
             corner.Parent = btn
             tabButtons[name] = btn
@@ -594,26 +666,11 @@ do
         -- Main tab
         do
             local frame = tabFrames.Main
-            local claimBtn = Instance.new("TextButton")
-            claimBtn.Size = UDim2.new(0,200,0,40)
-            claimBtn.Position = UDim2.new(0,10,0,10)
-            claimBtn.Text = "Claim Booth"
-            claimBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            claimBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local c = Instance.new("UICorner")
-            c.Parent = claimBtn
-            claimBtn.Parent = frame
-            claimBtn.MouseButton1Click:Connect(function()
-                task.spawn(function()
-                    notify("Booth", "Attempting claim...", 3)
-                    local ok, res = claimBooth()
-                    if ok and res then notify("Booth", "Claim attempted (success).", 4) else notify("Booth", "Claim attempt finished or failed.", 4) end
-                end)
-            end)
+            -- Claim button removed (auto-claim runs on load/teleport)
 
             local afkLabel = Instance.new("TextLabel")
             afkLabel.Size = UDim2.new(0,120,0,20)
-            afkLabel.Position = UDim2.new(0,10,0,60)
+            afkLabel.Position = UDim2.new(0,10,0,10)
             afkLabel.Text = "Anti-AFK"
             afkLabel.TextColor3 = Color3.new(1,1,1)
             afkLabel.BackgroundTransparency = 1
@@ -621,16 +678,19 @@ do
 
             local afkToggle = Instance.new("TextButton")
             afkToggle.Size = UDim2.new(0,60,0,20)
-            afkToggle.Position = UDim2.new(0,140,0,60)
+            afkToggle.Position = UDim2.new(0,140,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local afkCorner = Instance.new("UICorner") afkCorner.Parent = afkToggle
+            afkToggle.Parent = frame
             afkToggle.MouseButton1Click:Connect(function()
                 SETTINGS.antiAfk = not SETTINGS.antiAfk
                 afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
                 pcall(SaveSettings)
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
+            styleButton(afkToggle)
         end
 
         -- Server-Hop tab
@@ -695,6 +755,7 @@ do
             local hCorner = Instance.new("UICorner")
             hCorner.Parent = hopBtn
             hopBtn.Parent = frame
+            styleButton(hopBtn)
             hopBtn.MouseButton1Click:Connect(function()
                 local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or "19-22"
                 local mn, mx = parseRange(txt)
@@ -724,6 +785,7 @@ do
             local atCorner = Instance.new("UICorner")
             atCorner.Parent = autoToggle
             autoToggle.Parent = frame
+            styleButton(autoToggle)
             autoToggle.MouseButton1Click:Connect(function()
                 autoServerHopEnabled = not autoServerHopEnabled
                 autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
@@ -764,6 +826,7 @@ do
             whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
             whToggle.Parent = frame
             whToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            styleButton(whToggle)
             whToggle.MouseButton1Click:Connect(function()
                 SETTINGS.webhookToggle = not SETTINGS.webhookToggle
                 whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
@@ -786,6 +849,16 @@ do
         end
 
         if SETTINGS.webhookToggle then startDonationMonitor() end
+        -- Ensure claim runs after teleports/character spawn
+        pcall(function()
+            if LocalPlayer and LocalPlayer.Character then
+                pcall(function() claimBooth() end)
+            end
+            LocalPlayer.CharacterAdded:Connect(function()
+                task.wait(1)
+                pcall(function() claimBooth() end)
+            end)
+        end)
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         if autoServerHopEnabled and not autoServerHopTask then
             autoServerHopTask = task.spawn(function()
