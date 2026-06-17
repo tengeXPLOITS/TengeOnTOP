@@ -193,68 +193,67 @@ local function queueOnTeleport(codeString)
     return false
 end
 
--- Replace serverHopNow with working implementation from your other script
+-- Single search attempt: returns true if teleport was initiated
+local function serverSearchAttempt(minPlayers, maxPlayers)
+    minPlayers = tonumber(minPlayers) or 19
+    maxPlayers = tonumber(maxPlayers) or 22
+    local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
+    local res = performHttpRequest({ Url = url, Method = "GET" })
+    if not (res and type(res.Body) == "string" and res.Body ~= "") then return false end
+    local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+    if not (ok and decoded and type(decoded.data) == "table") then return false end
+    for _, server in ipairs(decoded.data) do
+        local playing = tonumber(server.playing) or 0
+        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
+            -- queue this script to re-run on the destination and pass current settings via _G
+            local ok2, cfgJson = pcall(function()
+                return HttpService:JSONEncode({
+                    webhookToggle = SETTINGS.webhookToggle,
+                    webhookUrl = SETTINGS.webhookUrl,
+                    antiAfk = SETTINGS.antiAfk,
+                    serverStayTime = SETTINGS.serverStayTime,
+                    persistToggles = SETTINGS.persistToggles,
+                    autoServerHop = autoServerHopEnabled,
+                })
+            end)
+            local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+            if ok2 and cfgJson then
+                qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
+            end
+            pcall(function() queueOnTeleport(qcode) end)
+            local ts = game:GetService("TeleportService")
+            local okt, terr = pcall(function()
+                ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
+            end)
+            if okt then
+                return true
+            else
+                local terrs = tostring(terr or "")
+                if terrs:find("772") or terrs:lower():find("teleport failed") then
+                    -- ignore and continue
+                else
+                    pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Replace older serverHopNow with controller that can run one-shot or persistent
 local function serverHopNow(minPlayers, maxPlayers, persistent)
     minPlayers = tonumber(minPlayers) or 19
     maxPlayers = tonumber(maxPlayers) or 22
     persistent = persistent == true
-
     task.spawn(function()
         while true do
-            local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
-            local res = performHttpRequest({ Url = url, Method = "GET" })
-            local found = false
-            if res and type(res.Body) == "string" and res.Body ~= "" then
-                local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
-                if ok and decoded and type(decoded.data) == "table" then
-                    for _, server in ipairs(decoded.data) do
-                        local playing = tonumber(server.playing) or 0
-                        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
-                            -- queue this script to re-run on the destination and pass current settings via _G
-                            local ok2, cfgJson = pcall(function()
-                                return HttpService:JSONEncode({
-                                    webhookToggle = SETTINGS.webhookToggle,
-                                    webhookUrl = SETTINGS.webhookUrl,
-                                    antiAfk = SETTINGS.antiAfk,
-                                    serverStayTime = SETTINGS.serverStayTime,
-                                    persistToggles = SETTINGS.persistToggles,
-                                    autoServerHop = autoServerHopEnabled,
-                                })
-                            end)
-                            local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
-                            if ok2 and cfgJson then
-                                qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
-                            end
-                            -- try to queue the script for the destination
-                            pcall(function() queueOnTeleport(qcode) end)
-                            local ts = game:GetService("TeleportService")
-                            local okt, terr = pcall(function()
-                                ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
-                            end)
-                            if okt then
-                                found = true
-                                break
-                            else
-                                local terrs = tostring(terr or "")
-                                -- ignore server-full teleport error code 772 and continue searching
-                                if terrs:find("772") or terrs:lower():find("teleport failed") then
-                                    -- try next server
-                                else
-                                    -- other errors: notify and continue searching
-                                    pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-
-            if found then break end
+            local ok = serverSearchAttempt(minPlayers, maxPlayers)
+            if ok then break end
             if not persistent then
                 notify("Server Hop", "No suitable servers found.", 4)
                 break
             end
-            task.wait(3)
+            task.wait(2)
         end
     end)
 end
@@ -504,6 +503,8 @@ do
         end
         local autoServerHopEnabled = false
         local autoServerHopTask = nil
+        local manualHopRunning = false
+        local manualHopTask = nil
         SETTINGS.persistToggles = SETTINGS.persistToggles or false
 
         local function SaveSettings()
@@ -636,6 +637,28 @@ do
         blurOverlay.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(25,25,25)), ColorSequenceKeypoint.new(1, Color3.fromRGB(12,12,12))})
         blurOverlay.Parent = bg
 
+        -- Squiggly background effect: layered slightly offset rounded frames
+        do
+            local function makeLayer(offsetX, offsetY, sizePad, cornerRadius, c1, c2, rot)
+                local f = Instance.new("Frame")
+                f.Size = UDim2.new(1, sizePad, 1, sizePad)
+                f.Position = UDim2.new(0, offsetX, 0, offsetY)
+                f.BackgroundColor3 = Color3.fromRGB(20,20,20)
+                f.BorderSizePixel = 0
+                f.BackgroundTransparency = 0.6
+                f.Parent = mainFrame
+                local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, cornerRadius); uc.Parent = f
+                local g = Instance.new("UIGradient")
+                g.Rotation = rot or 90
+                g.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2)})
+                g.Parent = f
+                return f
+            end
+            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
+            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
+            makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
+        end
+
         -- Left menu column
         local leftCol = Instance.new("Frame")
         leftCol.Name = "LeftCol"
@@ -706,44 +729,7 @@ do
             SharedEnv.PLS_WAIT_UI_LOADED = nil
         end)
 
-        -- Prepare fade-in: collect default transparency targets and set current to invisible
-        local fadeTargets = {}
-        local function collectTargets(inst)
-            for _, child in ipairs(inst:GetChildren()) do
-                collectTargets(child)
-            end
-            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-                local prev = inst.TextTransparency or 0
-                fadeTargets[inst] = { kind = "text", target = prev }
-                inst.TextTransparency = 1
-            elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-                local prev = inst.ImageTransparency or 0
-                fadeTargets[inst] = { kind = "image", target = prev }
-                inst.ImageTransparency = 1
-            elseif inst:IsA("Frame") then
-                local prev = inst.BackgroundTransparency or 0
-                fadeTargets[inst] = { kind = "bg", target = prev }
-                inst.BackgroundTransparency = 1
-            end
-        end
-        collectTargets(mainFrame)
-
-        -- fade in after 5 seconds
-        task.spawn(function()
-            task.wait(5)
-            local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            for inst, meta in pairs(fadeTargets) do
-                pcall(function()
-                    if meta.kind == "text" then
-                        TweenService:Create(inst, tweenInfo, { TextTransparency = meta.target }):Play()
-                    elseif meta.kind == "image" then
-                        TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
-                    elseif meta.kind == "bg" then
-                        TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
-                    end
-                end)
-            end
-        end)
+        -- (fade-in will be prepared after the UI is fully constructed)
 
         -- Make the UI draggable (supports touch and mouse)
         do
@@ -757,7 +743,21 @@ do
             UIS.InputBegan:Connect(function(input, processed)
                 if processed then return end
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    local started = false
                     if input.Target and (input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
+                        started = true
+                    else
+                        -- touch on mobile may not provide a Target; check if touch position is inside the mainFrame bounds
+                        pcall(function()
+                            local pos = input.Position
+                            local absPos = mainFrame.AbsolutePosition
+                            local absSize = mainFrame.AbsoluteSize
+                            if pos.X >= absPos.X and pos.X <= (absPos.X + absSize.X) and pos.Y >= absPos.Y and pos.Y <= (absPos.Y + absSize.Y) then
+                                started = true
+                            end
+                        end)
+                    end
+                    if started then
                         dragging = true
                         dragInput = input
                         dragStart = input.Position
@@ -885,15 +885,30 @@ do
             hopBtn.Parent = frame
             styleButton(hopBtn)
             hopBtn.MouseButton1Click:Connect(function()
-                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or "19-22"
-                local mn, mx = parseRange(txt)
-                if not mn then
-                    notify("Server Hop", "Invalid hop range (use MIN-MAX).", 4)
-                    return
+                if not manualHopRunning then
+                    local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or "19-22"
+                    local mn, mx = parseRange(txt)
+                    if not mn then
+                        notify("Server Hop", "Invalid hop range (use MIN-MAX).", 4)
+                        return
+                    end
+                    hopRangeText = txt
+                    pcall(SaveSettings)
+                    manualHopRunning = true
+                    hopBtn.Text = "Stop Hop"
+                    manualHopTask = task.spawn(function()
+                        while manualHopRunning do
+                            local ok = serverSearchAttempt(mn, mx)
+                            if ok then break end
+                            task.wait(2)
+                        end
+                        manualHopRunning = false
+                        pcall(function() hopBtn.Text = "Server Hop Now" end)
+                    end)
+                else
+                    manualHopRunning = false
+                    pcall(function() hopBtn.Text = "Server Hop Now" end)
                 end
-                hopRangeText = txt
-                pcall(SaveSettings)
-                serverHopNow(mn, mx, true)
             end)
 
             local autoLabel = Instance.new("TextLabel")
@@ -974,6 +989,47 @@ do
             end)
 
             -- donation stat name textbox removed per user request
+        end
+
+        -- After building the entire UI, prepare fade-in (include TextButton backgrounds)
+        do
+            local fadeTargets = {}
+            local function collectTargets(inst)
+                for _, child in ipairs(inst:GetChildren()) do
+                    collectTargets(child)
+                end
+                if inst:IsA("TextButton") or inst:IsA("TextBox") or inst:IsA("TextLabel") then
+                    local prevText = inst.TextTransparency or 0
+                    local prevBg = inst.BackgroundTransparency or 1
+                    fadeTargets[inst] = { kind = "textbutton", textTarget = prevText, bgTarget = prevBg }
+                    inst.TextTransparency = 1
+                    inst.BackgroundTransparency = 1
+                elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+                    local prev = inst.ImageTransparency or 0
+                    fadeTargets[inst] = { kind = "image", target = prev }
+                    inst.ImageTransparency = 1
+                elseif inst:IsA("Frame") then
+                    local prev = inst.BackgroundTransparency or 0
+                    fadeTargets[inst] = { kind = "bg", target = prev }
+                    inst.BackgroundTransparency = 1
+                end
+            end
+            collectTargets(mainFrame)
+            task.spawn(function()
+                task.wait(5)
+                local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                for inst, meta in pairs(fadeTargets) do
+                    pcall(function()
+                        if meta.kind == "textbutton" then
+                            TweenService:Create(inst, tweenInfo, { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
+                        elseif meta.kind == "image" then
+                            TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
+                        elseif meta.kind == "bg" then
+                            TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
+                        end
+                    end)
+                end
+            end)
         end
 
         if SETTINGS.webhookToggle then startDonationMonitor() end
