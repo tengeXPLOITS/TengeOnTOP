@@ -566,8 +566,16 @@ local function claimEmptyStands()
     return false
 end
 
+-- Ensure we only complete a single successful claim per script load to avoid duplicates
+local _CLAIM_HAS_RUN = _CLAIM_HAS_RUN or false
 local function claimBooth()
-    return pcall(claimEmptyStands)
+    if _CLAIM_HAS_RUN then return false end
+    local ok, res = pcall(claimEmptyStands)
+    -- if the claim executed successfully (returned true), mark as run
+    if ok and res then
+        _CLAIM_HAS_RUN = true
+    end
+    return ok, res
 end
 
 -- Koyg-style ScreenGui UI (simple, file-based save/load)
