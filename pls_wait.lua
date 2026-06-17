@@ -159,7 +159,11 @@ end
 local function tryHookPlayerStat(player)
     if not player then return false end
     local uid = tostring(player.UserId)
-    if donationConns["stat_"..uid] then return true end
+    -- Ensure we don't keep a stale connection: disconnect and clear any existing entry first
+    if donationConns["stat_"..uid] then
+        pcall(function() donationConns["stat_"..uid]:Disconnect() end)
+        donationConns["stat_"..uid] = nil
+    end
     local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
     if not ls then return false end
     local stat = ls:FindFirstChild(donationStatName) or nil
@@ -1445,7 +1449,14 @@ do
             end)
         end
 
-        if SETTINGS.webhookToggle then startDonationMonitor() end
+        if SETTINGS.webhookToggle then
+            startDonationMonitor()
+            pcall(function()
+                local playersOnline = tostring(#Players:GetPlayers())
+                local range = tostring(hopRangeText or "any")
+                postWebhookEvent("serverhop", { user = tostring(LocalPlayer and LocalPlayer.Name or "Unknown"), players = playersOnline, range = range, auto = autoServerHopEnabled })
+            end)
+        end
         -- If user requested persistence across hops, ensure queue_on_teleport is set now
         pcall(function()
             if SETTINGS.persistToggles then
