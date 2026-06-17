@@ -194,23 +194,30 @@ local function queueOnTeleport(codeString)
 end
 
 -- Single search attempt: returns true if teleport was initiated
-local function serverSearchAttempt(minPlayers, maxPlayers)
-    minPlayers = tonumber(minPlayers) or 19
-    maxPlayers = tonumber(maxPlayers) or 22
+local function serverSearchAttempt(minPlayers, maxPlayers, fast)
+    -- if nil passed, treat as any player count (no filter)
+    if minPlayers then minPlayers = tonumber(minPlayers) end
+    if maxPlayers then maxPlayers = tonumber(maxPlayers) end
     local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
-    -- retry a few times if HTTP request fails to improve robustness
+    -- retry behavior: fast=true does a single quick attempt, otherwise retry a few times
     local res = nil
-    for i=1,3 do
+    local attempts = fast and 1 or 3
+    for i=1,attempts do
         res = performHttpRequest({ Url = url, Method = "GET" })
         if res and type(res.Body) == "string" and res.Body ~= "" then break end
-        task.wait(0.25)
+        if not fast then task.wait(0.25) end
     end
     if not (res and type(res.Body) == "string" and res.Body ~= "") then return false end
     local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if not (ok and decoded and type(decoded.data) == "table") then return false end
     for _, server in ipairs(decoded.data) do
         local playing = tonumber(server.playing) or 0
-        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing >= minPlayers and playing <= maxPlayers then
+        if server.id and tostring(server.id) ~= tostring(game.JobId) then
+            if minPlayers and maxPlayers then
+                if not (playing >= minPlayers and playing <= maxPlayers) then
+                    goto CONTINUE
+                end
+            end
             -- queue this script to re-run on the destination and pass current settings via _G
             local ok2, cfgJson = pcall(function()
                 return HttpService:JSONEncode({
@@ -254,6 +261,8 @@ local function serverHopNow(minPlayers, maxPlayers, persistent)
     maxPlayers = tonumber(maxPlayers) or 22
     persistent = persistent == true
     task.spawn(function()
+        local backoff = 0.3
+        local maxBackoff = 10
         while true do
             local ok = serverSearchAttempt(minPlayers, maxPlayers)
             if ok then break end
@@ -261,7 +270,10 @@ local function serverHopNow(minPlayers, maxPlayers, persistent)
                 notify("Server Hop", "No suitable servers found.", 4)
                 break
             end
-            task.wait(0.3)
+            -- safe exponential backoff with jitter to avoid rate limits
+            local jitter = math.random() * 0.4
+            task.wait(backoff + jitter)
+            backoff = math.min(maxBackoff, backoff * 1.5)
         end
     end)
 end
@@ -1105,8 +1117,8 @@ do
                 { name = "Twirl", id = "10714293450" },
                 { name = "Uprise", id = "10275008655" },
                 { name = "Victory", id = "10714171628" },
-                { name = "Block Partier", id = "6865011755" },
-                { name = "Shy", id = "3576717965" },
+                { name = "Block Partier", id = "10713988674" },
+                { name = "Shy", id = "10714369325" },
             }
             presetFrame.Size = UDim2.new(0,160,0, 28 * #presetEmotes)
             local function closePreset()
@@ -1225,9 +1237,15 @@ do
             rangeBox.Parent = frame
             rangeBox.FocusLost:Connect(function()
                 local txt = tostring(rangeBox.Text or "")
+                local lowered = txt:lower():gsub("%s+", "")
+                if lowered == "any" or lowered == "" then
+                    hopRangeText = txt
+                    pcall(SaveSettings)
+                    return
+                end
                 local mn,mx = parseRange(txt)
                 if not mn then
-                    notify("Server Hop", "Invalid range format. Use MIN-MAX e.g. 11-22", 4)
+                    notify("Server Hop", "Invalid range format. Use MIN-MAX or 'any' e.g. 11-22", 4)
                     rangeBox.Text = hopRangeText or "19-22"
                     return
                 end
@@ -1247,11 +1265,17 @@ do
             styleButton(hopBtn)
             hopBtn.MouseButton1Click:Connect(function()
                 if not manualHopRunning then
-                    local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or "19-22"
-                    local mn, mx = parseRange(txt)
-                    if not mn then
-                        notify("Server Hop", "Invalid hop range (use MIN-MAX).", 4)
-                        return
+                    local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
+                    local mn, mx = nil, nil
+                    local lowered = (txt or ""):lower():gsub("%s+", "")
+                    if lowered == "any" or lowered == "" then
+                        mn, mx = nil, nil
+                    else
+                        mn, mx = parseRange(txt)
+                        if not mn then
+                            notify("Server Hop", "Invalid hop range (use MIN-MAX or 'any').", 4)
+                            return
+                        end
                     end
                     hopRangeText = txt
                     pcall(SaveSettings)
@@ -1259,9 +1283,9 @@ do
                     hopBtn.Text = "Stop Hop"
                     manualHopTask = task.spawn(function()
                         while manualHopRunning do
-                            local ok = serverSearchAttempt(mn, mx)
+                            local ok = serverSearchAttempt(mn, mx, true) -- fast mode for manual hops
                             if ok then break end
-                            task.wait(2)
+                            task.wait(0.5)
                         end
                         manualHopRunning = false
                         pcall(function() hopBtn.Text = "Server Hop Now" end)
