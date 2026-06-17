@@ -447,7 +447,7 @@ end
 
 -- Compute a placement position in front of a stand and an away direction to face
 local function computeStandPlacement(stand, playerPos, distanceAway)
-    distanceAway = tonumber(distanceAway) or 3
+    distanceAway = tonumber(distanceAway) or 4.5
     local pivot = tryGetPivotPosition(stand) or nil
     -- fallback pivot to center/principal axis if missing
     local standCFrame
@@ -487,7 +487,7 @@ local function computeStandPlacement(stand, playerPos, distanceAway)
     frontDir = Vector3.new(frontDir.X, 0, frontDir.Z)
     if frontDir.Magnitude <= 1e-6 then frontDir = Vector3.new(0,0,-1) end
     frontDir = frontDir.Unit
-    local basePos = pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+    local basePos = pivot + frontDir * (distanceAway + 1.0) + Vector3.new(0,2,0)
     local awayDir = (basePos - pivot)
     if awayDir.Magnitude <= 1e-6 then awayDir = frontDir end
     return basePos, awayDir.Unit
@@ -599,7 +599,7 @@ local function claimEmptyStands()
         dir = Vector3.new(0, 0, -1)
     end
     dir = dir.Unit
-    local distanceAway = 3 -- studs away from pivot
+    local distanceAway = 4.5 -- studs away from pivot (increase to avoid being too near)
     safePos = target.pivot + dir * distanceAway + Vector3.new(0, 2, 0)
     -- move and orient away from the booth before the first claim
     moveCharacterToPosition(safePos, dir)
@@ -1181,18 +1181,43 @@ do
             local function playEmote(id)
                 if not id or tostring(id) == "" then return false end
                 local ok, char = pcall(function() return LocalPlayer.Character end)
-                if not ok or not char then return false end
+                if not ok or not char then
+                    return false
+                end
                 local hum = char:FindFirstChildOfClass("Humanoid")
                 if not hum then return false end
+                -- ensure Animator exists (some rigs may be missing one initially)
+                local animator = hum:FindFirstChildOfClass("Animator")
+                if not animator then
+                    pcall(function()
+                        animator = Instance.new("Animator")
+                        animator.Parent = hum
+                    end)
+                end
                 pcall(function()
-                    if currentEmoteTrack then pcall(function() currentEmoteTrack:Stop() end) end
+                    if currentEmoteTrack then
+                        pcall(function() currentEmoteTrack:Stop() end)
+                        pcall(function() currentEmoteTrack:Destroy() end)
+                        currentEmoteTrack = nil
+                    end
                     local anim = Instance.new("Animation")
                     anim.AnimationId = ("rbxassetid://%s"):format(tostring(id))
-                    local track = hum:LoadAnimation(anim)
-                    track.Priority = Enum.AnimationPriority.Action
-                    track.Looped = true
-                    track:Play()
-                    currentEmoteTrack = track
+                    local track = nil
+                    if animator and animator.LoadAnimation then
+                        track = animator:LoadAnimation(anim)
+                    else
+                        track = hum:LoadAnimation(anim)
+                    end
+                    if track then
+                        track.Priority = Enum.AnimationPriority.Action
+                        track.Looped = true
+                        -- small delay to allow replication when run very early
+                        task.spawn(function()
+                            task.wait(0.05)
+                            pcall(function() track:Play() end)
+                        end)
+                        currentEmoteTrack = track
+                    end
                 end)
                 SETTINGS.emoteId = tostring(id)
                 SETTINGS.emotePlaying = true
@@ -1210,7 +1235,26 @@ do
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
                 if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
-                    pcall(function() playEmote(SETTINGS.emoteId) end)
+                    local function attemptPlay()
+                        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if not hum then
+                            for i=1,20 do
+                                hum = char:FindFirstChildOfClass("Humanoid")
+                                if hum then break end
+                                task.wait(0.05)
+                            end
+                        end
+                        pcall(function() playEmote(SETTINGS.emoteId) end)
+                    end
+                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                        pcall(attemptPlay)
+                    else
+                        LocalPlayer.CharacterAdded:Connect(function()
+                            task.wait(0.5)
+                            pcall(attemptPlay)
+                        end)
+                    end
                 end
             end)
         end
