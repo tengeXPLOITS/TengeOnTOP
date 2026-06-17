@@ -220,6 +220,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers)
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
                     emoteId = SETTINGS.emoteId,
+                    emotePlaying = SETTINGS.emotePlaying and true or false,
                     autoServerHop = autoServerHopEnabled,
                 })
             end)
@@ -370,6 +371,42 @@ local function moveCharacterToPosition(pos, lookDir)
     return false
 end
 
+-- Check whether the local player is registered as owner on any stand
+local function localPlayerOwnsAnyStand()
+    local standsFolder = Workspace:FindFirstChild("Stands")
+    if not standsFolder then return false end
+    for _, stand in ipairs(standsFolder:GetChildren()) do
+        if stand and stand.Parent then
+            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+            if ownerObj then
+                if ownerObj:IsA("ObjectValue") and ownerObj.Value == LocalPlayer then
+                    return true
+                end
+                if ownerObj:IsA("StringValue") and tostring(ownerObj.Value) == tostring(LocalPlayer.Name) then
+                    return true
+                end
+                if (ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue")) and tonumber(ownerObj.Value) == tonumber(LocalPlayer.UserId) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Global simple range parser used outside UI
+local function parseRangeGlobal(str)
+    if not str or type(str) ~= "string" then return nil end
+    local a,b = str:match("%s*(%d+)%s*%-%s*(%d+)%s*")
+    if not a or not b then return nil end
+    local mn = tonumber(a)
+    local mx = tonumber(b)
+    if not mn or not mx then return nil end
+    if mn < 0 then mn = 0 end
+    if mx < mn then return nil end
+    return mn, mx
+end
+
 local claimLock = false
 local function claimEmptyStands()
     if claimLock then return false end
@@ -500,29 +537,21 @@ local function claimEmptyStands()
                         end
                 end
             end)
-            -- after initial success, place character then perform a second secure claim from the front-facing position
+            -- after initial success and placement, notify and verify ownership; if not owned, server hop
             pcall(function()
                 postWebhookEvent("claim", { slot = slot, result = res })
             end)
-            -- attempt secure second claim after positioning
-                pcall(function()
-                task.wait(0.35)
-                local ok2, res2 = pcall(function()
-                    local remoteRef = ReplicatedStorage:FindFirstChild("ClaimStand") or ReplicatedStorage:WaitForChild("ClaimStand", 2)
-                    if remoteRef then
-                        return remoteRef:InvokeServer(unpack(args))
-                    end
-                    return nil
-                end)
-                if ok2 and (tostring(res2) == "Success" or res2 == true) then
-                    notify("Booth Claim", ("Secure claim success for slot %d"):format(slot), 4)
-                    pcall(function() postWebhookEvent("claim", { slot = slot, result = res2, secure = true }) end)
-                else
-                    if res2 ~= nil then
-                        notify("Booth Claim", ("Secure claim attempt returned: %s"):format(tostring(res2)), 4)
-                    end
+            task.wait(0.35)
+            local owned = false
+            pcall(function() owned = localPlayerOwnsAnyStand() end)
+            if not owned then
+                local hopRange = tostring(SETTINGS.hopRange or "19-22")
+                local mn, mx = parseRangeGlobal(hopRange)
+                notify("Booth Claim", "Claim not confirmed; server hopping to find available booth.", 5)
+                if mn then
+                    serverHopNow(mn, mx, true)
                 end
-            end)
+            end
             return true
         end
         return false
@@ -580,6 +609,7 @@ do
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
                 emoteId = SETTINGS.emoteId,
+                emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
             }
             SETTINGS.hopRange = hopRangeText
@@ -613,6 +643,7 @@ do
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
+            SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
         end
 
@@ -946,6 +977,9 @@ do
             emoteBox.FocusLost:Connect(function()
                 SETTINGS.emoteId = tostring(emoteBox.Text or "")
                 pcall(SaveSettings)
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    pcall(function() playEmote(SETTINGS.emoteId) end)
+                end
             end)
 
             local emotePlayBtn = Instance.new("TextButton")
@@ -956,6 +990,15 @@ do
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
             emotePlayBtn.Parent = frame
             styleButton(emotePlayBtn)
+
+            local emoteStopBtn = Instance.new("TextButton")
+            emoteStopBtn.Size = UDim2.new(0,80,0,24)
+            emoteStopBtn.Position = UDim2.new(0,408,0,38)
+            emoteStopBtn.Text = "Stop"
+            emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
+            emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            emoteStopBtn.Parent = frame
+            styleButton(emoteStopBtn)
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
@@ -1009,6 +1052,16 @@ do
 
             -- emote playback helper
             local currentEmoteTrack = nil
+            local function stopEmote()
+                if currentEmoteTrack then
+                    pcall(function() currentEmoteTrack:Stop() end)
+                    pcall(function() currentEmoteTrack:Destroy() end)
+                    currentEmoteTrack = nil
+                end
+                SETTINGS.emotePlaying = false
+                pcall(SaveSettings)
+            end
+
             local function playEmote(id)
                 if not id or tostring(id) == "" then return false end
                 local ok, char = pcall(function() return LocalPlayer.Character end)
@@ -1021,17 +1074,28 @@ do
                     anim.AnimationId = ("rbxassetid://%s"):format(tostring(id))
                     local track = hum:LoadAnimation(anim)
                     track.Priority = Enum.AnimationPriority.Action
+                    track.Looped = true
                     track:Play()
                     currentEmoteTrack = track
-                    task.delay(8, function() pcall(function() track:Stop() end) end)
                 end)
                 SETTINGS.emoteId = tostring(id)
+                SETTINGS.emotePlaying = true
                 pcall(SaveSettings)
                 return true
             end
             emotePlayBtn.MouseButton1Click:Connect(function()
                 local id = tostring(emoteBox.Text or "")
                 if id and id ~= "" then pcall(function() playEmote(id) end) end
+            end)
+            emoteStopBtn.MouseButton1Click:Connect(function()
+                pcall(function() stopEmote() end)
+            end)
+
+            -- Auto-play emote on UI/script execution if an emote is selected
+            pcall(function()
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    pcall(function() playEmote(SETTINGS.emoteId) end)
+                end
             end)
         end
 
@@ -1273,6 +1337,7 @@ do
                         serverStayTime = SETTINGS.serverStayTime,
                         persistToggles = SETTINGS.persistToggles,
                         emoteId = SETTINGS.emoteId,
+                        emotePlaying = SETTINGS.emotePlaying and true or false,
                         autoServerHop = autoServerHopEnabled,
                     })
                 end)
