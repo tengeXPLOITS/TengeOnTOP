@@ -210,6 +210,24 @@ local function queueOnTeleport(codeString)
     return false
 end
 
+-- Debug helper: log queued code to file and notify (helps diagnose malformed qcode)
+local function logQueuedCode(qcode, tag)
+    if not qcode then return end
+    pcall(function()
+        local out = (tostring(tag or "qcode") .. "\n" .. tostring(qcode))
+        if writefile then
+            pcall(function() writefile("pls_wait_qcode_log.txt", out) end)
+        elseif syn and syn.write_file then
+            pcall(function() syn.write_file("pls_wait_qcode_log.txt", out) end)
+        end
+    end)
+    pcall(function()
+        local preview = tostring(qcode)
+        if #preview > 400 then preview = preview:sub(1,400) .. "..." end
+        pcall(function() notify("Queued Code ("..tostring(tag or "q")..")", preview, 6) end)
+    end)
+end
+
 -- Single search attempt: returns true if teleport was initiated
 local function serverSearchAttempt(minPlayers, maxPlayers, fast)
     -- if nil passed, treat as any player count (no filter)
@@ -253,6 +271,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             if ok2 and cfgJson then
                 qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
             end
+            pcall(function() logQueuedCode(qcode, "serverSearchAttempt") end)
             pcall(function() queueOnTeleport(qcode) end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
@@ -1467,6 +1486,7 @@ do
                 if ok2 and cfgJson then
                     qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
                 end
+                pcall(function() logQueuedCode(qcode, "persistToggles") end)
                 pcall(function() queueOnTeleport(qcode) end)
             end
         end)
