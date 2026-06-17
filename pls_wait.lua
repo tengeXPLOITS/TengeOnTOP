@@ -16,6 +16,8 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Minimal SETTINGS/defaults used across the script
 SETTINGS = SETTINGS or {}
@@ -100,17 +102,31 @@ local function disableAntiAfk()
 end
 
 -- Webhook / donation helpers
+local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+
 local function postWebhookEvent(kind, data)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
     local url = tostring(SETTINGS.webhookUrl or "")
-    local payload = {
-        username = "PlsWait",
-        embeds = {{
-            title = (kind and tostring(kind) or "event"):upper(),
-            description = HttpService:JSONEncode(data or {}),
-            color = 16753920,
-        }}
-    }
+    local embeds = {}
+    if kind == "donation" then
+        local amount = tonumber(data and data.amount) or 0
+        local taxed = math.floor((amount or 0) * 0.6)
+        local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
+        local donorLabel = donorName
+        table.insert(embeds, {
+            title = "New Donation Received! ✅",
+            color = 0x00FF00,
+            fields = {
+                { name = "Donor 👤", value = donorLabel, inline = false },
+                { name = "How much recepient received 💵", value = tostring(amount), inline = true },
+                { name = "Tax applied ):", value = tostring(taxed), inline = true },
+            },
+        })
+    else
+        table.insert(embeds, { title = (kind and tostring(kind) or "event"):upper(), description = HttpService:JSONEncode(data or {}), color = 16753920 })
+    end
+
+    local payload = { username = "PlsWait", embeds = embeds }
     local body = HttpService:JSONEncode(payload)
     pcall(function()
         if syn and syn.request then
@@ -150,7 +166,10 @@ local function tryHookPlayerStat(player)
             local delta = newv - prev
             donationTotals[uid] = newv
             if delta > 0 then
-                postWebhookEvent("donation", { from = player.Name, userId = player.UserId, amount = delta, total = newv })
+                -- Only notify when the local player (script user) receives the donation
+                if player == LocalPlayer then
+                    postWebhookEvent("donation", { from = player.Name, userId = player.UserId, amount = delta, total = newv })
+                end
             end
         end
     end)
@@ -206,10 +225,25 @@ local function serverHopNow(minPlayers, maxPlayers, persistent)
                             if ok2 and cfgJson then
                                 qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
                             end
+                            -- try to queue the script for the destination
                             pcall(function() queueOnTeleport(qcode) end)
-                            pcall(function() game:GetService("TeleportService"):TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer) end)
-                            found = true
-                            break
+                            local ts = game:GetService("TeleportService")
+                            local okt, terr = pcall(function()
+                                ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
+                            end)
+                            if okt then
+                                found = true
+                                break
+                            else
+                                local terrs = tostring(terr or "")
+                                -- ignore server-full teleport error code 772 and continue searching
+                                if terrs:find("772") or terrs:lower():find("teleport failed") then
+                                    -- try next server
+                                else
+                                    -- other errors: notify and continue searching
+                                    pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
+                                end
+                            end
                         end
                     end
                 end
@@ -227,7 +261,7 @@ end
 
 local function hookPlayer(player)
     if tryHookPlayerStat(player) then return end
-    -- listen for leaderstats being added
+    -- listen for leaderstats being added to this player
     donationConns["child_"..tostring(player.UserId)] = player.ChildAdded:Connect(function(child)
         if donationEnabled and child.Name == "leaderstats" then
             task.wait(0.05)
@@ -239,10 +273,15 @@ end
 local function startDonationMonitor()
     if donationEnabled then return end
     donationEnabled = true
-    for _, p in pairs(Players:GetPlayers()) do
-        hookPlayer(p)
-    end
-    donationConns["playerAdded"] = Players.PlayerAdded:Connect(function(p) hookPlayer(p) end)
+    -- Only monitor the local player for donations (Raised changes affecting the script user)
+    pcall(function() hookPlayer(LocalPlayer) end)
+    -- If leaderstats are added later to the local player, try to hook them
+    donationConns["local_child"] = LocalPlayer.ChildAdded:Connect(function(child)
+        if donationEnabled and child.Name == "leaderstats" then
+            task.wait(0.05)
+            tryHookPlayerStat(LocalPlayer)
+        end
+    end)
 end
 
 local function stopDonationMonitor()
@@ -526,10 +565,21 @@ do
 
         pcall(LoadSettings)
 
+        -- Prevent duplicate UIs across teleports / multiple runs
+        local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+        if SharedEnv.PLS_WAIT_UI_LOADED and playerGui:FindFirstChild("PlsWaitUI") then
+            return
+        end
+        pcall(function()
+            local existing = playerGui:FindFirstChild("PlsWaitUI")
+            if existing then pcall(function() existing:Destroy() end) end
+        end)
         local screen = Instance.new("ScreenGui")
         screen.Name = "PlsWaitUI"
         screen.ResetOnSpawn = false
+        screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         screen.Parent = playerGui
+        SharedEnv.PLS_WAIT_UI_LOADED = true
 
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
@@ -543,57 +593,149 @@ do
         mainCorner.CornerRadius = UDim.new(0,10)
         mainCorner.Parent = mainFrame
 
-        local title = Instance.new("TextButton")
-        title.Size = UDim2.new(1, 0, 0, 28)
-        title.Position = UDim2.new(0,0,0,0)
-        title.BackgroundColor3 = Color3.fromRGB(24,160,80)
-        title.Text = "💰 Pls Wait - Koyg UI"
-        title.TextColor3 = Color3.fromRGB(255,255,255)
-        title.TextXAlignment = Enum.TextXAlignment.Left
-        title.AutoButtonColor = false
-        title.Parent = mainFrame
-        local titleCorner = Instance.new("UICorner")
-        titleCorner.CornerRadius = UDim.new(0,8)
-        titleCorner.Parent = title
-        title.TextSize = 16
-        title.TextScaled = false
+        -- Glassy admin-panel style layout
+        local mainFrame = Instance.new("Frame")
+        mainFrame.Name = "MainFrame"
+        mainFrame.Size = UDim2.new(0, 720, 0, 420)
+        mainFrame.Position = UDim2.new(0.5, -360, 0.5, -210)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(12,12,12)
+        mainFrame.BackgroundTransparency = 0
+        mainFrame.Parent = screen
+        mainFrame.Active = true
+        -- adaptive scale for mobile/PC
+        local uiScale = Instance.new("UIScale")
+        uiScale.Parent = mainFrame
+        pcall(function()
+            local cam = workspace and workspace.CurrentCamera
+            local vs = (cam and cam.ViewportSize) or Vector2.new(1280,720)
+            local scale = math.min(vs.X / 1280, vs.Y / 720)
+            scale = math.clamp(scale, 0.7, 1)
+            uiScale.Scale = scale
+        end)
+        local mainCorner = Instance.new("UICorner")
+        mainCorner.CornerRadius = UDim.new(0,12)
+        mainCorner.Parent = mainFrame
+        local bg = Instance.new("Frame")
+        bg.Size = UDim2.new(1,0,1,0)
+        bg.Position = UDim2.new(0,0,0,0)
+        bg.BackgroundColor3 = Color3.fromRGB(24,24,24)
+        bg.BackgroundTransparency = 0.15
+        bg.BorderSizePixel = 0
+        bg.Parent = mainFrame
+        local blurOverlay = Instance.new("UIGradient")
+        blurOverlay.Rotation = 90
+        blurOverlay.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(25,25,25)), ColorSequenceKeypoint.new(1, Color3.fromRGB(12,12,12))})
+        blurOverlay.Parent = bg
 
-        local tabs = {"Main","ServerHop","Webhook"}
+        -- Left menu column
+        local leftCol = Instance.new("Frame")
+        leftCol.Name = "LeftCol"
+        leftCol.Size = UDim2.new(0, 220, 1, -20)
+        leftCol.Position = UDim2.new(0, 12, 0, 12)
+        leftCol.BackgroundTransparency = 1
+        leftCol.Parent = mainFrame
+
+        local avatar = Instance.new("ImageLabel")
+        avatar.Name = "Avatar"
+        avatar.Size = UDim2.new(0, 72, 0, 72)
+        avatar.Position = UDim2.new(0, 12, 0, 12)
+        avatar.BackgroundColor3 = Color3.fromRGB(18,18,18)
+        avatar.Image = ""
+        avatar.Parent = leftCol
+        local avatarCorner = Instance.new("UICorner") avatarCorner.CornerRadius = UDim.new(1,0); avatarCorner.Parent = avatar
+
+        local nameLbl = Instance.new("TextLabel")
+        nameLbl.Size = UDim2.new(1, -24, 0, 24)
+        nameLbl.Position = UDim2.new(0, 96, 0, 20)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Text = (LocalPlayer.DisplayName ~= "" and LocalPlayer.DisplayName) or LocalPlayer.Name
+        nameLbl.Font = Enum.Font.GothamBold
+        nameLbl.TextSize = 18
+        nameLbl.TextColor3 = Color3.fromRGB(240,240,240)
+        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+        nameLbl.Parent = leftCol
+
+        -- left menu buttons
+        local menu = { {key="Main", icon="📋", text="Overview"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
         local tabButtons = {}
         local tabFrames = {}
-        local function styleButton(btn, hoverColor)
-            if not btn then return end
-            local orig = btn.BackgroundColor3
-            local stroke = Instance.new("UIStroke")
-            stroke.Parent = btn
-            stroke.Color = Color3.fromRGB(24,120,70)
-            stroke.Thickness = 1
-            hoverColor = hoverColor or Color3.fromRGB(46,204,113)
-            btn.MouseEnter:Connect(function() pcall(function() btn.BackgroundColor3 = hoverColor end) end)
-            btn.MouseLeave:Connect(function() pcall(function() btn.BackgroundColor3 = orig end) end)
-        end
-        for i, name in ipairs(tabs) do
+        for i, item in ipairs(menu) do
             local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(0, 120, 0, 30)
-            btn.Position = UDim2.new(0, (i-1)*120, 0, 30)
-            btn.Text = name
-            btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-            btn.TextColor3 = Color3.fromRGB(240,240,240)
+            btn.Size = UDim2.new(1, -12, 0, 40)
+            btn.Position = UDim2.new(0, 6, 0, 100 + (i-1)*52)
+            btn.Text = (item.icon .. "  " .. item.text)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 16
+            btn.TextColor3 = Color3.fromRGB(220,220,220)
+            btn.BackgroundColor3 = Color3.fromRGB(28,28,28)
             btn.AutoButtonColor = false
-            btn.Parent = mainFrame
-            styleButton(btn, Color3.fromRGB(60,60,60))
-            local corner = Instance.new("UICorner")
-            corner.Parent = btn
-            tabButtons[name] = btn
+            local corner = Instance.new("UICorner") corner.Parent = btn
+            btn.Parent = leftCol
+            tabButtons[item.key] = btn
 
             local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(1, -10, 1, -70)
-            frame.Position = UDim2.new(0,5,0,70)
+            frame.Size = UDim2.new(1, -252, 1, -24)
+            frame.Position = UDim2.new(0, 236, 0, 12)
             frame.BackgroundTransparency = 1
-            frame.Visible = (name == "Main")
+            frame.Visible = (item.key == "Main")
             frame.Parent = mainFrame
-            tabFrames[name] = frame
+            tabFrames[item.key] = frame
         end
+
+        -- close button
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Size = UDim2.new(0, 28, 0, 28)
+        closeBtn.Position = UDim2.new(1, -40, 0, 12)
+        closeBtn.Text = "✕"
+        closeBtn.Font = Enum.Font.Gotham
+        closeBtn.TextSize = 16
+        closeBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        local closeCorner = Instance.new("UICorner") closeCorner.Parent = closeBtn
+        closeBtn.Parent = mainFrame
+        closeBtn.MouseButton1Click:Connect(function()
+            pcall(function() screen:Destroy() end)
+            SharedEnv.PLS_WAIT_UI_LOADED = nil
+        end)
+
+        -- Prepare fade-in: collect default transparency targets and set current to invisible
+        local fadeTargets = {}
+        local function collectTargets(inst)
+            for _, child in ipairs(inst:GetChildren()) do
+                collectTargets(child)
+            end
+            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                local prev = inst.TextTransparency or 0
+                fadeTargets[inst] = { kind = "text", target = prev }
+                inst.TextTransparency = 1
+            elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+                local prev = inst.ImageTransparency or 0
+                fadeTargets[inst] = { kind = "image", target = prev }
+                inst.ImageTransparency = 1
+            elseif inst:IsA("Frame") then
+                local prev = inst.BackgroundTransparency or 0
+                fadeTargets[inst] = { kind = "bg", target = prev }
+                inst.BackgroundTransparency = 1
+            end
+        end
+        collectTargets(mainFrame)
+
+        -- fade in after 5 seconds
+        task.spawn(function()
+            task.wait(5)
+            local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            for inst, meta in pairs(fadeTargets) do
+                pcall(function()
+                    if meta.kind == "text" then
+                        TweenService:Create(inst, tweenInfo, { TextTransparency = meta.target }):Play()
+                    elseif meta.kind == "image" then
+                        TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
+                    elseif meta.kind == "bg" then
+                        TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
+                    end
+                end)
+            end
+        end)
 
         -- Make the UI draggable (supports touch and mouse)
         do
@@ -607,7 +749,7 @@ do
             UIS.InputBegan:Connect(function(input, processed)
                 if processed then return end
                 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    if input.Target and (input.Target == title or input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
+                    if input.Target and (input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
                         dragging = true
                         dragInput = input
                         dragStart = input.Position
@@ -630,29 +772,7 @@ do
                 end
             end)
 
-            -- Ensure title also receives input events directly (more reliable on some clients)
-            title.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    dragging = true
-                    dragInput = input
-                    dragStart = input.Position
-                    startPos = mainFrame.Position
-                end
-            end)
-
-            title.InputChanged:Connect(function(input)
-                if dragging and input == dragInput then
-                    local delta = input.Position - dragStart
-                    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-                end
-            end)
-
-            title.InputEnded:Connect(function(input)
-                if input == dragInput then
-                    dragging = false
-                    dragInput = nil
-                end
-            end)
+            -- No separate title handlers; mainFrame and its descendants handle drag input
         end
 
         local function selectTab(name)
