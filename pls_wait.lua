@@ -489,8 +489,28 @@ local function claimEmptyStands()
                         end
                 end
             end)
+            -- after initial success, place character then perform a second secure claim from the front-facing position
             pcall(function()
                 postWebhookEvent("claim", { slot = slot, result = res })
+            end)
+            -- attempt secure second claim after positioning
+            pcall(function()
+                task.wait(0.25)
+                local ok2, res2 = pcall(function()
+                    local remoteRef = ReplicatedStorage:FindFirstChild("ClaimStand") or ReplicatedStorage:WaitForChild("ClaimStand", 2)
+                    if remoteRef then
+                        return remoteRef:InvokeServer(unpack(args))
+                    end
+                    return nil
+                end)
+                if ok2 and (tostring(res2) == "Success" or res2 == true) then
+                    notify("Booth Claim", ("Secure claim success for slot %d"):format(slot), 4)
+                    pcall(function() postWebhookEvent("claim", { slot = slot, result = res2, secure = true }) end)
+                else
+                    if res2 ~= nil then
+                        notify("Booth Claim", ("Secure claim attempt returned: %s"):format(tostring(res2)), 4)
+                    end
+                end
             end)
             return true
         end
