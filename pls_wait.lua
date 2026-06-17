@@ -221,6 +221,10 @@ local function serverSearchAttempt(minPlayers, maxPlayers)
                 qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
             end
             pcall(function() queueOnTeleport(qcode) end)
+            -- notify webhook that local user has queued a teleport (server hop)
+            pcall(function()
+                postWebhookEvent("serverhop", { user = LocalPlayer and LocalPlayer.Name or "Unknown", players = playing })
+            end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
@@ -733,6 +737,15 @@ do
         end)
 
         -- (fade-in will be prepared after the UI is fully constructed)
+        -- invisible overlay used to capture taps when UI is dimmed (mobile reliable wake)
+        local wakeOverlay = Instance.new("TextButton")
+        wakeOverlay.Size = UDim2.new(1, 0, 1, 0)
+        wakeOverlay.Position = UDim2.new(0, 0, 0, 0)
+        wakeOverlay.BackgroundTransparency = 1
+        wakeOverlay.AutoButtonColor = false
+        wakeOverlay.Visible = false
+        wakeOverlay.ZIndex = 1000
+        wakeOverlay.Parent = mainFrame
 
         -- Interaction listener: detect user taps/clicks on the UI to restore from dim state
         do
@@ -759,30 +772,40 @@ do
                 return false
             end
 
+            local function restoreUI()
+                lastInteraction = tick()
+                if not dimmed then return end
+                dimmed = false
+                pcall(function() wakeOverlay.Visible = false end)
+                pcall(function()
+                    if mainFrame and mainFrame.Parent then
+                        for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
+                            pcall(function()
+                                if meta.kind == "textbutton" then
+                                    TweenService:Create(inst, TweenInfo.new(0.4), { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
+                                elseif meta.kind == "image" then
+                                    TweenService:Create(inst, TweenInfo.new(0.4), { ImageTransparency = meta.target }):Play()
+                                elseif meta.kind == "bg" then
+                                    TweenService:Create(inst, TweenInfo.new(0.4), { BackgroundTransparency = meta.target }):Play()
+                                elseif meta.kind == "stroke" then
+                                    TweenService:Create(inst, TweenInfo.new(0.4), { Transparency = meta.target }):Play()
+                                end
+                            end)
+                        end
+                    end
+                end)
+            end
+
             UIS.InputBegan:Connect(function(input, processed)
                 if processed then return end
                 if isInteractionOnUI(input) then
                     lastInteraction = tick()
-                    if dimmed then
-                        -- restore UI
-                        dimmed = false
-                        pcall(function()
-                            if mainFrame and mainFrame.Parent then
-                                for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
-                                    pcall(function()
-                                        if meta.kind == "textbutton" then
-                                            TweenService:Create(inst, TweenInfo.new(0.4), { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
-                                        elseif meta.kind == "image" then
-                                            TweenService:Create(inst, TweenInfo.new(0.4), { ImageTransparency = meta.target }):Play()
-                                        elseif meta.kind == "bg" then
-                                            TweenService:Create(inst, TweenInfo.new(0.4), { BackgroundTransparency = meta.target }):Play()
-                                        end
-                                    end)
-                                end
-                            end
-                        end)
-                    end
+                    if dimmed then restoreUI() end
                 end
+            end)
+
+            wakeOverlay.MouseButton1Click:Connect(function()
+                restoreUI()
             end)
 
             task.spawn(function()
@@ -790,6 +813,7 @@ do
                     task.wait(1)
                     if tick() - lastInteraction >= inactivityDelay and not dimmed then
                         dimmed = true
+                        pcall(function() wakeOverlay.Visible = true end)
                         pcall(function()
                             if mainFrame and mainFrame.Parent then
                                 for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
@@ -800,6 +824,8 @@ do
                                             TweenService:Create(inst, TweenInfo.new(0.6), { ImageTransparency = 0.9 }):Play()
                                         elseif meta.kind == "bg" then
                                             TweenService:Create(inst, TweenInfo.new(0.6), { BackgroundTransparency = 0.95 }):Play()
+                                        elseif meta.kind == "stroke" then
+                                            TweenService:Create(inst, TweenInfo.new(0.6), { Transparency = 0.95 }):Play()
                                         end
                                     end)
                                 end
@@ -1039,6 +1065,10 @@ do
                     local prev = inst.BackgroundTransparency or 0
                     fadeTargets[inst] = { kind = "bg", target = prev }
                     inst.BackgroundTransparency = 1
+                elseif inst:IsA("UIStroke") then
+                    local prev = inst.Transparency or 0
+                    fadeTargets[inst] = { kind = "stroke", target = prev }
+                    inst.Transparency = 1
                 end
             end
             collectTargets(mainFrame)
@@ -1053,6 +1083,8 @@ do
                             TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
                         elseif meta.kind == "bg" then
                             TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
+                        elseif meta.kind == "stroke" then
+                            TweenService:Create(inst, tweenInfo, { Transparency = meta.target }):Play()
                         end
                     end)
                 end
