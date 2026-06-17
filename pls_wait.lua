@@ -219,6 +219,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers)
                     antiAfk = SETTINGS.antiAfk,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
+                    emoteId = SETTINGS.emoteId,
                     autoServerHop = autoServerHopEnabled,
                 })
             end)
@@ -347,13 +348,20 @@ local function findSlotFromStand(stand)
     return nil
 end
 
-local function moveCharacterToPosition(pos)
+local function moveCharacterToPosition(pos, lookDir)
     if not pos then return false end
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") )
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hrp then
-        pcall(function() hrp.CFrame = CFrame.new(pos + Vector3.new(0,2,0)) end)
+        pcall(function()
+            local targetPos = pos + Vector3.new(0,2,0)
+            if lookDir and typeof(lookDir) == "Vector3" and lookDir.Magnitude > 0 then
+                hrp.CFrame = CFrame.new(targetPos, targetPos + lookDir.Unit)
+            else
+                hrp.CFrame = CFrame.new(targetPos)
+            end
+        end)
         return true
     elseif hum then
         local ok, _ = pcall(function() hum:MoveTo(pos) end)
@@ -434,7 +442,8 @@ local function claimEmptyStands()
     dir = dir.Unit
     local distanceAway = 3 -- studs away from pivot
     safePos = target.pivot + dir * distanceAway + Vector3.new(0, 2, 0)
-    moveCharacterToPosition(safePos)
+    -- move and orient away from the booth before the first claim
+    moveCharacterToPosition(safePos, dir)
     task.wait(0.25)
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
@@ -484,8 +493,10 @@ local function claimEmptyStands()
                                     basePos = target.pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
                                 end
                             end
-                            -- orient to look away from the booth (same direction as frontDir)
-                            hrp.CFrame = CFrame.new(basePos, basePos + frontDir)
+                            -- compute a reliable away direction from the booth based on final placement
+                            local awayDir = (basePos - target.pivot)
+                            if awayDir.Magnitude <= 0.01 then awayDir = frontDir or Vector3.new(0,0,-1) end
+                            hrp.CFrame = CFrame.new(basePos, basePos + awayDir.Unit)
                         end
                 end
             end)
@@ -494,8 +505,8 @@ local function claimEmptyStands()
                 postWebhookEvent("claim", { slot = slot, result = res })
             end)
             -- attempt secure second claim after positioning
-            pcall(function()
-                task.wait(0.25)
+                pcall(function()
+                task.wait(0.35)
                 local ok2, res2 = pcall(function()
                     local remoteRef = ReplicatedStorage:FindFirstChild("ClaimStand") or ReplicatedStorage:WaitForChild("ClaimStand", 2)
                     if remoteRef then
@@ -568,6 +579,7 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
+                emoteId = SETTINGS.emoteId,
                 autoServerHop = autoServerHopEnabled,
             }
             SETTINGS.hopRange = hopRangeText
@@ -600,6 +612,7 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
+            SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
         end
 
@@ -612,6 +625,7 @@ do
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
                 hopRangeText = cfg.hopRange or hopRangeText
+                SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
                 _G.__PLS_WAIT_CONFIG = nil
             end
@@ -911,6 +925,114 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
+            -- Emote selector / play (Overview)
+            local emoteLabel = Instance.new("TextLabel")
+            emoteLabel.Size = UDim2.new(0,120,0,20)
+            emoteLabel.Position = UDim2.new(0,10,0,40)
+            emoteLabel.Text = "Emote (asset id)"
+            emoteLabel.TextColor3 = Color3.new(1,1,1)
+            emoteLabel.BackgroundTransparency = 1
+            emoteLabel.Parent = frame
+
+            local emoteBox = Instance.new("TextBox")
+            emoteBox.Size = UDim2.new(0,160,0,24)
+            emoteBox.Position = UDim2.new(0,140,0,38)
+            emoteBox.Text = tostring(SETTINGS.emoteId or "")
+            emoteBox.PlaceholderText = "9527883498"
+            emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            emoteBox.TextColor3 = Color3.fromRGB(255,255,255)
+            local ebCorner = Instance.new("UICorner") ebCorner.Parent = emoteBox
+            emoteBox.Parent = frame
+            emoteBox.FocusLost:Connect(function()
+                SETTINGS.emoteId = tostring(emoteBox.Text or "")
+                pcall(SaveSettings)
+            end)
+
+            local emotePlayBtn = Instance.new("TextButton")
+            emotePlayBtn.Size = UDim2.new(0,80,0,24)
+            emotePlayBtn.Position = UDim2.new(0,320,0,38)
+            emotePlayBtn.Text = "Play"
+            emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
+            emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            emotePlayBtn.Parent = frame
+            styleButton(emotePlayBtn)
+
+            local presetToggle = Instance.new("TextButton")
+            presetToggle.Size = UDim2.new(0,24,0,24)
+            presetToggle.Position = UDim2.new(0,404,0,38)
+            presetToggle.Text = "▾"
+            presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            presetToggle.Parent = frame
+            styleButton(presetToggle)
+
+            local presetFrame = Instance.new("Frame")
+            presetFrame.Position = UDim2.new(0,140,0,66)
+            presetFrame.BackgroundTransparency = 0.15
+            presetFrame.Visible = false
+            presetFrame.Parent = frame
+            local pfCorner = Instance.new("UICorner") pfCorner.Parent = presetFrame
+
+            local presetEmotes = {
+                { name = "Annyeong", id = "9527883498" },
+                { name = "Side To Side", id = "10714366910" },
+                { name = "Twirl", id = "10714293450" },
+                { name = "Uprise", id = "10275008655" },
+                { name = "Victory", id = "10714171628" },
+                { name = "Block Partier", id = "6865011755" },
+                { name = "Shy", id = "3576717965" },
+            }
+            presetFrame.Size = UDim2.new(0,160,0, 28 * #presetEmotes)
+            local function closePreset()
+                presetFrame.Visible = false
+            end
+            presetToggle.MouseButton1Click:Connect(function()
+                presetFrame.Visible = not presetFrame.Visible
+            end)
+
+            for i, p in ipairs(presetEmotes) do
+                local b = Instance.new("TextButton")
+                b.Size = UDim2.new(1, -8, 0, 24)
+                b.Position = UDim2.new(0, 4, 0, (i-1)*28)
+                b.Text = (p.name .. " — " .. tostring(p.id))
+                b.BackgroundColor3 = Color3.fromRGB(36,36,36)
+                b.TextColor3 = Color3.fromRGB(230,230,230)
+                b.Parent = presetFrame
+                styleButton(b)
+                b.MouseButton1Click:Connect(function()
+                    emoteBox.Text = tostring(p.id)
+                    SETTINGS.emoteId = tostring(p.id)
+                    pcall(SaveSettings)
+                    closePreset()
+                end)
+            end
+
+            -- emote playback helper
+            local currentEmoteTrack = nil
+            local function playEmote(id)
+                if not id or tostring(id) == "" then return false end
+                local ok, char = pcall(function() return LocalPlayer.Character end)
+                if not ok or not char then return false end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hum then return false end
+                pcall(function()
+                    if currentEmoteTrack then pcall(function() currentEmoteTrack:Stop() end) end
+                    local anim = Instance.new("Animation")
+                    anim.AnimationId = ("rbxassetid://%s"):format(tostring(id))
+                    local track = hum:LoadAnimation(anim)
+                    track.Priority = Enum.AnimationPriority.Action
+                    track:Play()
+                    currentEmoteTrack = track
+                    task.delay(8, function() pcall(function() track:Stop() end) end)
+                end)
+                SETTINGS.emoteId = tostring(id)
+                pcall(SaveSettings)
+                return true
+            end
+            emotePlayBtn.MouseButton1Click:Connect(function()
+                local id = tostring(emoteBox.Text or "")
+                if id and id ~= "" then pcall(function() playEmote(id) end) end
+            end)
         end
 
         -- Server-Hop tab
@@ -1150,6 +1272,7 @@ do
                         antiAfk = SETTINGS.antiAfk,
                         serverStayTime = SETTINGS.serverStayTime,
                         persistToggles = SETTINGS.persistToggles,
+                        emoteId = SETTINGS.emoteId,
                         autoServerHop = autoServerHopEnabled,
                     })
                 end)
