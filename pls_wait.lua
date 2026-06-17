@@ -198,7 +198,13 @@ local function serverSearchAttempt(minPlayers, maxPlayers)
     minPlayers = tonumber(minPlayers) or 19
     maxPlayers = tonumber(maxPlayers) or 22
     local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
-    local res = performHttpRequest({ Url = url, Method = "GET" })
+    -- retry a few times if HTTP request fails to improve robustness
+    local res = nil
+    for i=1,3 do
+        res = performHttpRequest({ Url = url, Method = "GET" })
+        if res and type(res.Body) == "string" and res.Body ~= "" then break end
+        task.wait(0.25)
+    end
     if not (res and type(res.Body) == "string" and res.Body ~= "") then return false end
     local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if not (ok and decoded and type(decoded.data) == "table") then return false end
@@ -221,10 +227,6 @@ local function serverSearchAttempt(minPlayers, maxPlayers)
                 qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
             end
             pcall(function() queueOnTeleport(qcode) end)
-            -- notify webhook that local user has queued a teleport (server hop)
-            pcall(function()
-                postWebhookEvent("serverhop", { user = LocalPlayer and LocalPlayer.Name or "Unknown", players = playing })
-            end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
@@ -257,7 +259,7 @@ local function serverHopNow(minPlayers, maxPlayers, persistent)
                 notify("Server Hop", "No suitable servers found.", 4)
                 break
             end
-            task.wait(2)
+            task.wait(0.3)
         end
     end)
 end
@@ -453,21 +455,38 @@ local function claimEmptyStands()
             pcall(function()
                 local char = LocalPlayer.Character
                 if char and target and target.pivot then
-                    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                    if hrp then
-                        local basePos = nil
-                        if playerPos then
-                            local d = playerPos - target.pivot
-                            if d and d.Magnitude > 0.1 then
-                                basePos = target.pivot + d.Unit * distanceAway + Vector3.new(0,2,0)
+                        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                        if hrp then
+                            -- attempt to use stand orientation when available for nicer placement
+                            local standCFrame
+                            pcall(function()
+                                if type(target.stand.GetPivot) == "function" then
+                                    standCFrame = target.stand:GetPivot()
+                                elseif target.stand.PrimaryPart then
+                                    standCFrame = target.stand.PrimaryPart.CFrame
+                                end
+                            end)
+                            local basePos
+                            local frontDir
+                            if standCFrame then
+                                frontDir = standCFrame.LookVector
+                                basePos = standCFrame.Position + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+                            else
+                                if playerPos then
+                                    local d = playerPos - target.pivot
+                                    if d and d.Magnitude > 0.1 then
+                                        frontDir = d.Unit
+                                        basePos = target.pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+                                    end
+                                end
+                                if not basePos then
+                                    frontDir = Vector3.new(0,0,-1)
+                                    basePos = target.pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+                                end
                             end
+                            -- orient to look away from the booth (same direction as frontDir)
+                            hrp.CFrame = CFrame.new(basePos, basePos + frontDir)
                         end
-                        if not basePos then
-                            basePos = target.pivot + Vector3.new(0,0,-distanceAway) + Vector3.new(0,2,0)
-                        end
-                        local lookDir = (basePos - target.pivot).Unit
-                        hrp.CFrame = CFrame.new(basePos, basePos + lookDir)
-                    end
                 end
             end)
             pcall(function()
@@ -1097,6 +1116,28 @@ do
         end
 
         if SETTINGS.webhookToggle then startDonationMonitor() end
+        -- Fire a single serverhop webhook when the UI/script is executed (indicates autoload/queue-on-teleport set)
+        pcall(function()
+            postWebhookEvent("serverhop", { user = LocalPlayer and LocalPlayer.Name or "Unknown", players = #Players:GetPlayers() })
+        end)
+        -- If user requested persistence across hops, ensure queue_on_teleport is set now
+        pcall(function()
+            if SETTINGS.persistToggles then
+                local ok2, cfgJson = pcall(function()
+                    return Http:JSONEncode({
+                        webhookToggle = SETTINGS.webhookToggle,
+                        webhookUrl = SETTINGS.webhookUrl,
+                        antiAfk = SETTINGS.antiAfk,
+                        serverStayTime = SETTINGS.serverStayTime,
+                        persistToggles = SETTINGS.persistToggles,
+                        autoServerHop = autoServerHopEnabled,
+                    })
+                end)
+                local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+                if ok2 and cfgJson then qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode) end
+                pcall(function() queueOnTeleport(qcode) end)
+            end
+        end)
         -- Ensure claim runs after teleports/character spawn
         pcall(function()
             if LocalPlayer and LocalPlayer.Character then
