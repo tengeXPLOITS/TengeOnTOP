@@ -445,14 +445,24 @@ local function claimEmptyStands()
     if ok then
         notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
         if tostring(res) == "Success" or res == true then
-            -- try to make character look away from the booth after claiming
+            -- place character directly in front of the booth and orient them looking away from it
             pcall(function()
                 local char = LocalPlayer.Character
-                if char then
+                if char and target and target.pivot then
                     local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                    if hrp and target and target.pivot then
-                        local awayPoint = (hrp.Position * 2) - target.pivot
-                        hrp.CFrame = CFrame.new(hrp.Position, awayPoint)
+                    if hrp then
+                        local basePos = nil
+                        if playerPos then
+                            local d = playerPos - target.pivot
+                            if d and d.Magnitude > 0.1 then
+                                basePos = target.pivot + d.Unit * distanceAway + Vector3.new(0,2,0)
+                            end
+                        end
+                        if not basePos then
+                            basePos = target.pivot + Vector3.new(0,0,-distanceAway) + Vector3.new(0,2,0)
+                        end
+                        local lookDir = (basePos - target.pivot).Unit
+                        hrp.CFrame = CFrame.new(basePos, basePos + lookDir)
                     end
                 end
             end)
@@ -668,20 +678,12 @@ do
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
 
-        local avatar = Instance.new("ImageLabel")
-        avatar.Name = "Avatar"
-        avatar.Size = UDim2.new(0, 72, 0, 72)
-        avatar.Position = UDim2.new(0, 12, 0, 12)
-        avatar.BackgroundColor3 = Color3.fromRGB(18,18,18)
-        avatar.Image = ""
-        avatar.Parent = leftCol
-        local avatarCorner = Instance.new("UICorner") avatarCorner.CornerRadius = UDim.new(1,0); avatarCorner.Parent = avatar
-
+        -- Header: show static title instead of player avatar/name per user request
         local nameLbl = Instance.new("TextLabel")
         nameLbl.Size = UDim2.new(1, -24, 0, 24)
-        nameLbl.Position = UDim2.new(0, 96, 0, 20)
+        nameLbl.Position = UDim2.new(0, 12, 0, 20)
         nameLbl.BackgroundTransparency = 1
-        nameLbl.Text = (LocalPlayer.DisplayName ~= "" and LocalPlayer.DisplayName) or LocalPlayer.Name
+        nameLbl.Text = "💵 PLS WAIT"
         nameLbl.Font = Enum.Font.GothamBold
         nameLbl.TextSize = 18
         nameLbl.TextColor3 = Color3.fromRGB(240,240,240)
