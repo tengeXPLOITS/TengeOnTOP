@@ -371,6 +371,95 @@ local function moveCharacterToPosition(pos, lookDir)
     return false
 end
 
+-- Compute a reliable center and principal axis for a stand using its BasePart children
+local function getStandCenterAndPrincipalAxis(stand)
+    if not stand then return nil, nil end
+    local pts = {}
+    for _, v in ipairs(stand:GetDescendants()) do
+        if v:IsA("BasePart") then
+            pts[#pts+1] = v.Position
+        end
+    end
+    if #pts == 0 then return nil, nil end
+    local n = #pts
+    local mean = Vector3.new(0,0,0)
+    for _, p in ipairs(pts) do mean = mean + p end
+    mean = mean / n
+    -- covariance matrix (3x3)
+    local c11,c12,c13,c21,c22,c23,c31,c32,c33 = 0,0,0,0,0,0,0,0,0
+    for _, p in ipairs(pts) do
+        local d = p - mean
+        c11 = c11 + d.X * d.X
+        c12 = c12 + d.X * d.Y
+        c13 = c13 + d.X * d.Z
+        c21 = c21 + d.Y * d.X
+        c22 = c22 + d.Y * d.Y
+        c23 = c23 + d.Y * d.Z
+        c31 = c31 + d.Z * d.X
+        c32 = c32 + d.Z * d.Y
+        c33 = c33 + d.Z * d.Z
+    end
+    -- power iteration to approximate principal eigenvector
+    local v = Vector3.new(1,0,0)
+    for i=1,10 do
+        local x = c11 * v.X + c12 * v.Y + c13 * v.Z
+        local y = c21 * v.X + c22 * v.Y + c23 * v.Z
+        local z = c31 * v.X + c32 * v.Y + c33 * v.Z
+        local nv = Vector3.new(x,y,z)
+        if nv.Magnitude <= 1e-6 then break end
+        v = nv.Unit
+    end
+    return mean, v
+end
+
+-- Compute a placement position in front of a stand and an away direction to face
+local function computeStandPlacement(stand, playerPos, distanceAway)
+    distanceAway = tonumber(distanceAway) or 3
+    local pivot = tryGetPivotPosition(stand) or nil
+    -- fallback pivot to center/principal axis if missing
+    local standCFrame
+    pcall(function()
+        if type(stand.GetPivot) == "function" then
+            standCFrame = stand:GetPivot()
+        elseif stand.PrimaryPart then
+            standCFrame = stand.PrimaryPart.CFrame
+        end
+    end)
+    local frontDir
+    if standCFrame then
+        frontDir = standCFrame.LookVector
+        if pivot == nil then pivot = standCFrame.Position end
+    else
+        local center, axis = getStandCenterAndPrincipalAxis(stand)
+        if center and axis then
+            if pivot == nil then pivot = center end
+            frontDir = Vector3.new(axis.X, 0, axis.Z)
+            if frontDir.Magnitude <= 1e-6 then frontDir = nil end
+        end
+    end
+    if not pivot then
+        -- as last resort search for any part position
+        for _, v in ipairs(stand:GetDescendants()) do
+            if v:IsA("BasePart") then pivot = v.Position; break end
+        end
+    end
+    if not frontDir then
+        if playerPos then
+            frontDir = Vector3.new(playerPos.X - pivot.X, 0, playerPos.Z - pivot.Z)
+        end
+        if not frontDir or frontDir.Magnitude <= 1e-6 then
+            frontDir = Vector3.new(0,0,-1)
+        end
+    end
+    frontDir = Vector3.new(frontDir.X, 0, frontDir.Z)
+    if frontDir.Magnitude <= 1e-6 then frontDir = Vector3.new(0,0,-1) end
+    frontDir = frontDir.Unit
+    local basePos = pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+    local awayDir = (basePos - pivot)
+    if awayDir.Magnitude <= 1e-6 then awayDir = frontDir end
+    return basePos, awayDir.Unit
+end
+
 -- Check whether the local player is registered as owner on any stand
 local function localPlayerOwnsAnyStand()
     local standsFolder = Workspace:FindFirstChild("Stands")
@@ -514,26 +603,12 @@ local function claimEmptyStands()
                             end)
                             local basePos
                             local frontDir
-                            if standCFrame then
-                                frontDir = standCFrame.LookVector
-                                basePos = standCFrame.Position + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
-                            else
-                                if playerPos then
-                                    local d = playerPos - target.pivot
-                                    if d and d.Magnitude > 0.1 then
-                                        frontDir = d.Unit
-                                        basePos = target.pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
-                                    end
-                                end
-                                if not basePos then
-                                    frontDir = Vector3.new(0,0,-1)
-                                    basePos = target.pivot + frontDir * (distanceAway + 0.6) + Vector3.new(0,2,0)
+                            if hrp then
+                                local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
+                                if basePos and awayDir then
+                                    hrp.CFrame = CFrame.new(basePos, basePos + awayDir)
                                 end
                             end
-                            -- compute a reliable away direction from the booth based on final placement
-                            local awayDir = (basePos - target.pivot)
-                            if awayDir.Magnitude <= 0.01 then awayDir = frontDir or Vector3.new(0,0,-1) end
-                            hrp.CFrame = CFrame.new(basePos, basePos + awayDir.Unit)
                         end
                 end
             end)
