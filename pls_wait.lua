@@ -1375,7 +1375,5 @@ end
 
 -- Script loaded: use functions directly (not returning a module table)
 -- Auto-run a single claim on script execution
-task.spawn(function()
-    task.wait(1)
-    pcall(function() claimBooth() end)
-end)
+-- Script loaded: use functions directly (not returning a module table)
+-- Auto-run handled by UI initialization above (avoid duplicate claims)
