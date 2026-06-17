@@ -564,15 +564,35 @@ do
         end)
 
         pcall(LoadSettings)
-
-        -- Prevent duplicate UIs across teleports / multiple runs
-        local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-        if SharedEnv.PLS_WAIT_UI_LOADED and playerGui:FindFirstChild("PlsWaitUI") then
-            return
+        -- Provide a small UI helper used by buttons
+        local function styleButton(btn)
+            if not btn then return end
+            pcall(function()
+                btn.AutoButtonColor = false
+                local base = btn.BackgroundColor3
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0,8)
+                corner.Parent = btn
+                local stroke = Instance.new("UIStroke")
+                stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                stroke.Thickness = 1
+                stroke.Color = Color3.fromRGB(30,30,30)
+                stroke.Parent = btn
+                btn.MouseEnter:Connect(function()
+                    pcall(function() btn.BackgroundColor3 = base:Lerp(Color3.fromRGB(255,255,255), 0.04) end)
+                end)
+                btn.MouseLeave:Connect(function()
+                    pcall(function() btn.BackgroundColor3 = base end)
+                end)
+            end)
         end
+
+        -- Prevent duplicate UIs across teleports / multiple runs: always remove any existing UI
+        local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
         pcall(function()
             local existing = playerGui:FindFirstChild("PlsWaitUI")
             if existing then pcall(function() existing:Destroy() end) end
+            SharedEnv.PLS_WAIT_UI_LOADED = nil
         end)
         local screen = Instance.new("ScreenGui")
         screen.Name = "PlsWaitUI"
@@ -580,18 +600,6 @@ do
         screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         screen.Parent = playerGui
         SharedEnv.PLS_WAIT_UI_LOADED = true
-
-        local mainFrame = Instance.new("Frame")
-        mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 420, 0, 360)
-        mainFrame.Position = UDim2.new(0.5, -230, 0.5, -180)
-        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-        mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        mainFrame.Parent = screen
-        mainFrame.Active = true
-        local mainCorner = Instance.new("UICorner")
-        mainCorner.CornerRadius = UDim.new(0,10)
-        mainCorner.Parent = mainFrame
 
         -- Glassy admin-panel style layout
         local mainFrame = Instance.new("Frame")
