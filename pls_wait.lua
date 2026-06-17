@@ -947,92 +947,12 @@ do
         wakeOverlay.ZIndex = 1000
         wakeOverlay.Parent = mainFrame
 
-        -- Interaction listener: detect user taps/clicks on the UI to restore from dim state
+        -- Interaction listener: dimming/inactivity feature removed per user request
         do
             local UIS = game:GetService("UserInputService")
-            local lastInteraction = tick()
-            local dimmed = false
-            local inactivityDelay = 60 -- seconds
-
-            local function isInteractionOnUI(input)
-                if input.Target and (input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
-                    return true
-                end
-                if input.Position then
-                    local ok, pos = pcall(function() return input.Position end)
-                    if not ok then return false end
-                    local absPos = mainFrame.AbsolutePosition
-                    local absSize = mainFrame.AbsoluteSize
-                    if absSize and absSize.X > 0 and absSize.Y > 0 then
-                        if pos.X >= absPos.X and pos.X <= (absPos.X + absSize.X) and pos.Y >= absPos.Y and pos.Y <= (absPos.Y + absSize.Y) then
-                            return true
-                        end
-                    end
-                end
-                return false
-            end
-
-            local function restoreUI()
-                lastInteraction = tick()
-                if not dimmed then return end
-                dimmed = false
-                pcall(function() wakeOverlay.Visible = false end)
-                pcall(function()
-                    if mainFrame and mainFrame.Parent then
-                        for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
-                            pcall(function()
-                                if meta.kind == "textbutton" then
-                                    TweenService:Create(inst, TweenInfo.new(0.4), { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
-                                elseif meta.kind == "image" then
-                                    TweenService:Create(inst, TweenInfo.new(0.4), { ImageTransparency = meta.target }):Play()
-                                elseif meta.kind == "bg" then
-                                    TweenService:Create(inst, TweenInfo.new(0.4), { BackgroundTransparency = meta.target }):Play()
-                                elseif meta.kind == "stroke" then
-                                    TweenService:Create(inst, TweenInfo.new(0.4), { Transparency = meta.target }):Play()
-                                end
-                            end)
-                        end
-                    end
-                end)
-            end
-
+            -- Keep a minimal listener to capture UI interactions if needed later
             UIS.InputBegan:Connect(function(input, processed)
-                if processed then return end
-                if isInteractionOnUI(input) then
-                    lastInteraction = tick()
-                    if dimmed then restoreUI() end
-                end
-            end)
-
-            wakeOverlay.MouseButton1Click:Connect(function()
-                restoreUI()
-            end)
-
-            task.spawn(function()
-                while true do
-                    task.wait(1)
-                    if tick() - lastInteraction >= inactivityDelay and not dimmed then
-                        dimmed = true
-                        pcall(function() wakeOverlay.Visible = true end)
-                        pcall(function()
-                            if mainFrame and mainFrame.Parent then
-                                for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
-                                    pcall(function()
-                                        if meta.kind == "textbutton" then
-                                            TweenService:Create(inst, TweenInfo.new(0.6), { TextTransparency = 0.9, BackgroundTransparency = 0.95 }):Play()
-                                        elseif meta.kind == "image" then
-                                            TweenService:Create(inst, TweenInfo.new(0.6), { ImageTransparency = 0.9 }):Play()
-                                        elseif meta.kind == "bg" then
-                                            TweenService:Create(inst, TweenInfo.new(0.6), { BackgroundTransparency = 0.95 }):Play()
-                                        elseif meta.kind == "stroke" then
-                                            TweenService:Create(inst, TweenInfo.new(0.6), { Transparency = 0.95 }):Play()
-                                        end
-                                    end)
-                                end
-                            end
-                        end)
-                    end
-                end
+                -- intentionally left blank: inactivity dimming disabled
             end)
         end
 
