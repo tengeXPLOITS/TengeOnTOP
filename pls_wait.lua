@@ -123,7 +123,24 @@ local function postWebhookEvent(kind, data)
             },
         })
     else
-        table.insert(embeds, { title = (kind and tostring(kind) or "event"):upper(), description = HttpService:JSONEncode(data or {}), color = 16753920 })
+        if kind == "serverhop" then
+            local initiator = tostring(data and data.user or "Unknown")
+            local players = tostring(data and data.players or "")
+            local range = tostring(data and data.range or "any")
+            local auto = tostring((data and data.auto) and "Yes" or "No")
+            table.insert(embeds, {
+                title = "Server Hop Triggered 🔀",
+                color = 0x3498DB,
+                fields = {
+                    { name = "Initiator 👤", value = initiator, inline = false },
+                    { name = "Players Online 👥", value = players, inline = true },
+                    { name = "Range", value = range, inline = true },
+                    { name = "Auto Hop", value = auto, inline = true },
+                },
+            })
+        else
+            table.insert(embeds, { title = (kind and tostring(kind) or "event"):upper(), description = HttpService:JSONEncode(data or {}), color = 16753920 })
+        end
     end
 
     local payload = { username = "PlsWait", embeds = embeds }
@@ -231,9 +248,10 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     autoServerHop = autoServerHopEnabled,
                 })
             end)
-            local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+            local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+            local qcode = qcore
             if ok2 and cfgJson then
-                qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode)
+                qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
             end
             pcall(function() queueOnTeleport(qcode) end)
             local ts = game:GetService("TeleportService")
@@ -1429,10 +1447,6 @@ do
         end
 
         if SETTINGS.webhookToggle then startDonationMonitor() end
-        -- Fire a single serverhop webhook when the UI/script is executed (indicates autoload/queue-on-teleport set)
-        pcall(function()
-            postWebhookEvent("serverhop", { user = LocalPlayer and LocalPlayer.Name or "Unknown", players = #Players:GetPlayers() })
-        end)
         -- If user requested persistence across hops, ensure queue_on_teleport is set now
         pcall(function()
             if SETTINGS.persistToggles then
@@ -1448,8 +1462,11 @@ do
                         autoServerHop = autoServerHopEnabled,
                     })
                 end)
-                local qcode = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
-                if ok2 and cfgJson then qcode = ("local _json = %q; _G.__PLS_WAIT_CONFIG = game:GetService('HttpService'):JSONDecode(_json); %s"):format(cfgJson, qcode) end
+                local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+                local qcode = qcore
+                if ok2 and cfgJson then
+                    qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
+                end
                 pcall(function() queueOnTeleport(qcode) end)
             end
         end)
