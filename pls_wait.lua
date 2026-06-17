@@ -606,8 +606,9 @@ do
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
         mainFrame.Size = UDim2.new(0, 720, 0, 420)
-        mainFrame.Position = UDim2.new(0.5, -360, 0.5, -210)
-        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+        -- position bottom-left, keep margin and ensure it's visible on mobile
+        mainFrame.AnchorPoint = Vector2.new(0, 1)
+        mainFrame.Position = UDim2.new(0, 12, 1, -12)
         mainFrame.BackgroundColor3 = Color3.fromRGB(12,12,12)
         mainFrame.BackgroundTransparency = 0
         mainFrame.Parent = screen
@@ -731,56 +732,80 @@ do
 
         -- (fade-in will be prepared after the UI is fully constructed)
 
-        -- Make the UI draggable (supports touch and mouse)
+        -- Interaction listener: detect user taps/clicks on the UI to restore from dim state
         do
             local UIS = game:GetService("UserInputService")
-            local dragging = false
-            local dragInput = nil
-            local dragStart = Vector2.new()
-            local startPos = UDim2.new()
+            local lastInteraction = tick()
+            local dimmed = false
+            local inactivityDelay = 60 -- seconds
 
-            -- Fallback global handlers (keeps existing behavior)
+            local function isInteractionOnUI(input)
+                if input.Target and (input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
+                    return true
+                end
+                if input.Position then
+                    local ok, pos = pcall(function() return input.Position end)
+                    if not ok then return false end
+                    local absPos = mainFrame.AbsolutePosition
+                    local absSize = mainFrame.AbsoluteSize
+                    if absSize and absSize.X > 0 and absSize.Y > 0 then
+                        if pos.X >= absPos.X and pos.X <= (absPos.X + absSize.X) and pos.Y >= absPos.Y and pos.Y <= (absPos.Y + absSize.Y) then
+                            return true
+                        end
+                    end
+                end
+                return false
+            end
+
             UIS.InputBegan:Connect(function(input, processed)
                 if processed then return end
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    local started = false
-                    if input.Target and (input.Target == mainFrame or input.Target:IsDescendantOf(mainFrame)) then
-                        started = true
-                    else
-                        -- touch on mobile may not provide a Target; check if touch position is inside the mainFrame bounds
+                if isInteractionOnUI(input) then
+                    lastInteraction = tick()
+                    if dimmed then
+                        -- restore UI
+                        dimmed = false
                         pcall(function()
-                            local pos = input.Position
-                            local absPos = mainFrame.AbsolutePosition
-                            local absSize = mainFrame.AbsoluteSize
-                            if pos.X >= absPos.X and pos.X <= (absPos.X + absSize.X) and pos.Y >= absPos.Y and pos.Y <= (absPos.Y + absSize.Y) then
-                                started = true
+                            if mainFrame and mainFrame.Parent then
+                                for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
+                                    pcall(function()
+                                        if meta.kind == "textbutton" then
+                                            TweenService:Create(inst, TweenInfo.new(0.4), { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
+                                        elseif meta.kind == "image" then
+                                            TweenService:Create(inst, TweenInfo.new(0.4), { ImageTransparency = meta.target }):Play()
+                                        elseif meta.kind == "bg" then
+                                            TweenService:Create(inst, TweenInfo.new(0.4), { BackgroundTransparency = meta.target }):Play()
+                                        end
+                                    end)
+                                end
                             end
                         end)
                     end
-                    if started then
-                        dragging = true
-                        dragInput = input
-                        dragStart = input.Position
-                        startPos = mainFrame.Position
+                end
+            end)
+
+            task.spawn(function()
+                while true do
+                    task.wait(1)
+                    if tick() - lastInteraction >= inactivityDelay and not dimmed then
+                        dimmed = true
+                        pcall(function()
+                            if mainFrame and mainFrame.Parent then
+                                for inst, meta in pairs(_G.__PLS_WAIT_FADE_NORMAL or {}) do
+                                    pcall(function()
+                                        if meta.kind == "textbutton" then
+                                            TweenService:Create(inst, TweenInfo.new(0.6), { TextTransparency = 0.9, BackgroundTransparency = 0.95 }):Play()
+                                        elseif meta.kind == "image" then
+                                            TweenService:Create(inst, TweenInfo.new(0.6), { ImageTransparency = 0.9 }):Play()
+                                        elseif meta.kind == "bg" then
+                                            TweenService:Create(inst, TweenInfo.new(0.6), { BackgroundTransparency = 0.95 }):Play()
+                                        end
+                                    end)
+                                end
+                            end
+                        end)
                     end
                 end
             end)
-
-            UIS.InputChanged:Connect(function(input)
-                if dragging and input == dragInput and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                    local delta = input.Position - dragStart
-                    mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-                end
-            end)
-
-            UIS.InputEnded:Connect(function(input)
-                if input == dragInput then
-                    dragging = false
-                    dragInput = nil
-                end
-            end)
-
-            -- No separate title handlers; mainFrame and its descendants handle drag input
         end
 
         local function selectTab(name)
@@ -1028,6 +1053,11 @@ do
                             TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
                         end
                     end)
+                end
+                -- store the normal (post-fade-in) values for inactivity dim/restore
+                _G.__PLS_WAIT_FADE_NORMAL = _G.__PLS_WAIT_FADE_NORMAL or {}
+                for inst, meta in pairs(fadeTargets) do
+                    _G.__PLS_WAIT_FADE_NORMAL[inst] = meta
                 end
             end)
         end
