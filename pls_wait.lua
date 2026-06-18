@@ -248,7 +248,15 @@ local function startFriendHop()
         if ok and isFriend then
             pcall(function() notify("Friend Hop", ("Friend %s joined — hopping to a different server"):format(p.Name), 5) end)
             local qcode = buildQueueCode()
-            pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
+            pcall(function()
+                if type(qcode) == 'string' and qcode ~= '' then
+                    pcall(function() local ok,len = pcall(function() return #qcode end); if ok then warn('queueOnTeleport qcode length: '..tostring(len)) end end)
+                    pcall(function() local ok,preview = pcall(function() return qcode:sub(1,200) end); if ok then warn('queueOnTeleport preview: '..tostring(preview)) end end)
+                    queueOnTeleport(qcode)
+                else
+                    warn('Invalid qcode for queueOnTeleport', tostring(qcode))
+                end
+            end)
             task.spawn(function()
                 task.wait(0.2)
                 pcall(function() LocalPlayer:Kick(("Friend %s joined this server — hopping"):format(p.Name)) end)
@@ -305,7 +313,15 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             if ok2 and cfgJson then
                 qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
             end
-            pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
+            pcall(function()
+                if type(qcode) == 'string' and qcode ~= '' then
+                    pcall(function() local ok,len = pcall(function() return #qcode end); if ok then warn('queueOnTeleport qcode length: '..tostring(len)) end end)
+                    pcall(function() local ok,preview = pcall(function() return qcode:sub(1,200) end); if ok then warn('queueOnTeleport preview: '..tostring(preview)) end end)
+                    queueOnTeleport(qcode)
+                else
+                    warn('Invalid qcode for queueOnTeleport', tostring(qcode))
+                end
+            end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
@@ -328,7 +344,15 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
 
                 if isGameFull then
                     -- ensure qcode available; queue it again to be safe
-                    pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
+                    pcall(function()
+                        if type(qcode) == 'string' and qcode ~= '' then
+                            pcall(function() local ok,len = pcall(function() return #qcode end); if ok then warn('queueOnTeleport qcode length: '..tostring(len)) end end)
+                            pcall(function() local ok,preview = pcall(function() return qcode:sub(1,200) end); if ok then warn('queueOnTeleport preview: '..tostring(preview)) end end)
+                            queueOnTeleport(qcode)
+                        else
+                            warn('Invalid qcode for queueOnTeleport', tostring(qcode))
+                        end
+                    end)
                     -- Do NOT kick on GameFull anymore; just continue searching
                     pcall(function() notify("Server Hop", "Server full — queued hop, continuing search.", 4) end)
                     return false
@@ -1543,7 +1567,15 @@ do
                 if ok2 and cfgJson then
                     qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
                 end
-                pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
+                pcall(function()
+                    if type(qcode) == 'string' and qcode ~= '' then
+                        pcall(function() local ok,len = pcall(function() return #qcode end); if ok then warn('queueOnTeleport qcode length: '..tostring(len)) end end)
+                        pcall(function() local ok,preview = pcall(function() return qcode:sub(1,200) end); if ok then warn('queueOnTeleport preview: '..tostring(preview)) end end)
+                        queueOnTeleport(qcode)
+                    else
+                        warn('Invalid qcode for queueOnTeleport', tostring(qcode))
+                    end
+                end)
             end
         end)
         -- Ensure claim runs after teleports/character spawn
