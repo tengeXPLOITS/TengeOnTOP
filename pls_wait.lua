@@ -26,6 +26,7 @@ SETTINGS.webhookUrl = SETTINGS.webhookUrl or ""
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
+SETTINGS.friendHop = SETTINGS.friendHop or false
 
 -- Donation monitoring placeholders
 donationConns = donationConns or {}
@@ -214,6 +215,55 @@ local function queueOnTeleport(codeString)
     return false
 end
 
+-- Build a queue-on-teleport payload that preserves SETTINGS across hops
+local function buildQueueCode()
+    local ok, cfgJson = pcall(function()
+        return HttpService:JSONEncode({
+            webhookToggle = SETTINGS.webhookToggle,
+            webhookUrl = SETTINGS.webhookUrl,
+            antiAfk = SETTINGS.antiAfk,
+            serverStayTime = SETTINGS.serverStayTime,
+            persistToggles = SETTINGS.persistToggles,
+            emoteId = SETTINGS.emoteId,
+            emotePlaying = SETTINGS.emotePlaying and true or false,
+            autoServerHop = autoServerHopEnabled,
+        })
+    end)
+    local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
+    if ok and cfgJson then
+        return ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
+    end
+    return qcore
+end
+
+-- Friend-hop: when a friend joins the current server, queue the script and kick to force rejoin elsewhere
+local friendHopConn = nil
+local function startFriendHop()
+    if friendHopConn then return end
+    friendHopConn = Players.PlayerAdded:Connect(function(p)
+        if not p or not p.UserId then return end
+        local ok, isFriend = pcall(function()
+            return LocalPlayer and LocalPlayer:IsFriendsWith and LocalPlayer:IsFriendsWith(p.UserId)
+        end)
+        if ok and isFriend then
+            pcall(function() notify("Friend Hop", ("Friend %s joined — hopping to a different server"):format(p.Name), 5) end)
+            local qcode = buildQueueCode()
+            pcall(function() queueOnTeleport(qcode) end)
+            task.spawn(function()
+                task.wait(0.2)
+                pcall(function() LocalPlayer:Kick(("Friend %s joined this server — hopping"):format(p.Name)) end)
+            end)
+        end
+    end)
+end
+
+local function stopFriendHop()
+    if friendHopConn then
+        pcall(function() friendHopConn:Disconnect() end)
+        friendHopConn = nil
+    end
+end
+
 -- Single search attempt: returns true if teleport was initiated
 local function serverSearchAttempt(minPlayers, maxPlayers, fast)
     -- if nil passed, treat as any player count (no filter)
@@ -263,8 +313,12 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             if okt then
                 return true
             else
-                local terrs = tostring(terr or "")
-                local lterrs = terrs:lower()
+                    local terrs = ""
+                    if type(terr) == "table" then
+                        for k,v in pairs(terr) do terrs = terrs .. " " .. tostring(v) end
+                    end
+                    terrs = terrs .. " " .. tostring(terr or "")
+                    local lterrs = terrs:lower()
                 -- Robust detection for "GameFull" / Error 772 / raiseTeleportInitFailedEvent messages
                 local isGameFull = false
                 if lterrs:find("772") or lterrs:find("error code: 772") then isGameFull = true end
@@ -275,11 +329,8 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 if isGameFull then
                     -- ensure qcode available; queue it again to be safe
                     pcall(function() queueOnTeleport(qcode) end)
-                    -- Kick the player so Roblox will attempt the queued script on rejoin
-                    task.spawn(function()
-                        task.wait(0.05)
-                        pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
-                    end)
+                    -- Do NOT kick on GameFull anymore; just continue searching
+                    pcall(function() notify("Server Hop", "Server full — queued hop, continuing search.", 4) end)
                     return false
                 end
 
@@ -517,7 +568,8 @@ local function computeStandPlacement(stand, playerPos, distanceAway)
     frontDir = Vector3.new(frontDir.X, 0, frontDir.Z)
     if frontDir.Magnitude <= 1e-6 then frontDir = Vector3.new(0,0,-1) end
     frontDir = frontDir.Unit
-    local basePos = pivot + frontDir * (distanceAway + 1.0) + Vector3.new(0,2,0)
+    -- Prefer standing directly in front of the booth: use the negative look vector
+    local basePos = pivot - frontDir * (distanceAway + 1.0) + Vector3.new(0,2,0)
     local awayDir = (basePos - pivot)
     if awayDir.Magnitude <= 1e-6 then awayDir = frontDir end
     return basePos, awayDir.Unit
@@ -767,6 +819,7 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
+                friendHop = SETTINGS.friendHop,
                 emoteId = SETTINGS.emoteId,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
@@ -801,6 +854,7 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
+            SETTINGS.friendHop = decoded.friendHop or SETTINGS.friendHop
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
@@ -908,50 +962,7 @@ do
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
 
-        -- Collapse/expand dropdown button on title bar to shorten UI
-        local collapseBtn = Instance.new("TextButton")
-        collapseBtn.Name = "CollapseBtn"
-        collapseBtn.Size = UDim2.new(0, 28, 0, 24)
-        collapseBtn.Position = UDim2.new(1, -44, 0, 2)
-        collapseBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-        collapseBtn.TextColor3 = Color3.fromRGB(255,255,255)
-        collapseBtn.Font = Enum.Font.Gotham
-        collapseBtn.TextSize = 18
-        collapseBtn.Text = "▾"
-        collapseBtn.AutoButtonColor = false
-        collapseBtn.Parent = titleBar
-        styleButton(collapseBtn)
-        collapseBtn.ZIndex = 60
-        collapseBtn.TextSize = 20
-
-        local collapsed = false
-        local prevSize = mainFrame.Size
-        local prevTabVisible = {}
-        local function setCollapsed(v)
-            collapsed = v
-            if collapsed then
-                prevSize = mainFrame.Size
-                -- hide only the right-side tab frames (keep left menu and title bar intact)
-                for k, f in pairs(tabFrames) do
-                    prevTabVisible[k] = (pcall(function() return f.Visible end) and f.Visible) or false
-                    pcall(function() f.Visible = false end)
-                end
-                -- keep left menu visible and shrink frame height
-                mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 56)
-                collapseBtn.Text = "▴"
-            else
-                -- restore previously visible tab frames and size
-                for k, f in pairs(tabFrames) do
-                    pcall(function() f.Visible = prevTabVisible[k] or false end)
-                end
-                prevTabVisible = {}
-                mainFrame.Size = prevSize
-                collapseBtn.Text = "▾"
-            end
-        end
-        collapseBtn.MouseButton1Click:Connect(function()
-            pcall(function() setCollapsed(not collapsed) end)
-        end)
+        -- Collapse/expand dropdown removed per user request (UI always shown)
 
         -- Dragging logic (mouse + touch)
         do
@@ -1005,8 +1016,7 @@ do
                 g.Parent = f
                 return f
             end
-            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
-            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
+            -- Keep only the central squiggle layer (remove surrounding shadow layers)
             makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
         end
 
@@ -1432,6 +1442,31 @@ do
                     end)
                 end
             end)
+            -- Friend Hop toggle
+            local friendLabel = Instance.new("TextLabel")
+            friendLabel.Size = UDim2.new(0,120,0,20)
+            friendLabel.Position = UDim2.new(0,10,0,188)
+            friendLabel.Text = "Friend Hop"
+            friendLabel.BackgroundTransparency = 1
+            friendLabel.TextColor3 = Color3.new(1,1,1)
+            friendLabel.Parent = frame
+
+            local friendToggle = Instance.new("TextButton")
+            friendToggle.Size = UDim2.new(0,60,0,20)
+            friendToggle.Position = UDim2.new(0,140,0,188)
+            friendToggle.Text = SETTINGS.friendHop and "ON" or "OFF"
+            friendToggle.BackgroundColor3 = SETTINGS.friendHop and Color3.fromRGB(34,177,76) or Color3.fromRGB(80,80,80)
+            friendToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local fhCorner = Instance.new("UICorner") fhCorner.Parent = friendToggle
+            friendToggle.Parent = frame
+            styleButton(friendToggle)
+            friendToggle.MouseButton1Click:Connect(function()
+                SETTINGS.friendHop = not SETTINGS.friendHop
+                friendToggle.Text = SETTINGS.friendHop and "ON" or "OFF"
+                friendToggle.BackgroundColor3 = SETTINGS.friendHop and Color3.fromRGB(34,177,76) or Color3.fromRGB(80,80,80)
+                pcall(SaveSettings)
+                if SETTINGS.friendHop then pcall(startFriendHop) else pcall(stopFriendHop) end
+            end)
         end
 
         -- Settings tab removed per user request
@@ -1520,6 +1555,10 @@ do
                 task.wait(1)
                 pcall(function() claimBooth() end)
             end)
+        end)
+        -- Start friend-hop listener if enabled
+        pcall(function()
+            if SETTINGS.friendHop then startFriendHop() end
         end)
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         if autoServerHopEnabled and not autoServerHopTask then
