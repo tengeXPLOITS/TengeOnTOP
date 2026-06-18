@@ -1,3 +1,5 @@
+hi lol
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "PlsDonoCustomGui"
 gui.ResetOnSpawn = false
