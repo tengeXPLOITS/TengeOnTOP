@@ -109,8 +109,7 @@ local function postWebhookEvent(kind, data)
     local url = tostring(SETTINGS.webhookUrl or "")
     local embeds = {}
     if kind == "donation" then
-        local amount = tonumber(data and data.amount) or 0
-        local taxed = math.floor((amount or 0) * 0.6)
+        local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
         local donorLabel = donorName
         table.insert(embeds, {
@@ -118,8 +117,7 @@ local function postWebhookEvent(kind, data)
             color = 0x00FF00,
             fields = {
                 { name = "Donor 👤", value = donorLabel, inline = false },
-                { name = "How much recepient received 💵", value = tostring(amount), inline = true },
-                { name = "Tax applied ):", value = tostring(taxed), inline = true },
+                { name = "Amount 💵", value = tostring(amount), inline = true },
             },
         })
     else
@@ -164,14 +162,32 @@ local function tryHookPlayerStat(player)
         pcall(function() donationConns["stat_"..uid]:Disconnect() end)
         donationConns["stat_"..uid] = nil
     end
+    if donationConns["ls_child_"..uid] then
+        pcall(function() donationConns["ls_child_"..uid]:Disconnect() end)
+        donationConns["ls_child_"..uid] = nil
+    end
+    if donationConns["ls_remove_"..uid] then
+        pcall(function() donationConns["ls_remove_"..uid]:Disconnect() end)
+        donationConns["ls_remove_"..uid] = nil
+    end
+    -- helper to parse numeric amount from various formats
+    local function parseAmount(v)
+        if type(v) == "number" then return math.floor(v) end
+        local s = tostring(v or "")
+        local n = s:match("%-?%d+")
+        if not n then
+            n = s:gsub("[^%d]", "")
+        end
+        return tonumber(n) or 0
+    end
     local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
     if not ls then return false end
     local stat = ls:FindFirstChild(donationStatName) or nil
     if not stat then
         for _, c in ipairs(ls:GetChildren()) do
             if c:IsA("IntValue") or c:IsA("NumberValue") or c:IsA("StringValue") then
-                local n = tonumber(tostring(c.Value):gsub("[^%d]",""))
-                if n and n > 0 then
+                local n = parseAmount(c.Value)
+                if n and n >= 0 then
                     stat = c
                     break
                 end
@@ -179,9 +195,9 @@ local function tryHookPlayerStat(player)
         end
     end
     if not stat then return false end
-    donationTotals[uid] = tonumber(stat.Value) or 0
+    donationTotals[uid] = parseAmount(stat.Value)
     donationConns["stat_"..uid] = stat.Changed:Connect(function()
-        local newv = tonumber(stat.Value) or tonumber(tostring(stat.Value):gsub("[^%d]","")) or 0
+        local newv = parseAmount(stat.Value)
         local prev = donationTotals[uid] or 0
         if newv ~= prev then
             local delta = newv - prev
@@ -189,10 +205,19 @@ local function tryHookPlayerStat(player)
             if delta > 0 then
                 -- Only notify when the local player (script user) receives the donation
                 if player == LocalPlayer then
-                    postWebhookEvent("donation", { from = player.Name, userId = player.UserId, amount = delta, total = newv })
+                    postWebhookEvent("donation", { donorName = player.Name, from = player.Name, userId = player.UserId, amount = delta, total = newv })
                 end
             end
         end
+    end)
+    -- Listen for leaderstats children changes so we can re-hook if the stat object is replaced
+    donationConns["ls_child_"..uid] = ls.ChildAdded:Connect(function(child)
+        task.wait(0.05)
+        tryHookPlayerStat(player)
+    end)
+    donationConns["ls_remove_"..uid] = ls.ChildRemoved:Connect(function(child)
+        task.wait(0.05)
+        tryHookPlayerStat(player)
     end)
     return true
 end
