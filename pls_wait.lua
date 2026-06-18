@@ -629,19 +629,12 @@ local function claimEmptyStands()
         return false
     end
 
-    -- teleport/move a few studs outside the chosen stand pivot (avoid getting stuck inside)
-    local safePos = target.pivot
-    local dir
-    if playerPos then
-        dir = Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z)
-    end
-    if not dir or dir.Magnitude < 0.5 then
-        dir = Vector3.new(0, 0, -1)
-    end
-    dir = dir.Unit
+    -- teleport/move a few studs directly in front of the chosen stand pivot (use stand orientation when available)
     local distanceAway = 4.5 -- studs away from pivot (increase to avoid being too near)
-    safePos = target.pivot + dir * distanceAway + Vector3.new(0, 2, 0)
-    -- move and orient away from the booth before the first claim
+    local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
+    local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
+    local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
+    -- move and orient directly in front of the booth
     moveCharacterToPosition(safePos, dir)
     task.wait(0.25)
 
@@ -829,6 +822,7 @@ do
         end)
 
         pcall(LoadSettings)
+        -- (initialization guard will be checked after SharedEnv is defined)
         -- Provide a small UI helper used by buttons
         local function styleButton(btn)
             if not btn then return end
@@ -854,6 +848,9 @@ do
 
         -- Prevent duplicate UIs across teleports / multiple runs: always remove any existing UI
         local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+        -- If the script was already initialized elsewhere, abort to avoid duplication
+        if SharedEnv.PLS_WAIT_SCRIPT_LOADED then return end
+        SharedEnv.PLS_WAIT_SCRIPT_LOADED = true
         pcall(function()
             local existing = playerGui:FindFirstChild("PlsWaitUI")
             if existing then pcall(function() existing:Destroy() end) end
@@ -924,6 +921,8 @@ do
         collapseBtn.AutoButtonColor = false
         collapseBtn.Parent = titleBar
         styleButton(collapseBtn)
+        collapseBtn.ZIndex = 60
+        collapseBtn.TextSize = 20
 
         local collapsed = false
         local prevSize = mainFrame.Size
@@ -988,17 +987,6 @@ do
         local mainCorner = Instance.new("UICorner")
         mainCorner.CornerRadius = UDim.new(0,12)
         mainCorner.Parent = mainFrame
-        local bg = Instance.new("Frame")
-        bg.Size = UDim2.new(1,0,1,0)
-        bg.Position = UDim2.new(0,0,0,0)
-        bg.BackgroundColor3 = Color3.fromRGB(24,24,24)
-        bg.BackgroundTransparency = 0.15
-        bg.BorderSizePixel = 0
-        bg.Parent = mainFrame
-        local blurOverlay = Instance.new("UIGradient")
-        blurOverlay.Rotation = 90
-        blurOverlay.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(25,25,25)), ColorSequenceKeypoint.new(1, Color3.fromRGB(12,12,12))})
-        blurOverlay.Parent = bg
 
         -- Squiggly background effect: layered slightly offset rounded frames
         do
@@ -1026,7 +1014,8 @@ do
         local leftCol = Instance.new("Frame")
         leftCol.Name = "LeftCol"
         leftCol.Size = UDim2.new(0, LEFT_W, 1, -20)
-        leftCol.Position = UDim2.new(0, GAP, 0, 12)
+        -- lower left column so the titlebar doesn't overlap the first button
+        leftCol.Position = UDim2.new(0, GAP, 0, 40)
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
         -- old left-column title removed (we use the draggable title bar)
@@ -1060,27 +1049,15 @@ do
             local frame = Instance.new("Frame")
             local rightW = MAIN_W - LEFT_W - (GAP * 2)
             frame.Size = UDim2.new(0, rightW, 1, -24)
-            frame.Position = UDim2.new(0, LEFT_W + GAP, 0, 12)
+            -- right-side frames aligned below titlebar
+            frame.Position = UDim2.new(0, LEFT_W + GAP, 0, 40)
             frame.BackgroundTransparency = 1
             frame.Visible = (item.key == "Main")
             frame.Parent = mainFrame
             tabFrames[item.key] = frame
         end
 
-        -- close button
-        local closeBtn = Instance.new("TextButton")
-        closeBtn.Size = UDim2.new(0, 28, 0, 28)
-        closeBtn.Position = UDim2.new(1, -36, 0, 12)
-        closeBtn.Text = "✕"
-        closeBtn.Font = Enum.Font.Gotham
-        closeBtn.TextSize = 16
-        closeBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
-        local closeCorner = Instance.new("UICorner") closeCorner.Parent = closeBtn
-        closeBtn.Parent = mainFrame
-        closeBtn.MouseButton1Click:Connect(function()
-            pcall(function() screen:Destroy() end)
-            SharedEnv.PLS_WAIT_UI_LOADED = nil
-        end)
+        -- close button removed (dropdown provides collapse/close behavior)
 
         -- (fade-in will be prepared after the UI is fully constructed)
         -- invisible overlay used to capture taps when UI is dimmed (mobile reliable wake)
@@ -1166,7 +1143,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,320,0,38)
+            emotePlayBtn.Position = UDim2.new(0,140,0,66)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1175,7 +1152,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,408,0,38)
+            emoteStopBtn.Position = UDim2.new(0,228,0,66)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1184,7 +1161,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,404,0,38)
+            presetToggle.Position = UDim2.new(0,304,0,38)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1192,7 +1169,7 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,140,0,66)
+            presetFrame.Position = UDim2.new(0,140,0,96)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
@@ -1348,7 +1325,7 @@ do
             local rangeLabel = Instance.new("TextLabel")
             rangeLabel.Size = UDim2.new(0,140,0,20)
             rangeLabel.Position = UDim2.new(0,10,0,48)
-            rangeLabel.Text = "Hop Range (1-N or MIN-MAX)"
+            rangeLabel.Text = "Hop Range (1-23P)"
             rangeLabel.BackgroundTransparency = 1
             rangeLabel.TextColor3 = Color3.new(1,1,1)
             rangeLabel.Parent = frame
@@ -1489,6 +1466,9 @@ do
             urlBox.Position = UDim2.new(0,10,0,40)
             urlBox.Text = SETTINGS.webhookUrl
             urlBox.PlaceholderText = "https://discord.com/api/webhooks..."
+            urlBox.TextXAlignment = Enum.TextXAlignment.Left
+            urlBox.ClearTextOnFocus = false
+            urlBox.TextWrapped = false
             urlBox.Parent = frame
             urlBox.FocusLost:Connect(function()
                 SETTINGS.webhookUrl = tostring(urlBox.Text or "")
@@ -1498,57 +1478,7 @@ do
             -- donation stat name textbox removed per user request
         end
 
-        -- After building the entire UI, prepare fade-in (include TextButton backgrounds)
-        do
-            local fadeTargets = {}
-            local function collectTargets(inst)
-                for _, child in ipairs(inst:GetChildren()) do
-                    collectTargets(child)
-                end
-                if inst:IsA("TextButton") or inst:IsA("TextBox") or inst:IsA("TextLabel") then
-                    local prevText = inst.TextTransparency or 0
-                    local prevBg = inst.BackgroundTransparency or 1
-                    fadeTargets[inst] = { kind = "textbutton", textTarget = prevText, bgTarget = prevBg }
-                    inst.TextTransparency = 1
-                    inst.BackgroundTransparency = 1
-                elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-                    local prev = inst.ImageTransparency or 0
-                    fadeTargets[inst] = { kind = "image", target = prev }
-                    inst.ImageTransparency = 1
-                elseif inst:IsA("Frame") then
-                    local prev = inst.BackgroundTransparency or 0
-                    fadeTargets[inst] = { kind = "bg", target = prev }
-                    inst.BackgroundTransparency = 1
-                elseif inst:IsA("UIStroke") then
-                    local prev = inst.Transparency or 0
-                    fadeTargets[inst] = { kind = "stroke", target = prev }
-                    inst.Transparency = 1
-                end
-            end
-            collectTargets(mainFrame)
-            task.spawn(function()
-                task.wait(5)
-                local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                for inst, meta in pairs(fadeTargets) do
-                    pcall(function()
-                        if meta.kind == "textbutton" then
-                            TweenService:Create(inst, tweenInfo, { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
-                        elseif meta.kind == "image" then
-                            TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
-                        elseif meta.kind == "bg" then
-                            TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
-                        elseif meta.kind == "stroke" then
-                            TweenService:Create(inst, tweenInfo, { Transparency = meta.target }):Play()
-                        end
-                    end)
-                end
-                -- store the normal (post-fade-in) values for inactivity dim/restore
-                _G.__PLS_WAIT_FADE_NORMAL = _G.__PLS_WAIT_FADE_NORMAL or {}
-                for inst, meta in pairs(fadeTargets) do
-                    _G.__PLS_WAIT_FADE_NORMAL[inst] = meta
-                end
-            end)
-        end
+        -- Fade-in removed: UI elements appear immediately (user requested no fade)
 
         if SETTINGS.webhookToggle then
             startDonationMonitor()
