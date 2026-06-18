@@ -217,23 +217,8 @@ end
 
 -- Build a queue-on-teleport payload that preserves SETTINGS across hops
 local function buildQueueCode()
-    local ok, cfgJson = pcall(function()
-        return HttpService:JSONEncode({
-            webhookToggle = SETTINGS.webhookToggle,
-            webhookUrl = SETTINGS.webhookUrl,
-            antiAfk = SETTINGS.antiAfk,
-            serverStayTime = SETTINGS.serverStayTime,
-            persistToggles = SETTINGS.persistToggles,
-            emoteId = SETTINGS.emoteId,
-            emotePlaying = SETTINGS.emotePlaying and true or false,
-            autoServerHop = autoServerHopEnabled,
-        })
-    end)
-    local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
-    if ok and cfgJson then
-        return ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
-    end
-    return qcore
+    -- Return the simple loader payload used by most executors
+    return 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
 end
 
 -- Friend-hop: when a friend joins the current server, queue the script and kick to force rejoin elsewhere
@@ -292,24 +277,8 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             if minPlayers and maxPlayers and not (playing >= minPlayers and playing <= maxPlayers) then
                 -- skip this server (out of requested range)
             else
-            -- queue this script to re-run on the destination and pass current settings via _G
-            local ok2, cfgJson = pcall(function()
-                return HttpService:JSONEncode({
-                    webhookToggle = SETTINGS.webhookToggle,
-                    webhookUrl = SETTINGS.webhookUrl,
-                    antiAfk = SETTINGS.antiAfk,
-                    serverStayTime = SETTINGS.serverStayTime,
-                    persistToggles = SETTINGS.persistToggles,
-                    emoteId = SETTINGS.emoteId,
-                    emotePlaying = SETTINGS.emotePlaying and true or false,
-                    autoServerHop = autoServerHopEnabled,
-                })
-            end)
-            local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
-            local qcode = qcore
-            if ok2 and cfgJson then
-                qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
-            end
+            -- queue this script to re-run on the destination using the standard loader
+            local qcode = buildQueueCode()
             pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
@@ -410,11 +379,16 @@ end
 
 -- Handle teleport 'server full' error by showing a KICKED modal and kicking the player
 local function handleTeleportFullKick(reason)
-    -- Use the default Roblox kick screen: just kick the player with the provided reason.
+    -- Previously this kicked the player. Now we just notify and initiate a server hop instead.
     task.spawn(function()
         task.wait(0.6)
         pcall(function()
-            LocalPlayer:Kick(tostring(reason or "finding a suitable server for you"))
+            notify("Server Hop", tostring(reason or "Server full — searching for another server"), 5)
+            local rangeTxt = tostring(SETTINGS.hopRange or "19-22")
+            local mn, mx = nil, nil
+            pcall(function() mn, mx = parseRangeGlobal(rangeTxt) end)
+            if not mn then mn, mx = 19, 22 end
+            serverHopNow(mn, mx, true)
         end)
     end)
 end
@@ -1543,11 +1517,7 @@ do
                         autoServerHop = autoServerHopEnabled,
                     })
                 end)
-                local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
-                local qcode = qcore
-                if ok2 and cfgJson then
-                    qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
-                end
+                local qcode = buildQueueCode()
                 pcall(function() if type(qcode) == 'string' and qcode ~= '' then queueOnTeleport(qcode) else warn('Invalid qcode for queueOnTeleport', qcode) end end)
             end
         end)
