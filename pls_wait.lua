@@ -1271,6 +1271,7 @@ do
                         pcall(SaveSettings)
                     end
                 end)
+            end
             emotePlayBtn.MouseButton1Click:Connect(function()
                 local id = tostring(emoteBox.Text or "")
                 if id and id ~= "" then pcall(function() playEmote(id) end) end
