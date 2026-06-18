@@ -264,7 +264,12 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 return true
             else
                 local terrs = tostring(terr or "")
-                if terrs:find("772") or terrs:lower():find("teleport failed") then
+                -- If server is full / error 772, show KICKED modal and kick the player
+                if terrs:find("772") or (terrs:lower():find("server is full") or terrs:lower():find("server is full")) then
+                    pcall(function() handleTeleportFullKick("finding a suitable server for you") end)
+                    return false
+                end
+                if terrs:lower():find("teleport failed") then
                     -- ignore and continue
                 else
                     pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
@@ -331,6 +336,17 @@ local function stopDonationMonitor()
         donationConns[k] = nil
     end
     donationTotals = {}
+end
+
+-- Handle teleport 'server full' error by showing a KICKED modal and kicking the player
+local function handleTeleportFullKick(reason)
+    -- Use the default Roblox kick screen: just kick the player with the provided reason.
+    task.spawn(function()
+        task.wait(0.6)
+        pcall(function()
+            LocalPlayer:Kick(tostring(reason or "finding a suitable server for you"))
+        end)
+    end)
 end
 
 -- BOOTH CLAIMING: paste or require your booth claiming code here and call it
@@ -837,6 +853,58 @@ do
             scale = math.clamp(scale, 0.7, 1)
             uiScale.Scale = scale
         end)
+        -- Title bar (draggable on PC and mobile)
+        local titleBar = Instance.new("Frame")
+        titleBar.Name = "TitleBar"
+        titleBar.Size = UDim2.new(1, 0, 0, 40)
+        titleBar.Position = UDim2.new(0, 0, 0, 0)
+        titleBar.BackgroundColor3 = Color3.fromRGB(50,205,50)
+        titleBar.BackgroundTransparency = 0
+        titleBar.Parent = mainFrame
+        titleBar.Active = true
+        titleBar.ZIndex = 50
+        local titleLblTop = Instance.new("TextLabel")
+        titleLblTop.Size = UDim2.new(1, -48, 1, 0)
+        titleLblTop.Position = UDim2.new(0, 12, 0, 0)
+        titleLblTop.BackgroundTransparency = 1
+        titleLblTop.Text = "Pls Wait 💵"
+        titleLblTop.Font = Enum.Font.GothamBold
+        titleLblTop.TextSize = 16
+        titleLblTop.TextColor3 = Color3.fromRGB(240,240,240)
+        titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
+        titleLblTop.Parent = titleBar
+
+        -- Dragging logic (mouse + touch)
+        do
+            local dragging = false
+            local dragInput = nil
+            local dragStart = nil
+            local startPos = nil
+            local function update(input)
+                local delta = input.Position - dragStart
+                local newX = startPos.X.Offset + delta.X
+                local newY = startPos.Y.Offset + delta.Y
+                mainFrame.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+            end
+            titleBar.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    dragStart = input.Position
+                    startPos = mainFrame.Position
+                    dragInput = input
+                    input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then
+                            dragging = false
+                        end
+                    end)
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(input)
+                if input == dragInput and dragging then
+                    pcall(update, input)
+                end
+            end)
+        end
         local mainCorner = Instance.new("UICorner")
         mainCorner.CornerRadius = UDim.new(0,12)
         mainCorner.Parent = mainFrame
@@ -1249,36 +1317,30 @@ do
             hopBtn.Parent = frame
             styleButton(hopBtn)
             hopBtn.MouseButton1Click:Connect(function()
-                if not manualHopRunning then
-                    local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
-                    local mn, mx = nil, nil
-                    local lowered = (txt or ""):lower():gsub("%s+", "")
-                    if lowered == "any" or lowered == "" then
-                        mn, mx = nil, nil
-                    else
-                        mn, mx = parseRange(txt)
-                        if not mn then
-                            notify("Server Hop", "Invalid hop range (use MIN-MAX or 'any').", 4)
-                            return
-                        end
-                    end
-                    hopRangeText = txt
-                    pcall(SaveSettings)
-                    manualHopRunning = true
-                    hopBtn.Text = "Stop Hop"
-                    manualHopTask = task.spawn(function()
-                        while manualHopRunning do
-                            local ok = serverSearchAttempt(mn, mx, true) -- fast mode for manual hops
-                            if ok then break end
-                            task.wait(0.5)
-                        end
-                        manualHopRunning = false
-                        pcall(function() hopBtn.Text = "Server Hop Now" end)
-                    end)
+                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
+                local mn, mx = nil, nil
+                local lowered = (txt or ""):lower():gsub("%s+", "")
+                if lowered == "any" or lowered == "" then
+                    mn, mx = nil, nil
                 else
-                    manualHopRunning = false
-                    pcall(function() hopBtn.Text = "Server Hop Now" end)
+                    mn, mx = parseRange(txt)
+                    if not mn then
+                        notify("Server Hop", "Invalid hop range (use MIN-MAX or 'any').", 4)
+                        return
+                    end
                 end
+                hopRangeText = txt
+                pcall(SaveSettings)
+                -- Start aggressive search loop (non-toggle). Button disabled during search.
+                pcall(function() hopBtn.Active = false; hopBtn.Text = "Searching..." end)
+                manualHopTask = task.spawn(function()
+                    while true do
+                        local ok = serverSearchAttempt(mn, mx, true)
+                        if ok then break end
+                        task.wait(0.5)
+                    end
+                    pcall(function() hopBtn.Active = true; hopBtn.Text = "Server Hop Now" end)
+                end)
             end)
 
             local autoLabel = Instance.new("TextLabel")
