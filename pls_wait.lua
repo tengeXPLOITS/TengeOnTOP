@@ -733,14 +733,24 @@ do
         local hopRangeText = SETTINGS.hopRange or "19-22"
         local function parseRange(str)
             if not str or type(str) ~= "string" then return nil end
+            -- support formats: "MIN-MAX" or a single number meaning 1-MAX
             local a,b = str:match("%s*(%d+)%s*%-%s*(%d+)%s*")
-            if not a or not b then return nil end
-            local mn = tonumber(a)
-            local mx = tonumber(b)
-            if not mn or not mx then return nil end
-            if mn < 0 then mn = 0 end
-            if mx < mn then return nil end
-            return mn, mx
+            if a and b then
+                local mn = tonumber(a)
+                local mx = tonumber(b)
+                if not mn or not mx then return nil end
+                if mn < 0 then mn = 0 end
+                if mx < mn then return nil end
+                return mn, mx
+            end
+            local single = str:match("%s*(%d+)%s*")
+            if single then
+                local mx = tonumber(single)
+                if not mx then return nil end
+                if mx < 1 then return nil end
+                return 1, mx
+            end
+            return nil
         end
         local autoServerHopEnabled = false
         local autoServerHopTask = nil
@@ -1249,26 +1259,18 @@ do
                     else
                         track = hum:LoadAnimation(anim)
                     end
-                    if okt then
-                        return true
-                    else
-                        local terrs = tostring(terr or "")
-                        local lterrs = terrs:lower()
-                        -- If server is full / error 772 / GameFull, queue the script for re-run and immediately kick (no extra notify)
-                        if lterrs:find("772") or lterrs:find("error code: 772") or lterrs:find("gamefull") or lterrs:find("requested experience is full") or lterrs:find("raiseteleportinitfailedevent") then
-                            pcall(function() queueOnTeleport(qcode) end)
-                            task.spawn(function()
-                                task.wait(0.05)
-                                pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
-                            end)
-                            return false
-                        end
-                        if lterrs:find("teleport failed") then
-                            -- ignore and continue
-                        else
-                            pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
-                        end
+                    if track then
+                        pcall(function()
+                            track.Priority = Enum.AnimationPriority.Action
+                            track.Looped = true
+                            currentEmoteTrack = track
+                            task.wait(0.05)
+                            track:Play()
+                        end)
+                        SETTINGS.emotePlaying = true
+                        pcall(SaveSettings)
                     end
+                end)
             emotePlayBtn.MouseButton1Click:Connect(function()
                 local id = tostring(emoteBox.Text or "")
                 if id and id ~= "" then pcall(function() playEmote(id) end) end
@@ -1355,7 +1357,7 @@ do
                 end
                 local mn,mx = parseRange(txt)
                 if not mn then
-                    notify("Server Hop", "Invalid range format. Use MIN-MAX or 'any' e.g. 11-22", 4)
+                    notify("Server Hop", "Invalid range format. Use N or MIN-MAX or 'any' e.g. 23 or 11-22", 4)
                     rangeBox.Text = hopRangeText or "19-22"
                     return
                 end
@@ -1382,7 +1384,7 @@ do
                 else
                     mn, mx = parseRange(txt)
                     if not mn then
-                        notify("Server Hop", "Invalid hop range (use MIN-MAX or 'any').", 4)
+                        notify("Server Hop", "Invalid hop range (use N, MIN-MAX or 'any').", 4)
                         return
                     end
                 end
