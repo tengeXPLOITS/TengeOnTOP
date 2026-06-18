@@ -517,7 +517,7 @@ local function computeStandPlacement(stand, playerPos, distanceAway)
     frontDir = Vector3.new(frontDir.X, 0, frontDir.Z)
     if frontDir.Magnitude <= 1e-6 then frontDir = Vector3.new(0,0,-1) end
     frontDir = frontDir.Unit
-    local basePos = pivot + frontDir * (distanceAway + 1.0) + Vector3.new(0,2,0)
+    local basePos = pivot - frontDir * (distanceAway + 1.0) + Vector3.new(0,2,0)
     local awayDir = (basePos - pivot)
     if awayDir.Magnitude <= 1e-6 then awayDir = frontDir end
     return basePos, awayDir.Unit
@@ -908,50 +908,7 @@ do
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
 
-        -- Collapse/expand dropdown button on title bar to shorten UI
-        local collapseBtn = Instance.new("TextButton")
-        collapseBtn.Name = "CollapseBtn"
-        collapseBtn.Size = UDim2.new(0, 28, 0, 24)
-        collapseBtn.Position = UDim2.new(1, -44, 0, 2)
-        collapseBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-        collapseBtn.TextColor3 = Color3.fromRGB(255,255,255)
-        collapseBtn.Font = Enum.Font.Gotham
-        collapseBtn.TextSize = 18
-        collapseBtn.Text = "▾"
-        collapseBtn.AutoButtonColor = false
-        collapseBtn.Parent = titleBar
-        styleButton(collapseBtn)
-        collapseBtn.ZIndex = 60
-        collapseBtn.TextSize = 20
-
-        local collapsed = false
-        local prevSize = mainFrame.Size
-        local prevTabVisible = {}
-        local function setCollapsed(v)
-            collapsed = v
-            if collapsed then
-                prevSize = mainFrame.Size
-                -- hide only the right-side tab frames (keep left menu and title bar intact)
-                for k, f in pairs(tabFrames) do
-                    prevTabVisible[k] = (pcall(function() return f.Visible end) and f.Visible) or false
-                    pcall(function() f.Visible = false end)
-                end
-                -- keep left menu visible and shrink frame height
-                mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 56)
-                collapseBtn.Text = "▴"
-            else
-                -- restore previously visible tab frames and size
-                for k, f in pairs(tabFrames) do
-                    pcall(function() f.Visible = prevTabVisible[k] or false end)
-                end
-                prevTabVisible = {}
-                mainFrame.Size = prevSize
-                collapseBtn.Text = "▾"
-            end
-        end
-        collapseBtn.MouseButton1Click:Connect(function()
-            pcall(function() setCollapsed(not collapsed) end)
-        end)
+        -- (dropdown/collapse button removed as it was non-functional)
 
         -- Dragging logic (mouse + touch)
         do
