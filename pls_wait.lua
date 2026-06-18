@@ -1,679 +1,201 @@
-        -- Build a Koyg-style UI derived from pls_dono_custom_gui; adapt to use SETTINGS
-        local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-        do
-            -- remove any existing UI
-            pcall(function()
-                local existing = playerGui:FindFirstChild("PlsWaitUI")
-                if existing then pcall(function() existing:Destroy() end) end
-                SharedEnv.PLS_WAIT_UI_LOADED = nil
-            end)
-
-            local gui = Instance.new("ScreenGui")
-            gui.Name = "PlsWaitUI"
-            gui.ResetOnSpawn = false
-            gui.IgnoreGuiInset = true
-            gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-            gui.DisplayOrder = 50
-            gui.Parent = playerGui
-
-            local THEME = {
-                topBar = Color3.fromRGB(96, 96, 102),
-                topBarText = Color3.fromRGB(248, 255, 248),
-                panel = Color3.fromRGB(23, 23, 25),
-                tabIdle = Color3.fromRGB(72, 72, 76),
-                tabActive = Color3.fromRGB(96, 96, 102),
-                section = Color3.fromRGB(18, 18, 20),
-                control = Color3.fromRGB(31, 31, 34),
-                controlText = Color3.fromRGB(238, 238, 238),
-                subtleText = Color3.fromRGB(181, 191, 181),
-                accent = Color3.fromRGB(145, 145, 150),
-                stroke = Color3.fromRGB(66, 66, 71),
-            }
-
-            local SHELL_CORNER_RADIUS = 8
-            local CONTROL_CORNER_RADIUS = 6
-            local GLOW_COLOR = Color3.fromRGB(200, 200, 200)
-            local SUBTLE_GLOW_COLOR = Color3.fromRGB(150, 150, 150)
-            local GLOW_TRANSPARENCY = 0.84
-            local SUBTLE_GLOW_TRANSPARENCY = 0.9
-
-            local function createCorner(target, radius)
-                local corner = Instance.new("UICorner")
-                corner.CornerRadius = UDim.new(0, radius or CONTROL_CORNER_RADIUS)
-                corner.Parent = target
-                return corner
-            end
-
-            local function applyTextGlow(target, color, transparency)
-                target.TextStrokeColor3 = color or GLOW_COLOR
-                target.TextStrokeTransparency = transparency or GLOW_TRANSPARENCY
-            end
-
-            local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
-                btn.BackgroundColor3 = backgroundColor or THEME.control
-                btn.TextColor3 = textColor or THEME.controlText
-                btn.Font = font or Enum.Font.GothamSemibold
-                btn.TextSize = textSize or 11
-                btn.BorderSizePixel = 0
-                btn.AutoButtonColor = false
-            end
-
-            local function styleTextBox(box, alignment, multiline)
-                box.BackgroundColor3 = THEME.control
-                box.TextColor3 = THEME.controlText
-                box.PlaceholderColor3 = THEME.subtleText
-                box.Font = Enum.Font.GothamSemibold
-                box.TextSize = 12
-                box.ClearTextOnFocus = false
-                box.TextXAlignment = alignment or Enum.TextXAlignment.Center
-                box.TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
-                box.MultiLine = multiline == true
-                box.TextWrapped = multiline == true
-            end
-
-            local function createStyledButton(parent, text, size, position, backgroundColor, textColor, textSize, font)
-                local btn = Instance.new("TextButton")
-                btn.Size = size or UDim2.new(0, 104, 0, 23)
-                btn.Position = position or UDim2.new(0, 0, 0, 0)
-                btn.Text = tostring(text or "")
-                styleTextButton(btn, backgroundColor, textColor, textSize, font)
-                btn.Parent = parent
-
-                local stroke = Instance.new("UIStroke")
-                stroke.Thickness = 1
-                stroke.Color = THEME.stroke
-                stroke.Parent = btn
-
-                createCorner(btn, CONTROL_CORNER_RADIUS)
-                applyTextGlow(btn, GLOW_COLOR, 0.88)
-                return btn
-            end
-
-            -- mirror settings reference
-            local settings = SETTINGS
-
-            local main = Instance.new("Frame")
-            main.Name = "Main"
-            main.Size = UDim2.new(0, 380, 0, 360)
-            main.Position = UDim2.fromOffset(0, 0)
-            main.BackgroundColor3 = THEME.panel
-            main.BorderSizePixel = 0
-            main.Parent = gui
-            main.Visible = true
-
-            local TOP_BAR_HEIGHT = 34
-            local expandedWidth = 380
-            local expandedHeight = 360
-
-            local function getViewportSize()
-                local camera = workspace.CurrentCamera
-                if camera then
-                    return camera.ViewportSize
-                end
-                return Vector2.new(1920, 1080)
-            end
-
-            local function getBottomRightPosition(sizeY)
-                local viewport = getViewportSize()
-                local width = expandedWidth
-                local height = tonumber(sizeY) or expandedHeight
-                local x = math.max(12, viewport.X - width - 18)
-                local y = math.max(12, viewport.Y - height - 18)
-                return UDim2.fromOffset(x, y)
-            end
-
-            local function applyResponsiveSize(centerOnApply)
-                local viewport = getViewportSize()
-                expandedWidth = math.clamp(math.floor(viewport.X - 72), 340, 400)
-                expandedHeight = math.clamp(math.floor(viewport.Y - 40), 360, 412)
-
-                if not UserInputService.TouchEnabled then
-                    expandedWidth = math.max(expandedWidth, 380)
-                    expandedHeight = math.max(expandedHeight, 360)
-                end
-
-                main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
-
-                if centerOnApply then
-                    local centeredX = math.floor((viewport.X - expandedWidth) * 0.5)
-                    local centeredY = math.floor((viewport.Y - expandedHeight) * 0.5)
-                    main.Position = UDim2.fromOffset(math.max(0, centeredX), math.max(0, centeredY))
-                else
-                    main.Position = getBottomRightPosition(expandedHeight)
-                end
-            end
-
-            applyResponsiveSize(false)
-
-            do
-                createCorner(main, SHELL_CORNER_RADIUS)
-
-                local stroke = Instance.new("UIStroke")
-                stroke.Color = THEME.stroke
-                stroke.Thickness = 1
-                stroke.Parent = main
-
-                local gradient = Instance.new("UIGradient")
-                gradient.Rotation = 90
-                gradient.Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 34, 36)),
-                    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 24, 26)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 20)),
-                })
-                gradient.Parent = main
-            end
-
-            local topBar = Instance.new("Frame")
-            topBar.Name = "TopBar"
-            topBar.Size = UDim2.new(1, 0, 0, TOP_BAR_HEIGHT)
-            topBar.BackgroundColor3 = THEME.topBar
-            topBar.BorderSizePixel = 0
-            topBar.Parent = main
-
-            do
-                createCorner(topBar, SHELL_CORNER_RADIUS)
-
-                local topGradient = Instance.new("UIGradient")
-                topGradient.Rotation = 0
-                topGradient.Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(120, 120, 125)),
-                    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 100, 104)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 80, 84)),
-                })
-                topGradient.Parent = topBar
-            end
-
-            do
-                local title = Instance.new("TextLabel")
-                title.Name = "Title"
-                title.BackgroundTransparency = 1
-                title.Size = UDim2.new(1, -48, 0, 15)
-                title.Position = UDim2.new(0, 32, 0, 2)
-                title.TextXAlignment = Enum.TextXAlignment.Left
-                title.TextColor3 = THEME.topBarText
-                title.Font = Enum.Font.GothamSemibold
-                title.TextSize = 13
-                title.Text = "Pls Wait — Donation Helper"
-                title.Parent = topBar
-                applyTextGlow(title, GLOW_COLOR, 0.78)
-
-                local subtitle = Instance.new("TextLabel")
-                subtitle.Name = "Subtitle"
-                subtitle.BackgroundTransparency = 1
-                subtitle.Size = UDim2.new(1, -48, 0, 11)
-                subtitle.Position = UDim2.new(0, 32, 0, 18)
-                subtitle.TextXAlignment = Enum.TextXAlignment.Left
-                subtitle.TextColor3 = THEME.subtleText
-                subtitle.Font = Enum.Font.Gotham
-                subtitle.TextSize = 10
-                subtitle.Text = "Pls Wait integration UI"
-                subtitle.Parent = topBar
-                applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
-            end
-
-            local minimizeBtn = Instance.new("TextButton")
-            minimizeBtn.Name = "Minimize"
-            minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
-            minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-            minimizeBtn.BackgroundColor3 = THEME.control
-            minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            minimizeBtn.Font = Enum.Font.GothamBold
-            minimizeBtn.TextSize = 13
-            minimizeBtn.Text = "-"
-            minimizeBtn.AutoButtonColor = true
-            minimizeBtn.Parent = topBar
-            applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
-
-            do
-                createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
-
-                local miniStroke = Instance.new("UIStroke")
-                miniStroke.Thickness = 1
-                miniStroke.Color = THEME.stroke
-                miniStroke.Parent = minimizeBtn
-            end
-
-            local body = Instance.new("Frame")
-            body.Name = "Body"
-            body.Size = UDim2.new(1, 0, 1, -TOP_BAR_HEIGHT)
-            body.Position = UDim2.new(0, 0, 0, TOP_BAR_HEIGHT)
-            body.BackgroundTransparency = 1
-            body.Parent = main
-
-            local tabHolder = Instance.new("ScrollingFrame")
-            tabHolder.Name = "Tabs"
-            tabHolder.Size = UDim2.new(1, -12, 0, 28)
-            tabHolder.Position = UDim2.new(0, 6, 0, 5)
-            tabHolder.BackgroundColor3 = THEME.section
-            tabHolder.BorderSizePixel = 0
-            tabHolder.ScrollBarThickness = 2
-            tabHolder.ScrollBarImageColor3 = THEME.accent
-            tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
-            tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
-            tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
-            tabHolder.Parent = body
-
-            do
-                createCorner(tabHolder, CONTROL_CORNER_RADIUS)
-
-                local tabStroke = Instance.new("UIStroke")
-                tabStroke.Thickness = 1
-                tabStroke.Color = THEME.stroke
-                tabStroke.Parent = tabHolder
-            end
-
-            do
-                local tabLayout = Instance.new("UIListLayout")
-                tabLayout.FillDirection = Enum.FillDirection.Horizontal
-                tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-                tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                tabLayout.Padding = UDim.new(0, 6)
-                tabLayout.Parent = tabHolder
-
-                local tabPad = Instance.new("UIPadding")
-                tabPad.PaddingTop = UDim.new(0, 4)
-                tabPad.PaddingBottom = UDim.new(0, 4)
-                tabPad.PaddingLeft = UDim.new(0, 6)
-                tabPad.PaddingRight = UDim.new(0, 6)
-                tabPad.Parent = tabHolder
-
-                local tabUnderline = Instance.new("Frame")
-                tabUnderline.Name = "TabUnderline"
-                tabUnderline.Size = UDim2.new(1, -12, 0, 1)
-                tabUnderline.Position = UDim2.new(0, 6, 0, 35)
-                tabUnderline.BackgroundColor3 = THEME.stroke
-                tabUnderline.BorderSizePixel = 0
-                tabUnderline.Parent = body
-            end
-
-            local pages = Instance.new("Frame")
-            pages.Name = "Pages"
-            pages.Size = UDim2.new(1, -12, 1, -43)
-            pages.Position = UDim2.new(0, 6, 0, 40)
-            pages.BackgroundTransparency = 1
-            pages.Parent = body
-
-            local function makeDraggable(frame, handle)
-                local DRAG_SMOOTH_TIME = 0.06
-                local dragging = false
-                local dragStart
-                local startPos
-                local dragTween
-
-                local function update(input)
-                    local delta = input.Position - dragStart
-                    local nextPosition = UDim2.new(
-                        startPos.X.Scale,
-                        startPos.X.Offset + delta.X,
-                        startPos.Y.Scale,
-                        startPos.Y.Offset + delta.Y
-                    )
-
-                    if dragTween then
-                        dragTween:Cancel()
-                    end
-
-                    dragTween = TweenService:Create(
-                        frame,
-                        TweenInfo.new(DRAG_SMOOTH_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        {Position = nextPosition}
-                    )
-                    dragTween:Play()
-                end
-
-                handle.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                        dragging = true
-                        dragStart = input.Position
-                        startPos = frame.Position
-
-                        input.Changed:Connect(function()
-                            if input.UserInputState == Enum.UserInputState.End then
-                                dragging = false
-                                if dragTween then
-                                    dragTween:Cancel()
-                                    dragTween = nil
-                                end
-                            end
-                        end)
-                    end
-                end)
-
-                UserInputService.InputChanged:Connect(function(input)
-                    if not dragging then
-                        return
-                    end
-                    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                        update(input)
-                    end
-                end)
-            end
-
-            makeDraggable(main, topBar)
-
-            local minimized = false
-            local minimizeTween
-            local function setMinimized(state)
-                local MINIMIZE_TWEEN_TIME = 0.2
-                if state == minimized and not minimizeTween then
-                    return
-                end
-
-                if minimizeTween then
-                    minimizeTween:Cancel()
-                    minimizeTween = nil
-                end
-
-                if not state then
-                    body.Visible = true
-                end
-
-                local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
-                minimizeBtn.Text = state and "+" or "-"
-                minimizeBtn.BackgroundColor3 = state and THEME.tabActive or THEME.control
-
-                minimizeTween = TweenService:Create(
-                    main,
-                    TweenInfo.new(MINIMIZE_TWEEN_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                    {Size = targetSize}
-                )
-                local tweenRef = minimizeTween
-
-                minimized = state
-                minimizeTween:Play()
-                minimizeTween.Completed:Connect(function()
-                    if minimizeTween ~= tweenRef then
-                        return
-                    end
-                    minimizeTween = nil
-                    body.Visible = not minimized
-                end)
-            end
-
-            minimizeBtn.Activated:Connect(function()
-                setMinimized(not minimized)
-            end)
-
-            local tabButtons = {}
-            local tabPages = {}
-            local activeTab
-            local settingHandlers = {}
-
-            local function setTabVisualState(btn, active)
-                if not btn then return end
-                btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
-                btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(205, 205, 210)
-                local activeBar = btn:FindFirstChild("ActiveBar")
-                if activeBar then activeBar.Visible = active end
-            end
-
-            local function activateTab(name)
-                for tabName, page in pairs(tabPages) do
-                    local btn = tabButtons[tabName]
-                    local isActive = tabName == name
-                    page.Visible = isActive
-                    setTabVisualState(btn, isActive)
-                end
-                activeTab = name
-            end
-
-            local function createTab(name, buttonText)
-                local btn = Instance.new("TextButton")
-                btn.Name = name .. "Btn"
-                btn.AutomaticSize = Enum.AutomaticSize.None
-                btn.Size = UDim2.new(0, 80, 0, 28)
-                btn.BackgroundColor3 = THEME.tabIdle
-                btn.TextColor3 = Color3.fromRGB(205, 205, 210)
-                btn.Font = Enum.Font.GothamSemibold
-                btn.TextSize = 12
-                btn.Text = tostring(buttonText or name)
-                btn.AutoButtonColor = false
-                btn.Parent = tabHolder
-                applyTextGlow(btn, GLOW_COLOR, 0.86)
-
-                createCorner(btn, 8)
-
-                local btnStroke = Instance.new("UIStroke")
-                btnStroke.Thickness = 1
-                btnStroke.Color = THEME.stroke
-                btnStroke.Parent = btn
-
-                local activeBar = Instance.new("Frame")
-                activeBar.Name = "ActiveBar"
-                activeBar.Size = UDim2.new(1, 0, 0, 3)
-                activeBar.Position = UDim2.new(0, 0, 1, -3)
-                activeBar.BackgroundColor3 = THEME.accent
-                activeBar.BorderSizePixel = 0
-                activeBar.Visible = false
-                activeBar.Parent = btn
-
-                btn.MouseEnter:Connect(function()
-                    if activeTab ~= name then btn.BackgroundColor3 = Color3.fromRGB(84, 84, 90) end
-                end)
-
-                btn.MouseLeave:Connect(function()
-                    if activeTab ~= name then btn.BackgroundColor3 = THEME.tabIdle end
-                end)
-
-                local page = Instance.new("ScrollingFrame")
-                page.Name = name .. "Page"
-                page.Visible = false
-                page.Size = UDim2.new(1, 0, 1, 0)
-                page.BackgroundColor3 = THEME.panel
-                page.BorderSizePixel = 0
-                page.ScrollBarThickness = 5
-                page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-                page.CanvasSize = UDim2.new(0, 0, 0, 0)
-                page.Parent = pages
-
-                createCorner(page, CONTROL_CORNER_RADIUS)
-
-                local content = Instance.new("Frame")
-                content.Name = "Content"
-                content.BackgroundTransparency = 1
-                content.Size = UDim2.new(1, -12, 0, 0)
-                content.Position = UDim2.new(0, 6, 0, 6)
-                content.AutomaticSize = Enum.AutomaticSize.Y
-                content.Parent = page
-
-                local contentLayout = Instance.new("UIListLayout")
-                contentLayout.Padding = UDim.new(0, 8)
-                contentLayout.Parent = content
-
-                tabButtons[name] = btn
-                tabPages[name] = page
-
-                btn.MouseButton1Click:Connect(function() activateTab(name) end)
-                return content
-            end
-
-            local function createSection(parent, titleText)
-                local section = Instance.new("Frame")
-                section.BackgroundColor3 = THEME.section
-                section.BorderSizePixel = 0
-                section.Size = UDim2.new(1, 0, 0, 0)
-                section.AutomaticSize = Enum.AutomaticSize.Y
-                section.Parent = parent
-
-                createCorner(section, CONTROL_CORNER_RADIUS)
-
-                local titleLabel = Instance.new("TextLabel")
-                titleLabel.BackgroundTransparency = 1
-                titleLabel.Size = UDim2.new(1, -12, 0, 24)
-                titleLabel.Position = UDim2.new(0, 8, 0, 6)
-                titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-                titleLabel.Font = Enum.Font.GothamSemibold
-                titleLabel.TextSize = 12
-                titleLabel.TextColor3 = THEME.subtleText
-                titleLabel.Text = titleText
-                titleLabel.Parent = section
-                applyTextGlow(titleLabel, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
-
-                local holder = Instance.new("Frame")
-                holder.BackgroundTransparency = 1
-                holder.Position = UDim2.new(0, 8, 0, 34)
-                holder.Size = UDim2.new(1, -16, 0, 0)
-                holder.AutomaticSize = Enum.AutomaticSize.Y
-                holder.Parent = section
-
-                local holderLayout = Instance.new("UIListLayout")
-                holderLayout.Padding = UDim.new(0, 6)
-                holderLayout.Parent = holder
-
-                return holder
-            end
-
-            -- Build the tabs and controls similar to the donor GUI
-            local boothTab = createTab("Booth")
-            local mainTab = createTab("Main")
-            local chatTab = createTab("Chat")
-            local webhookTab = createTab("Webhook")
-            local serverTab = createTab("Server Hop")
-
-            local boothSection = createSection(boothTab, "Booth Settings")
-            createSection(boothTab, "Booth Settings")
-            createDropdown = createDropdown or function() end
-            -- minimal replication: wire webhook toggle and URL box into SETTINGS
-            do
-                local webSection = createSection(webhookTab, "Webhook Settings")
-                local lblRow = Instance.new("Frame") lblRow.BackgroundTransparency = 1; lblRow.Size = UDim2.new(1,0,0,24); lblRow.Parent = webSection
-                local label = Instance.new("TextLabel") label.BackgroundTransparency = 1; label.Size = UDim2.new(0.6,0,1,0); label.Text = "Webhook Enabled"; label.TextColor3 = THEME.controlText; label.Parent = lblRow
-                local toggle = createStyledButton(lblRow, SETTINGS.webhookToggle and "ON" or "OFF", UDim2.new(0, 60, 0, 20), UDim2.new(0.6, 8, 0, 0), THEME.accent, THEME.topBarText, 12, Enum.Font.Gotham)
-                toggle.MouseButton1Click:Connect(function()
-                    SETTINGS.webhookToggle = not SETTINGS.webhookToggle
-                    toggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
-                    if SETTINGS.webhookToggle then startDonationMonitor() else stopDonationMonitor() end
-                    pcall(SaveSettings)
-                end)
-                local urlBox = Instance.new("TextBox") urlBox.Size = UDim2.new(1, -12, 0, 24); urlBox.Position = UDim2.new(0,0,0,28); urlBox.Text = tostring(SETTINGS.webhookUrl or ""); styleTextBox(urlBox, Enum.TextXAlignment.Left, false); urlBox.Parent = webSection
-                urlBox.FocusLost:Connect(function() SETTINGS.webhookUrl = tostring(urlBox.Text or ""); pcall(SaveSettings) end)
-
-                -- Preview area for webhook embed fields
-                local previewFrame = Instance.new("Frame")
-                previewFrame.Size = UDim2.new(1, 0, 0, 110)
-                previewFrame.Position = UDim2.new(0, 0, 0, 60)
-                previewFrame.BackgroundColor3 = THEME.section
-                previewFrame.BorderSizePixel = 0
-                previewFrame.Parent = webSection
-                createCorner(previewFrame, CONTROL_CORNER_RADIUS)
-
-                local pfPad = Instance.new("UIPadding") pfPad.PaddingLeft = UDim.new(0,8); pfPad.PaddingTop = UDim.new(0,8); pfPad.Parent = previewFrame
-
-                local donorLbl = Instance.new("TextLabel") donorLbl.Size = UDim2.new(1, -16, 0, 18); donorLbl.Position = UDim2.new(0, 8, 0, 6); donorLbl.BackgroundTransparency = 1; donorLbl.Font = Enum.Font.Gotham; donorLbl.TextSize = 12; donorLbl.TextColor3 = THEME.controlText; donorLbl.TextXAlignment = Enum.TextXAlignment.Left; donorLbl.Text = "Donor: (none)"; donorLbl.Parent = previewFrame
-                local recipientLbl = Instance.new("TextLabel") recipientLbl.Size = UDim2.new(1, -16, 0, 18); recipientLbl.Position = UDim2.new(0, 8, 0, 26); recipientLbl.BackgroundTransparency = 1; recipientLbl.Font = Enum.Font.Gotham; recipientLbl.TextSize = 12; recipientLbl.TextColor3 = THEME.controlText; recipientLbl.TextXAlignment = Enum.TextXAlignment.Left; recipientLbl.Text = "Recipient: (you)"; recipientLbl.Parent = previewFrame
-                local amountLbl = Instance.new("TextLabel") amountLbl.Size = UDim2.new(1, -16, 0, 18); amountLbl.Position = UDim2.new(0, 8, 0, 46); amountLbl.BackgroundTransparency = 1; amountLbl.Font = Enum.Font.Gotham; amountLbl.TextSize = 12; amountLbl.TextColor3 = THEME.controlText; amountLbl.TextXAlignment = Enum.TextXAlignment.Left; amountLbl.Text = "Amount (received): 0"; amountLbl.Parent = previewFrame
-                local taxLbl = Instance.new("TextLabel") taxLbl.Size = UDim2.new(1, -16, 0, 18); taxLbl.Position = UDim2.new(0, 8, 0, 66); taxLbl.BackgroundTransparency = 1; taxLbl.Font = Enum.Font.Gotham; taxLbl.TextSize = 12; taxLbl.TextColor3 = THEME.controlText; taxLbl.TextXAlignment = Enum.TextXAlignment.Left; taxLbl.Text = "Tax applied: 0"; taxLbl.Parent = previewFrame
-
-                local function refreshWebhookPreview()
-                    local donorInfo = nil
-                    if type(recentDonationLogs) == "table" and #recentDonationLogs > 0 then
-                        donorInfo = recentDonationLogs[#recentDonationLogs].donorInfo
-                    end
-                    donorInfo = donorInfo or (type(getNearestPlayerInfo) == "function" and getNearestPlayerInfo()) or { name = "Unknown", displayName = "Unknown", userId = 0 }
-                    local sampleAmount = math.max(1, tonumber(settings.testDonationAmount) or 6)
-                    donorLbl.Text = "Donor: " .. (donorInfo.displayName or donorInfo.name or "Unknown")
-                    recipientLbl.Text = "Recipient: You"
-                    amountLbl.Text = "Amount (received): " .. tostring(sampleAmount)
-                    taxLbl.Text = "Tax applied: " .. tostring(math.floor(sampleAmount * 0.6))
-                end
-
-                refreshWebhookPreview()
-
-                local btnRow = Instance.new("Frame") btnRow.BackgroundTransparency = 1; btnRow.Size = UDim2.new(1,0,0,28); btnRow.Position = UDim2.new(0,0,0,176); btnRow.Parent = webSection
-                local testBtn = createStyledButton(btnRow, "Send Test Webhook", UDim2.new(0, 140, 0, 24), UDim2.new(0, 0, 0, 0), THEME.topBar, THEME.topBarText, 12, Enum.Font.GothamSemibold)
-                local refreshBtn = createStyledButton(btnRow, "Refresh Preview", UDim2.new(0, 120, 0, 24), UDim2.new(0, 148, 0, 0), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
-
-                testBtn.MouseButton1Click:Connect(function()
-                    local donorInfo = (type(recentDonationLogs) == "table" and #recentDonationLogs > 0) and recentDonationLogs[#recentDonationLogs].donorInfo or (type(getNearestPlayerInfo) == "function" and getNearestPlayerInfo()) or { name = "Unknown", displayName = "Unknown", userId = 0 }
-                    local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
-                    postWebhookEvent("donation", { donorName = donorInfo.name or donorInfo.displayName, amount = amount, taxed = math.floor(amount * 0.6) })
-                end)
-                refreshBtn.MouseButton1Click:Connect(function() refreshWebhookPreview() end)
-            end
-
-            -- Apply saved settings visual state
-            activateTab("Main")
-            SharedEnv.PLS_WAIT_UI_LOADED = true
+-- PLS WAIT - Custom script scaffold for place 14212732626
+-- Created: scaffold for user's booth claiming code integration
+
+repeat task.wait() until game:IsLoaded()
+
+local PLACE_ID = 14212732626
+if tonumber(game.PlaceId) ~= tonumber(PLACE_ID) then
+    warn("This script is intended for place id: "..tostring(PLACE_ID).." — aborting.")
+    return
+end
+
+-- Basic service bindings and defaults
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Minimal SETTINGS/defaults used across the script
+SETTINGS = SETTINGS or {}
+SETTINGS.webhookToggle = SETTINGS.webhookToggle or false
+SETTINGS.webhookUrl = SETTINGS.webhookUrl or ""
+SETTINGS.antiAfk = SETTINGS.antiAfk or false
+SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
+SETTINGS.persistToggles = SETTINGS.persistToggles or false
+
+-- Donation monitoring placeholders
+donationConns = donationConns or {}
+donationEnabled = donationEnabled or false
+donationTotals = donationTotals or {}
+donationStatName = donationStatName or "Raised"
+
+local function notify(title, text, duration)
+    local ok, playerGui = pcall(function() return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
+    duration = tonumber(duration) or 4
+    if ok and playerGui and playerGui:FindFirstChild("PlsWaitUI") then
+        local screen = playerGui:FindFirstChild("PlsWaitUI")
+        local notif = Instance.new("Frame")
+        notif.Size = UDim2.new(0, 320, 0, 64)
+        notif.Position = UDim2.new(1, -340, 1, -96)
+        notif.AnchorPoint = Vector2.new(0,0)
+        notif.BackgroundColor3 = Color3.fromRGB(18,18,18)
+        notif.Parent = screen
+        local corner = Instance.new("UICorner", notif)
+        corner.CornerRadius = UDim.new(0, 8)
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Thickness = 1
+        stroke.Color = Color3.fromRGB(36,36,36)
+        local titleLbl = Instance.new("TextLabel", notif)
+        titleLbl.Size = UDim2.new(1, -16, 0, 20)
+        titleLbl.Position = UDim2.new(0, 8, 0, 6)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Text = tostring(title or "PLS WAIT")
+        titleLbl.TextColor3 = Color3.fromRGB(220,220,220)
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        titleLbl.Font = Enum.Font.SourceSansBold
+        titleLbl.TextSize = 14
+        local body = Instance.new("TextLabel", notif)
+        body.Size = UDim2.new(1, -16, 0, 34)
+        body.Position = UDim2.new(0, 8, 0, 26)
+        body.BackgroundTransparency = 1
+        body.Text = tostring(text or "")
+        body.TextColor3 = Color3.fromRGB(180,180,180)
+        body.TextXAlignment = Enum.TextXAlignment.Left
+        body.TextWrapped = true
+        body.Font = Enum.Font.SourceSans
+        body.TextSize = 13
+        task.spawn(function()
+            task.wait(duration)
+            pcall(function() notif:Destroy() end)
+        end)
+        return
+    end
+    pcall(function()
+        StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
+    end)
+end
+
+local antiAfkConn = nil
+local function enableAntiAfk()
+    if antiAfkConn then return end
+    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+    if not ok or not vu then return end
+    antiAfkConn = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            vu:CaptureController()
+            vu:ClickButton2(Vector2.new(0,0))
+        end)
+    end)
+    notify("Anti-AFK", "Enabled", 2)
+end
+local function disableAntiAfk()
+    if antiAfkConn then
+        pcall(function() antiAfkConn:Disconnect() end)
+        antiAfkConn = nil
+    end
+    notify("Anti-AFK", "Disabled", 2)
+end
+
+-- Webhook / donation helpers
+local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+
+local function postWebhookEvent(kind, data)
+    if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local url = tostring(SETTINGS.webhookUrl or "")
+    local embeds = {}
+    if kind == "donation" then
+        local amount = tonumber(data and data.amount) or 0
+        local taxed = math.floor((amount or 0) * 0.6)
+        local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
+        local donorLabel = donorName
+        table.insert(embeds, {
+            title = "New Donation Received! ✅",
+            color = 0x00FF00,
+            fields = {
+                { name = "Donor 👤", value = donorLabel, inline = false },
+                { name = "How much recepient received 💵", value = tostring(amount), inline = true },
+                { name = "Tax applied ):", value = tostring(taxed), inline = true },
+            },
+        })
+    else
+        if kind == "serverhop" then
+            local initiator = tostring(data and data.user or "Unknown")
+            local players = tostring(data and data.players or "")
+            local range = tostring(data and data.range or "any")
+            local auto = tostring((data and data.auto) and "Yes" or "No")
+            table.insert(embeds, {
+                title = "Server Hop Triggered 🔀",
+                color = 0x3498DB,
+                fields = {
+                    { name = "Initiator 👤", value = initiator, inline = false },
+                    { name = "Players Online 👥", value = players, inline = true },
+                    { name = "Range", value = range, inline = true },
+                    { name = "Auto Hop", value = auto, inline = true },
+                },
+            })
+        else
+            table.insert(embeds, { title = (kind and tostring(kind) or "event"):upper(), description = HttpService:JSONEncode(data or {}), color = 16753920 })
         end
-        if TextChatService then
-            local channels = TextChatService:FindFirstChild("TextChannels") or TextChatService:WaitForChild("TextChannels", 6)
-            if channels then
-                for _, ch in ipairs(channels:GetChildren()) do
-                    pcall(function()
-                        if ch and ch.MessageReceived then
-                            ch.MessageReceived:Connect(function(message)
-                                pcall(function()
-                                    local text = tostring((message and message.Text) or "")
-                                    recordDonationLogMessage(text)
-                                end)
-                            end)
-                        end
-                    end)
+    end
+
+    local payload = { username = "PlsWait", embeds = embeds }
+    local body = HttpService:JSONEncode(payload)
+    pcall(function()
+        if syn and syn.request then
+            syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        elseif request then
+            request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        else
+            HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        end
+    end)
+end
+
+local function tryHookPlayerStat(player)
+    if not player then return false end
+    local uid = tostring(player.UserId)
+    -- Ensure we don't keep a stale connection: disconnect and clear any existing entry first
+    if donationConns["stat_"..uid] then
+        pcall(function() donationConns["stat_"..uid]:Disconnect() end)
+        donationConns["stat_"..uid] = nil
+    end
+    local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
+    if not ls then return false end
+    local stat = ls:FindFirstChild(donationStatName) or nil
+    if not stat then
+        for _, c in ipairs(ls:GetChildren()) do
+            if c:IsA("IntValue") or c:IsA("NumberValue") or c:IsA("StringValue") then
+                local n = tonumber(tostring(c.Value):gsub("[^%d]",""))
+                if n and n > 0 then
+                    stat = c
+                    break
                 end
-                channels.ChildAdded:Connect(function(c)
-                    pcall(function()
-                        if c and c.MessageReceived then
-                            c.MessageReceived:Connect(function(message)
-                                pcall(function()
-                                    recordDonationLogMessage(tostring((message and message.Text) or ""))
-                                end)
-                            end)
-                        end
-                    end)
-                end)
+            end
+        end
+    end
+    if not stat then return false end
+    donationTotals[uid] = tonumber(stat.Value) or 0
+    donationConns["stat_"..uid] = stat.Changed:Connect(function()
+        local newv = tonumber(stat.Value) or tonumber(tostring(stat.Value):gsub("[^%d]","")) or 0
+        local prev = donationTotals[uid] or 0
+        if newv ~= prev then
+            local delta = newv - prev
+            donationTotals[uid] = newv
+            if delta > 0 then
+                -- Only notify when the local player (script user) receives the donation
+                if player == LocalPlayer then
+                    postWebhookEvent("donation", { from = player.Name, userId = player.UserId, amount = delta, total = newv })
+                end
             end
         end
     end)
-
-    local function consumeRecentDonationDonorInfo(amount)
-        pruneRecentDonationLogs()
-        local targetAmount = tonumber(amount) or 0
-        if targetAmount > 0 then
-            for i = 1, #recentDonationLogs do
-                local entry = recentDonationLogs[i]
-                if entry and tonumber(entry.amount) == targetAmount then
-                    table.remove(recentDonationLogs, i)
-                    return entry.donorInfo
-                end
-            end
-        end
-        if type(getNearestPlayerInfo) == "function" then return getNearestPlayerInfo() end
-        return { name = "Unknown", displayName = "Unknown", userId = 0 }
-    end
-
-    -- Provide a nearest-player helper similar to pls_dono_custom_gui
-    function getNearestPlayerInfo()
-        local myCharacter = LocalPlayer.Character
-        local myHumanoid = myCharacter and myCharacter:FindFirstChildOfClass("Humanoid")
-        local myRoot = myHumanoid and myHumanoid.RootPart
-        if not myRoot then
-            return { name = "Unknown", displayName = "Unknown", userId = 0 }
-        end
-        local nearestPlayer = nil
-        local nearestDistance = math.huge
-        for _, pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LocalPlayer and pl.Character then
-                local hum = pl.Character:FindFirstChildOfClass("Humanoid")
-                local root = hum and hum.RootPart
-                if root then
-                    local dist = (root.Position - myRoot.Position).Magnitude
-                    if dist < nearestDistance then
-                        nearestDistance = dist
-                        nearestPlayer = pl
-                    end
-                end
-            end
-        end
-        if nearestPlayer then
-            return { name = tostring(nearestPlayer.Name or "Unknown"), displayName = tostring(nearestPlayer.DisplayName or nearestPlayer.Name or "Unknown"), userId = tonumber(nearestPlayer.UserId) or 0 }
-        end
-        for _, pl in ipairs(Players:GetPlayers()) do
-            if pl ~= LocalPlayer then
-                return { name = tostring(pl.Name or "Unknown"), displayName = tostring(pl.DisplayName or pl.Name or "Unknown"), userId = tonumber(pl.UserId) or 0 }
-            end
-        end
-        return { name = "Unknown", displayName = "Unknown", userId = 0 }
-    end
+    return true
+end
 
 -- performHttpRequest helper (syn/request or common aliases)
 local function performHttpRequest(options)
@@ -743,18 +265,26 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             else
                 local terrs = tostring(terr or "")
                 local lterrs = terrs:lower()
-                -- On GameFull / Error 772 / raiseTeleportInitFailedEvent, queue script and immediately kick (no extra notify)
-                if lterrs:find("772") or lterrs:find("error code: 772") or lterrs:find("gamefull") or lterrs:find("requested experience is full") or lterrs:find("raiseteleportinitfailedevent") then
+                -- Robust detection for "GameFull" / Error 772 / raiseTeleportInitFailedEvent messages
+                local isGameFull = false
+                if lterrs:find("772") or lterrs:find("error code: 772") then isGameFull = true end
+                if lterrs:find("gamefull") or lterrs:find("game full") then isGameFull = true end
+                if lterrs:find("requested experience is full") or lterrs:find("requested experience") then isGameFull = true end
+                if lterrs:find("raiseteleportinitfail") or lterrs:find("raise teleport") or lterrs:find("raiseteleportinitfailedevent") then isGameFull = true end
+
+                if isGameFull then
                     -- ensure qcode available; queue it again to be safe
                     pcall(function() queueOnTeleport(qcode) end)
+                    -- Kick the player so Roblox will attempt the queued script on rejoin
                     task.spawn(function()
                         task.wait(0.05)
                         pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
                     end)
                     return false
                 end
+
                 if lterrs:find("teleport failed") then
-                    -- ignore and continue
+                    -- ignore and continue searching
                 else
                     pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
                 end
@@ -1114,7 +644,7 @@ local function claimEmptyStands()
     -- move and orient away from the booth before the first claim
     moveCharacterToPosition(safePos, dir)
     task.wait(0.25)
-            local remote = ReplicatedStorage:FindFirstChild("ClaimStand") or ReplicatedStorage:WaitForChild("ClaimStand", 5) -- Ensure ClaimStand remote exists
+
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
     local slot = findSlotFromStand(target.stand)
     if not slot then
@@ -1371,7 +901,7 @@ do
         titleBar.Active = true
         titleBar.ZIndex = 50
         local titleLblTop = Instance.new("TextLabel")
-        titleLblTop.Size = UDim2.new(0.6, -48, 1, 0)
+        titleLblTop.Size = UDim2.new(1, -48, 0, 28)
         titleLblTop.Position = UDim2.new(0, 12, 0, 0)
         titleLblTop.BackgroundTransparency = 1
         titleLblTop.Text = "Pls Wait 💵"
@@ -1380,19 +910,6 @@ do
         titleLblTop.TextColor3 = Color3.fromRGB(240,240,240)
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
-
-        -- small status label on the title bar (right side)
-        local statusLbl = Instance.new("TextLabel")
-        statusLbl.Size = UDim2.new(0.35, -80, 1, 0)
-        statusLbl.Position = UDim2.new(0.6, 12, 0, 0)
-        statusLbl.BackgroundTransparency = 1
-        statusLbl.Text = "Dropdown"
-        statusLbl.Font = Enum.Font.Gotham
-        statusLbl.TextSize = 12
-        statusLbl.TextColor3 = Color3.fromRGB(240,240,240)
-        statusLbl.TextXAlignment = Enum.TextXAlignment.Right
-        statusLbl.Parent = titleBar
-        statusLbl.ZIndex = 65
 
         -- Collapse/expand dropdown button on title bar to shorten UI
         local collapseBtn = Instance.new("TextButton")
@@ -1406,40 +923,31 @@ do
         collapseBtn.Text = "▾"
         collapseBtn.AutoButtonColor = false
         collapseBtn.Parent = titleBar
-        collapseBtn.ZIndex = 68
         styleButton(collapseBtn)
 
         local collapsed = false
         local prevSize = mainFrame.Size
+        local prevTabVisible = {}
         local function setCollapsed(v)
             collapsed = v
             if collapsed then
                 prevSize = mainFrame.Size
-                -- hide all direct children except the titleBar and left menu so buttons stay clickable
-                local lc = mainFrame:FindFirstChild("LeftCol")
-                for _,c in ipairs(mainFrame:GetChildren()) do
-                    if c ~= titleBar and c ~= lc and c.Name ~= "TitleBar" then
-                        if pcall(function() return c.Visible end) then
-                            pcall(function() c.Visible = false end)
-                        end
-                    end
+                -- hide only the right-side tab frames (keep left menu and title bar intact)
+                for k, f in pairs(tabFrames) do
+                    prevTabVisible[k] = (pcall(function() return f.Visible end) and f.Visible) or false
+                    pcall(function() f.Visible = false end)
                 end
                 -- keep left menu visible and shrink frame height
                 mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 56)
                 collapseBtn.Text = "▴"
-                statusLbl.Text = "Compact"
             else
-                -- restore visibility and size
-                for _,c in ipairs(mainFrame:GetChildren()) do
-                    if c ~= titleBar and c.Name ~= "TitleBar" then
-                        if pcall(function() return c.Visible end) then
-                            pcall(function() c.Visible = true end)
-                        end
-                    end
+                -- restore previously visible tab frames and size
+                for k, f in pairs(tabFrames) do
+                    pcall(function() f.Visible = prevTabVisible[k] or false end)
                 end
+                prevTabVisible = {}
                 mainFrame.Size = prevSize
                 collapseBtn.Text = "▾"
-                statusLbl.Text = "Dropdown"
             end
         end
         collapseBtn.MouseButton1Click:Connect(function()
@@ -1492,15 +1000,15 @@ do
         blurOverlay.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(25,25,25)), ColorSequenceKeypoint.new(1, Color3.fromRGB(12,12,12))})
         blurOverlay.Parent = bg
 
-        -- Squiggly background effect: single-layer squiggle (avoid heavy shadows)
+        -- Squiggly background effect: layered slightly offset rounded frames
         do
             local function makeLayer(offsetX, offsetY, sizePad, cornerRadius, c1, c2, rot)
                 local f = Instance.new("Frame")
                 f.Size = UDim2.new(1, sizePad, 1, sizePad)
                 f.Position = UDim2.new(0, offsetX, 0, offsetY)
-                f.BackgroundColor3 = Color3.fromRGB(24,24,24)
+                f.BackgroundColor3 = Color3.fromRGB(20,20,20)
                 f.BorderSizePixel = 0
-                f.BackgroundTransparency = 0.12
+                f.BackgroundTransparency = 0.6
                 f.Parent = mainFrame
                 local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, cornerRadius); uc.Parent = f
                 local g = Instance.new("UIGradient")
@@ -1509,7 +1017,9 @@ do
                 g.Parent = f
                 return f
             end
-            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 88)
+            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
+            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
+            makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
         end
 
         -- Left menu column
@@ -1519,7 +1029,9 @@ do
         leftCol.Position = UDim2.new(0, GAP, 0, 12)
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
-        -- use UIListLayout for stable button layout (prevents collapse breaking positions)
+        -- old left-column title removed (we use the draggable title bar)
+
+        -- left menu buttons (use UIListLayout for stable layout)
         local leftList = Instance.new("UIListLayout")
         leftList.SortOrder = Enum.SortOrder.LayoutOrder
         leftList.Padding = UDim.new(0, 12)
@@ -1527,23 +1039,20 @@ do
         leftList.VerticalAlignment = Enum.VerticalAlignment.Top
         leftList.Parent = leftCol
 
-        -- old left-column title removed (we use the draggable title bar)
-
-        -- left menu buttons
         local menu = { {key="Main", icon="📋", text="Overview"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
         local tabButtons = {}
         local tabFrames = {}
         for i, item in ipairs(menu) do
             local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(0.9, 0, 0, 40)
+            btn.Size = UDim2.new(1, -12, 0, 40)
             btn.LayoutOrder = i
             btn.Text = (item.icon .. "  " .. item.text)
             btn.Font = Enum.Font.Gotham
             btn.TextSize = 16
             btn.TextColor3 = Color3.fromRGB(220,220,220)
+            btn.TextXAlignment = Enum.TextXAlignment.Center
             btn.BackgroundColor3 = Color3.fromRGB(28,28,28)
             btn.AutoButtonColor = false
-            btn.ZIndex = 60
             local corner = Instance.new("UICorner") corner.Parent = btn
             btn.Parent = leftCol
             tabButtons[item.key] = btn
@@ -1558,17 +1067,16 @@ do
             tabFrames[item.key] = frame
         end
 
-        -- close button (parented to titleBar so it's always visible)
+        -- close button
         local closeBtn = Instance.new("TextButton")
-        closeBtn.Size = UDim2.new(0, 24, 0, 24)
-        closeBtn.Position = UDim2.new(1, -28, 0, 2)
+        closeBtn.Size = UDim2.new(0, 28, 0, 28)
+        closeBtn.Position = UDim2.new(1, -36, 0, 12)
         closeBtn.Text = "✕"
         closeBtn.Font = Enum.Font.Gotham
-        closeBtn.TextSize = 14
+        closeBtn.TextSize = 16
         closeBtn.BackgroundColor3 = Color3.fromRGB(30,30,30)
         local closeCorner = Instance.new("UICorner") closeCorner.Parent = closeBtn
-        closeBtn.Parent = titleBar
-        closeBtn.ZIndex = 70
+        closeBtn.Parent = mainFrame
         closeBtn.MouseButton1Click:Connect(function()
             pcall(function() screen:Destroy() end)
             SharedEnv.PLS_WAIT_UI_LOADED = nil
@@ -1840,7 +1348,7 @@ do
             local rangeLabel = Instance.new("TextLabel")
             rangeLabel.Size = UDim2.new(0,140,0,20)
             rangeLabel.Position = UDim2.new(0,10,0,48)
-            rangeLabel.Text = "Hop Range (1-23P)"
+            rangeLabel.Text = "Hop Range (1-N or MIN-MAX)"
             rangeLabel.BackgroundTransparency = 1
             rangeLabel.TextColor3 = Color3.new(1,1,1)
             rangeLabel.Parent = frame
@@ -1990,7 +1498,57 @@ do
             -- donation stat name textbox removed per user request
         end
 
-        -- Fade-in removed per user request (UI should appear immediately)
+        -- After building the entire UI, prepare fade-in (include TextButton backgrounds)
+        do
+            local fadeTargets = {}
+            local function collectTargets(inst)
+                for _, child in ipairs(inst:GetChildren()) do
+                    collectTargets(child)
+                end
+                if inst:IsA("TextButton") or inst:IsA("TextBox") or inst:IsA("TextLabel") then
+                    local prevText = inst.TextTransparency or 0
+                    local prevBg = inst.BackgroundTransparency or 1
+                    fadeTargets[inst] = { kind = "textbutton", textTarget = prevText, bgTarget = prevBg }
+                    inst.TextTransparency = 1
+                    inst.BackgroundTransparency = 1
+                elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+                    local prev = inst.ImageTransparency or 0
+                    fadeTargets[inst] = { kind = "image", target = prev }
+                    inst.ImageTransparency = 1
+                elseif inst:IsA("Frame") then
+                    local prev = inst.BackgroundTransparency or 0
+                    fadeTargets[inst] = { kind = "bg", target = prev }
+                    inst.BackgroundTransparency = 1
+                elseif inst:IsA("UIStroke") then
+                    local prev = inst.Transparency or 0
+                    fadeTargets[inst] = { kind = "stroke", target = prev }
+                    inst.Transparency = 1
+                end
+            end
+            collectTargets(mainFrame)
+            task.spawn(function()
+                task.wait(5)
+                local tweenInfo = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                for inst, meta in pairs(fadeTargets) do
+                    pcall(function()
+                        if meta.kind == "textbutton" then
+                            TweenService:Create(inst, tweenInfo, { TextTransparency = meta.textTarget, BackgroundTransparency = meta.bgTarget }):Play()
+                        elseif meta.kind == "image" then
+                            TweenService:Create(inst, tweenInfo, { ImageTransparency = meta.target }):Play()
+                        elseif meta.kind == "bg" then
+                            TweenService:Create(inst, tweenInfo, { BackgroundTransparency = meta.target }):Play()
+                        elseif meta.kind == "stroke" then
+                            TweenService:Create(inst, tweenInfo, { Transparency = meta.target }):Play()
+                        end
+                    end)
+                end
+                -- store the normal (post-fade-in) values for inactivity dim/restore
+                _G.__PLS_WAIT_FADE_NORMAL = _G.__PLS_WAIT_FADE_NORMAL or {}
+                for inst, meta in pairs(fadeTargets) do
+                    _G.__PLS_WAIT_FADE_NORMAL[inst] = meta
+                end
+            end)
+        end
 
         if SETTINGS.webhookToggle then
             startDonationMonitor()
