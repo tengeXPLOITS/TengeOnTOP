@@ -858,10 +858,13 @@ do
         screen.Parent = playerGui
         SharedEnv.PLS_WAIT_UI_LOADED = true
 
-        -- Glassy admin-panel style layout
+        -- Glassy admin-panel style layout (smaller width for compact UI)
+        local MAIN_W, MAIN_H = 620, 420
+        local LEFT_W = 200
+        local GAP = 16
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
-        mainFrame.Size = UDim2.new(0, 720, 0, 420)
+        mainFrame.Size = UDim2.new(0, MAIN_W, 0, MAIN_H)
         -- position bottom-left, keep margin and ensure it's visible on mobile
         mainFrame.AnchorPoint = Vector2.new(0, 1)
         mainFrame.Position = UDim2.new(0, 12, 1, -12)
@@ -904,7 +907,7 @@ do
         local collapseBtn = Instance.new("TextButton")
         collapseBtn.Name = "CollapseBtn"
         collapseBtn.Size = UDim2.new(0, 28, 0, 24)
-        collapseBtn.Position = UDim2.new(1, -80, 0, 2)
+        collapseBtn.Position = UDim2.new(1, -44, 0, 2)
         collapseBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
         collapseBtn.TextColor3 = Color3.fromRGB(255,255,255)
         collapseBtn.Font = Enum.Font.Gotham
@@ -920,20 +923,22 @@ do
             collapsed = v
             if collapsed then
                 prevSize = mainFrame.Size
-                -- hide all direct children except the titleBar
+                -- hide all direct children except the titleBar and left menu so buttons stay clickable
+                local lc = mainFrame:FindFirstChild("LeftCol")
                 for _,c in ipairs(mainFrame:GetChildren()) do
-                    if c ~= titleBar and c ~= collapseBtn and c.Name ~= "TitleBar" then
+                    if c ~= titleBar and c ~= lc and c.Name ~= "TitleBar" then
                         if pcall(function() return c.Visible end) then
                             pcall(function() c.Visible = false end)
                         end
                     end
                 end
-                mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 36)
+                -- keep left menu visible and shrink frame height
+                mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 56)
                 collapseBtn.Text = "▴"
             else
                 -- restore visibility and size
                 for _,c in ipairs(mainFrame:GetChildren()) do
-                    if c ~= titleBar and c ~= collapseBtn and c.Name ~= "TitleBar" then
+                    if c ~= titleBar and c.Name ~= "TitleBar" then
                         if pcall(function() return c.Visible end) then
                             pcall(function() c.Visible = true end)
                         end
@@ -1018,8 +1023,8 @@ do
         -- Left menu column
         local leftCol = Instance.new("Frame")
         leftCol.Name = "LeftCol"
-        leftCol.Size = UDim2.new(0, 220, 1, -20)
-        leftCol.Position = UDim2.new(0, 12, 0, 12)
+        leftCol.Size = UDim2.new(0, LEFT_W, 1, -20)
+        leftCol.Position = UDim2.new(0, GAP, 0, 12)
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
 
@@ -1044,8 +1049,9 @@ do
             tabButtons[item.key] = btn
 
             local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(1, -252, 1, -24)
-            frame.Position = UDim2.new(0, 236, 0, 12)
+            local rightW = MAIN_W - LEFT_W - (GAP * 2)
+            frame.Size = UDim2.new(0, rightW, 1, -24)
+            frame.Position = UDim2.new(0, LEFT_W + GAP, 0, 12)
             frame.BackgroundTransparency = 1
             frame.Visible = (item.key == "Main")
             frame.Parent = mainFrame
@@ -1055,7 +1061,7 @@ do
         -- close button
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 28, 0, 28)
-        closeBtn.Position = UDim2.new(1, -40, 0, 12)
+        closeBtn.Position = UDim2.new(1, -36, 0, 12)
         closeBtn.Text = "✕"
         closeBtn.Font = Enum.Font.Gotham
         closeBtn.TextSize = 16
