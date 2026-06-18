@@ -264,12 +264,18 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 return true
             else
                 local terrs = tostring(terr or "")
-                -- If server is full / error 772, show KICKED modal and kick the player
-                if terrs:find("772") or (terrs:lower():find("server is full") or terrs:lower():find("server is full")) then
-                    pcall(function() handleTeleportFullKick("finding a suitable server for you") end)
+                local lterrs = terrs:lower()
+                -- On GameFull / Error 772 / raiseTeleportInitFailedEvent, queue script and immediately kick (no extra notify)
+                if lterrs:find("772") or lterrs:find("error code: 772") or lterrs:find("gamefull") or lterrs:find("requested experience is full") or lterrs:find("raiseteleportinitfailedevent") then
+                    -- ensure qcode available; queue it again to be safe
+                    pcall(function() queueOnTeleport(qcode) end)
+                    task.spawn(function()
+                        task.wait(0.05)
+                        pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
+                    end)
                     return false
                 end
-                if terrs:lower():find("teleport failed") then
+                if lterrs:find("teleport failed") then
                     -- ignore and continue
                 else
                     pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
@@ -535,14 +541,24 @@ end
 -- Global simple range parser used outside UI
 local function parseRangeGlobal(str)
     if not str or type(str) ~= "string" then return nil end
+    -- support formats: "MIN-MAX" or a single number meaning 1-MAX
     local a,b = str:match("%s*(%d+)%s*%-%s*(%d+)%s*")
-    if not a or not b then return nil end
-    local mn = tonumber(a)
-    local mx = tonumber(b)
-    if not mn or not mx then return nil end
-    if mn < 0 then mn = 0 end
-    if mx < mn then return nil end
-    return mn, mx
+    if a and b then
+        local mn = tonumber(a)
+        local mx = tonumber(b)
+        if not mn or not mx then return nil end
+        if mn < 0 then mn = 0 end
+        if mx < mn then return nil end
+        return mn, mx
+    end
+    local single = str:match("%s*(%d+)%s*")
+    if single then
+        local mx = tonumber(single)
+        if not mx then return nil end
+        if mx < 1 then return nil end
+        return 1, mx
+    end
+    return nil
 end
 
 local claimLock = false
@@ -853,10 +869,10 @@ do
             scale = math.clamp(scale, 0.7, 1)
             uiScale.Scale = scale
         end)
-        -- Title bar (draggable on PC and mobile)
+        -- Title bar (draggable on PC and mobile) - reduced height to avoid covering UI
         local titleBar = Instance.new("Frame")
         titleBar.Name = "TitleBar"
-        titleBar.Size = UDim2.new(1, 0, 0, 40)
+        titleBar.Size = UDim2.new(1, 0, 0, 28)
         titleBar.Position = UDim2.new(0, 0, 0, 0)
         titleBar.BackgroundColor3 = Color3.fromRGB(50,205,50)
         titleBar.BackgroundTransparency = 0
@@ -864,15 +880,62 @@ do
         titleBar.Active = true
         titleBar.ZIndex = 50
         local titleLblTop = Instance.new("TextLabel")
-        titleLblTop.Size = UDim2.new(1, -48, 1, 0)
+        titleLblTop.Size = UDim2.new(1, -48, 0, 28)
         titleLblTop.Position = UDim2.new(0, 12, 0, 0)
         titleLblTop.BackgroundTransparency = 1
         titleLblTop.Text = "Pls Wait 💵"
         titleLblTop.Font = Enum.Font.GothamBold
-        titleLblTop.TextSize = 16
+        titleLblTop.TextSize = 14
         titleLblTop.TextColor3 = Color3.fromRGB(240,240,240)
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
+
+        -- Collapse/expand dropdown button on title bar to shorten UI
+        local collapseBtn = Instance.new("TextButton")
+        collapseBtn.Name = "CollapseBtn"
+        collapseBtn.Size = UDim2.new(0, 28, 0, 24)
+        collapseBtn.Position = UDim2.new(1, -80, 0, 2)
+        collapseBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+        collapseBtn.TextColor3 = Color3.fromRGB(255,255,255)
+        collapseBtn.Font = Enum.Font.Gotham
+        collapseBtn.TextSize = 18
+        collapseBtn.Text = "▾"
+        collapseBtn.AutoButtonColor = false
+        collapseBtn.Parent = titleBar
+        styleButton(collapseBtn)
+
+        local collapsed = false
+        local prevSize = mainFrame.Size
+        local function setCollapsed(v)
+            collapsed = v
+            if collapsed then
+                prevSize = mainFrame.Size
+                -- hide all direct children except the titleBar
+                for _,c in ipairs(mainFrame:GetChildren()) do
+                    if c ~= titleBar and c ~= collapseBtn and c.Name ~= "TitleBar" then
+                        if pcall(function() return c.Visible end) then
+                            pcall(function() c.Visible = false end)
+                        end
+                    end
+                end
+                mainFrame.Size = UDim2.new(prevSize.X.Scale, prevSize.X.Offset, 0, 36)
+                collapseBtn.Text = "▴"
+            else
+                -- restore visibility and size
+                for _,c in ipairs(mainFrame:GetChildren()) do
+                    if c ~= titleBar and c ~= collapseBtn and c.Name ~= "TitleBar" then
+                        if pcall(function() return c.Visible end) then
+                            pcall(function() c.Visible = true end)
+                        end
+                    end
+                end
+                mainFrame.Size = prevSize
+                collapseBtn.Text = "▾"
+            end
+        end
+        collapseBtn.MouseButton1Click:Connect(function()
+            pcall(function() setCollapsed(not collapsed) end)
+        end)
 
         -- Dragging logic (mouse + touch)
         do
@@ -950,17 +1013,7 @@ do
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
 
-        -- Header: show static title instead of player avatar/name per user request
-        local nameLbl = Instance.new("TextLabel")
-        nameLbl.Size = UDim2.new(1, -24, 0, 24)
-        nameLbl.Position = UDim2.new(0, 12, 0, 20)
-        nameLbl.BackgroundTransparency = 1
-        nameLbl.Text = "💵 PLS WAIT"
-        nameLbl.Font = Enum.Font.GothamBold
-        nameLbl.TextSize = 18
-        nameLbl.TextColor3 = Color3.fromRGB(240,240,240)
-        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        nameLbl.Parent = leftCol
+        -- old left-column title removed (we use the draggable title bar)
 
         -- left menu buttons
         local menu = { {key="Main", icon="📋", text="Overview"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
@@ -1196,22 +1249,26 @@ do
                     else
                         track = hum:LoadAnimation(anim)
                     end
-                    if track then
-                        track.Priority = Enum.AnimationPriority.Action
-                        track.Looped = true
-                        -- small delay to allow replication when run very early
-                        task.spawn(function()
-                            task.wait(0.05)
-                            pcall(function() track:Play() end)
-                        end)
-                        currentEmoteTrack = track
+                    if okt then
+                        return true
+                    else
+                        local terrs = tostring(terr or "")
+                        local lterrs = terrs:lower()
+                        -- If server is full / error 772 / GameFull, queue the script for re-run and immediately kick (no extra notify)
+                        if lterrs:find("772") or lterrs:find("error code: 772") or lterrs:find("gamefull") or lterrs:find("requested experience is full") or lterrs:find("raiseteleportinitfailedevent") then
+                            pcall(function() queueOnTeleport(qcode) end)
+                            task.spawn(function()
+                                task.wait(0.05)
+                                pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
+                            end)
+                            return false
+                        end
+                        if lterrs:find("teleport failed") then
+                            -- ignore and continue
+                        else
+                            pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
+                        end
                     end
-                end)
-                SETTINGS.emoteId = tostring(id)
-                SETTINGS.emotePlaying = true
-                pcall(SaveSettings)
-                return true
-            end
             emotePlayBtn.MouseButton1Click:Connect(function()
                 local id = tostring(emoteBox.Text or "")
                 if id and id ~= "" then pcall(function() playEmote(id) end) end
@@ -1271,9 +1328,9 @@ do
             end)
 
             local rangeLabel = Instance.new("TextLabel")
-            rangeLabel.Size = UDim2.new(0,120,0,20)
+            rangeLabel.Size = UDim2.new(0,140,0,20)
             rangeLabel.Position = UDim2.new(0,10,0,48)
-            rangeLabel.Text = "Hop Range (min-max)"
+            rangeLabel.Text = "Hop Range (1-N or MIN-MAX)"
             rangeLabel.BackgroundTransparency = 1
             rangeLabel.TextColor3 = Color3.new(1,1,1)
             rangeLabel.Parent = frame
@@ -1281,8 +1338,8 @@ do
             local rangeBox = Instance.new("TextBox")
             rangeBox.Size = UDim2.new(0,160,0,28)
             rangeBox.Position = UDim2.new(0,140,0,44)
-            rangeBox.Text = hopRangeText or "19-22"
-            rangeBox.PlaceholderText = "11-22"
+            rangeBox.Text = hopRangeText or "1-23"
+            rangeBox.PlaceholderText = "1-23 or 23"
             rangeBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
             rangeBox.TextColor3 = Color3.fromRGB(255,255,255)
             local rbCorner = Instance.new("UICorner")
