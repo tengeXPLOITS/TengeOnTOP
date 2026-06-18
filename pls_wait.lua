@@ -1,5 +1,3 @@
-        pcall(LoadSettings)
-
         -- Build a Koyg-style UI derived from pls_dono_custom_gui; adapt to use SETTINGS
         local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
         do
