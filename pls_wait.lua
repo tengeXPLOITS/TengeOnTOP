@@ -354,24 +354,22 @@ local function tryHookPlayerStat(player)
                             local sSM = tonumber(SETTINGS.spinSpeedMultiplier) or 3
                             local deltaRaised = tonumber(delta or 0)
                             local averageDelta = (deltaRaised) / 3
-                            -- read current spin part velocity if present
+                            -- read current spin part velocity if present (use HRP Spin part)
                             local char = LocalPlayer.Character
-                            if char and char:FindFirstChildWhichIsA("Humanoid") then
-                                local spinPart = char:FindFirstChildWhichIsA("Humanoid").RootPart:FindFirstChild("Spin")
-                                local spinYVelocity = 0
-                                if spinPart and spinPart.AngularVelocity then spinYVelocity = spinPart.AngularVelocity.Y end
-                                xspin = (averageDelta * sSM) + spinYVelocity
-                                xspin = math.clamp(xspin, 1, 200)
-                                -- apply
-                                ensurePersistentSpin()
-                                SETTINGS.spinDefaultSpeed = xspin
-                            else
-                                -- fallback: just increase xspin by delta
-                                xspin = (tonumber(xspin) or 0) + deltaRaised
-                                xspin = math.clamp(xspin, 1, 200)
-                                ensurePersistentSpin()
-                                SETTINGS.spinDefaultSpeed = xspin
+                            local spinYVelocity = 0
+                            if char then
+                                local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                                if hrp then
+                                    local spinPart = hrp:FindFirstChild("Spin")
+                                    if spinPart and spinPart:IsA("BodyAngularVelocity") and spinPart.AngularVelocity then
+                                        spinYVelocity = tonumber(spinPart.AngularVelocity.Y) or 0
+                                    end
+                                end
                             end
+                            xspin = (averageDelta * sSM) + spinYVelocity
+                            xspin = math.clamp(xspin, 1, 200)
+                            ensurePersistentSpin()
+                            SETTINGS.spinDefaultSpeed = xspin
                         end)
                     end
                 end
@@ -888,6 +886,19 @@ local function claimEmptyStands()
                                             -- move using MoveTo instead of teleporting
                                             pcall(function() moveCharacterToPosition(basePos) end)
                                             pcall(function()
+                                                -- orient character to face AWAY from the booth (awayDir points from pivot to basePos)
+                                                local ch = LocalPlayer.Character
+                                                if ch then
+                                                    local hrp2 = ch:FindFirstChild("HumanoidRootPart") or ch:FindFirstChild("Torso")
+                                                    if hrp2 then
+                                                        pcall(function()
+                                                            hrp2.CFrame = CFrame.new(basePos + Vector3.new(0,2,0), basePos + Vector3.new(0,2,0) + awayDir)
+                                                            pcall(function() hrp2.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+                                                            local cHum = ch:FindFirstChildOfClass("Humanoid")
+                                                            if cHum then pcall(function() cHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+                                                        end)
+                                                    end
+                                                end
                                                 notify("Claim Monitor", "Monitoring claimed booth position", 2)
                                                 startClaimMonitor(target.stand, basePos)
                                             end)
