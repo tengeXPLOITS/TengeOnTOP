@@ -105,25 +105,89 @@ local function notify(title, text, duration)
         task.spawn(function()
             task.wait(duration)
             pcall(function() notif:Destroy() end)
-        end)
-        return
-    end
-    pcall(function()
+            end
+        end
+
+        -- Periodic Jump and Spin controls (Overview tab)
+        do
+            -- Periodic Jump toggle (every 3 minutes)
+            local periodicLabel = Instance.new("TextLabel")
+            periodicLabel.Size = UDim2.new(0,160,0,20)
+            periodicLabel.Position = UDim2.new(0,10,0,112)
+            periodicLabel.Text = "Periodic Jump (3 min)"
+            periodicLabel.BackgroundTransparency = 1
+            periodicLabel.TextColor3 = Color3.new(1,1,1)
+            periodicLabel.Parent = tabFrames.Main
+
+            local periodicToggle = Instance.new("TextButton")
+            periodicToggle.Size = UDim2.new(0,60,0,20)
+            periodicToggle.Position = UDim2.new(0,180,0,112)
+            periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+            periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
+            periodicToggle.Parent = tabFrames.Main
+            periodicToggle.MouseButton1Click:Connect(function()
+                SETTINGS.periodicJump = not SETTINGS.periodicJump
+                periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
+            styleButton(periodicToggle)
+
+            -- Spin on donation toggle
+            local spinLabel = Instance.new("TextLabel")
+            spinLabel.Size = UDim2.new(0,140,0,20)
+            spinLabel.Position = UDim2.new(0,10,0,148)
+            spinLabel.Text = "Spin On Donation"
+            spinLabel.BackgroundTransparency = 1
+            spinLabel.TextColor3 = Color3.new(1,1,1)
+            spinLabel.Parent = tabFrames.Main
+
+            local spinToggleBtn = Instance.new("TextButton")
+            spinToggleBtn.Size = UDim2.new(0,60,0,20)
+            spinToggleBtn.Position = UDim2.new(0,180,0,148)
+            spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+            spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
+            spinToggleBtn.Parent = tabFrames.Main
+            spinToggleBtn.MouseButton1Click:Connect(function()
+                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
+                spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.spinOnDonation then
+                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+                    pcall(ensurePersistentSpin)
+                    pcall(startDonationMonitor)
+                else
+                    pcall(removePersistentSpin)
+                    if not SETTINGS.webhookToggle then
+                        pcall(stopDonationMonitor)
+                    end
+                end
+            end)
+            styleButton(spinToggleBtn)
+        end
+
+        -- Server-Hop tab
         StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
     end)
 end
 
 -- Claim position monitor: ensure player doesn't wander far from claimed booth
 local lastClaimPosition = nil
+local lastClaimAwayDir = nil
 local lastClaimMonitorStop = false
 local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
 end
-local function startClaimMonitor(stand, pos)
+local function startClaimMonitor(stand, pos, awayDir)
     if not stand or not pos then return end
     if typeof(pos) == "CFrame" then
         lastClaimPosition = pos.Position
+    elseif typeof(awayDir) == "Vector3" then
+        lastClaimAwayDir = awayDir
     elseif typeof(pos) == "Vector3" then
         lastClaimPosition = pos
     elseif type(pos) == "table" and pos.Position then
@@ -175,7 +239,8 @@ local function startClaimMonitor(stand, pos)
                             if curChar then
                                 local curHrp = curChar:FindFirstChild("HumanoidRootPart") or curChar:FindFirstChild("Torso")
                                 if curHrp then
-                                    curHrp.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0))
+                                    local lookDir = lastClaimAwayDir or Vector3.new(0,0,1)
+                                    curHrp.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0), lastClaimPosition + Vector3.new(0,2,0) + lookDir)
                                     pcall(function() curHrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
                                 end
                                 local curHum = curChar:FindFirstChildOfClass("Humanoid")
@@ -603,7 +668,7 @@ local function findSlotFromStand(stand)
     return nil
 end
 
-local function moveCharacterToPosition(pos, mode)
+local function moveCharacterToPosition(pos, mode, lookDir)
     if not pos then return false end
     local targetVec = nil
     if typeof(pos) == "CFrame" then
@@ -624,7 +689,8 @@ local function moveCharacterToPosition(pos, mode)
         pcall(function()
             local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
             if hrp then
-                hrp.CFrame = CFrame.new(targetVec + Vector3.new(0,2,0))
+                local dir = (lookDir and (lookDir.Magnitude > 0 and lookDir.Unit) or nil) or Vector3.new(0,0,1)
+                hrp.CFrame = CFrame.new(targetVec + Vector3.new(0,2,0), targetVec + Vector3.new(0,2,0) + dir)
                 pcall(function() hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
             end
             pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
@@ -637,7 +703,15 @@ local function moveCharacterToPosition(pos, mode)
         for i=1,12 do
             task.wait(0.08)
             local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-            if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then return true end
+            if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then
+                -- ensure facing direction after walking
+                if lookDir and lookDir.Magnitude > 0 then
+                    pcall(function()
+                        curHrp.CFrame = CFrame.new(curHrp.Position, curHrp.Position + lookDir.Unit)
+                    end)
+                end
+                return true
+            end
         end
         return false
     end
@@ -846,7 +920,7 @@ local function claimEmptyStands()
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
     local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
     -- move directly in front of the booth (no teleport)
-    moveCharacterToPosition(safePos)
+    moveCharacterToPosition(safePos, SETTINGS.claimEnforceMode or "teleport", dir)
     task.wait(0.25)
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
@@ -883,11 +957,11 @@ local function claimEmptyStands()
                             if hrp then
                                         local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
                                         if basePos and awayDir then
-                                            -- move using MoveTo instead of teleporting
-                                            pcall(function() moveCharacterToPosition(basePos) end)
+                                            -- move using configured mode and orient to face away from the booth
+                                            pcall(function() moveCharacterToPosition(basePos, SETTINGS.claimEnforceMode or "teleport", awayDir) end)
                                             pcall(function()
                                                 notify("Claim Monitor", "Monitoring claimed booth position", 2)
-                                                startClaimMonitor(target.stand, basePos)
+                                                startClaimMonitor(target.stand, basePos, awayDir)
                                             end)
                                         end
                             end
@@ -1288,7 +1362,7 @@ do
 
             local afkToggle = Instance.new("TextButton")
             afkToggle.Size = UDim2.new(0,60,0,20)
-            afkToggle.Position = UDim2.new(0,140,0,10)
+            afkToggle.Position = UDim2.new(0,180,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1304,7 +1378,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,96)
+            enforceLabel.Position = UDim2.new(0,10,0,220)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1312,7 +1386,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,140,0,96)
+            enforceToggle.Position = UDim2.new(0,180,0,220)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1331,7 +1405,7 @@ do
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,40)
+            emoteLabel.Position = UDim2.new(0,10,0,46)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1339,7 +1413,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,38)
+            emoteBox.Position = UDim2.new(0,140,0,44)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1356,7 +1430,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,66)
+            emotePlayBtn.Position = UDim2.new(0,140,0,76)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1365,7 +1439,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,66)
+            emoteStopBtn.Position = UDim2.new(0,228,0,76)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1374,7 +1448,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,38)
+            presetToggle.Position = UDim2.new(0,304,0,44)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1487,7 +1561,7 @@ do
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,260,0,136)
+            spinMultiplierBox.Position = UDim2.new(0,260,0,148)
             spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
             spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
             spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1509,7 +1583,7 @@ do
             -- Periodic jump info message for mobile users
             local pjInfo = Instance.new("TextLabel")
             pjInfo.Size = UDim2.new(0,300,0,18)
-            pjInfo.Position = UDim2.new(0,10,0,168)
+            pjInfo.Position = UDim2.new(0,10,0,136)
             pjInfo.Text = "Periodic Jump runs every 3 minutes. Mobile-friendly."
             pjInfo.BackgroundTransparency = 1
             pjInfo.TextColor3 = Color3.fromRGB(200,200,200)
@@ -1521,7 +1595,7 @@ do
             -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
             local touchLabel = Instance.new("TextLabel")
             touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,200)
+            touchLabel.Position = UDim2.new(0,10,0,184)
             touchLabel.Text = "Touch Prevent AFK"
             touchLabel.BackgroundTransparency = 1
             touchLabel.TextColor3 = Color3.new(1,1,1)
@@ -1529,7 +1603,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,180,0,200)
+            touchToggle.Position = UDim2.new(0,180,0,184)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1558,61 +1632,7 @@ do
                         pcall(function() playEmote(SETTINGS.emoteId) end)
                     end
 
-                    -- Periodic Jump toggle (every 3 minutes)
-                    local periodicLabel = Instance.new("TextLabel")
-                    periodicLabel.Size = UDim2.new(0,160,0,20)
-                    periodicLabel.Position = UDim2.new(0,10,0,100)
-                    periodicLabel.Text = "Periodic Jump (3 min)"
-                    periodicLabel.BackgroundTransparency = 1
-                    periodicLabel.TextColor3 = Color3.new(1,1,1)
-                    periodicLabel.Parent = frame
-
-                    local periodicToggle = Instance.new("TextButton")
-                    periodicToggle.Size = UDim2.new(0,60,0,20)
-                    periodicToggle.Position = UDim2.new(0,180,0,100)
-                    periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-                    periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-                    periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
-                    local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
-                    periodicToggle.Parent = frame
-                    periodicToggle.MouseButton1Click:Connect(function()
-                        SETTINGS.periodicJump = not SETTINGS.periodicJump
-                        periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-                        pcall(SaveSettings)
-                    end)
-                    styleButton(periodicToggle)
-
-                    -- Spin on donation toggle
-                    local spinLabel = Instance.new("TextLabel")
-                    spinLabel.Size = UDim2.new(0,140,0,20)
-                    spinLabel.Position = UDim2.new(0,10,0,136)
-                    spinLabel.Text = "Spin On Donation"
-                    spinLabel.BackgroundTransparency = 1
-                    spinLabel.TextColor3 = Color3.new(1,1,1)
-                    spinLabel.Parent = frame
-
-                    local spinToggleBtn = Instance.new("TextButton")
-                    spinToggleBtn.Size = UDim2.new(0,60,0,20)
-                    spinToggleBtn.Position = UDim2.new(0,180,0,136)
-                    spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-                    spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
-                    spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-                    local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
-                    spinToggleBtn.Parent = frame
-                    spinToggleBtn.MouseButton1Click:Connect(function()
-                        SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
-                        spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-                        pcall(SaveSettings)
-                        if SETTINGS.spinOnDonation then
-                            -- enable persistent spin (use xspin baseline)
-                            xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
-                            pcall(ensurePersistentSpin)
-                        else
-                            -- disable persistent spin
-                            pcall(removePersistentSpin)
-                        end
-                    end)
-                    styleButton(spinToggleBtn)
+                    -- (Periodic Jump and Spin controls moved below emote block for consistent layout)
                     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
                         pcall(attemptPlay)
                     else
