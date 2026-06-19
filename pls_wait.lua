@@ -121,15 +121,19 @@ local function stopClaimMonitor()
 end
 local function startClaimMonitor(stand, pos, awayDir)
     if not stand or not pos then return end
-    if typeof(pos) == "CFrame" then
-        lastClaimPosition = pos.Position
-    elseif typeof(pos) == "Vector3" then
-        lastClaimPosition = pos
-    elseif type(pos) == "table" and pos.Position then
-        lastClaimPosition = pos.Position
-    else
-        return
-    end
+    -- Safely extract a Vector3 position from various accepted pos types
+    local okPos, resolvedPos = pcall(function()
+        if typeof(pos) == "CFrame" then
+            return pos.Position
+        elseif typeof(pos) == "Vector3" then
+            return pos
+        elseif type(pos) == "table" and pos.Position then
+            return pos.Position
+        end
+        return nil
+    end)
+    if not okPos or not resolvedPos then return end
+    lastClaimPosition = resolvedPos
     if typeof(awayDir) == "Vector3" then
         lastClaimAwayDir = awayDir
     end
