@@ -26,6 +26,36 @@ SETTINGS.webhookUrl = SETTINGS.webhookUrl or ""
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
+SETTINGS.periodicJump = SETTINGS.periodicJump or false
+SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
+SETTINGS.spinDefaultSpeed = SETTINGS.spinDefaultSpeed or 1
+SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 3
+-- runtime spin state (xspin follows old.lua behavior)
+local xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
+local function ensurePersistentSpin()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    if not hrp then return end
+    local existing = hrp:FindFirstChild("Spin")
+    if not existing then
+        local bav = Instance.new("BodyAngularVelocity")
+        bav.Name = "Spin"
+        bav.Parent = hrp
+        bav.MaxTorque = Vector3.new(0, math.huge, 0)
+        bav.AngularVelocity = Vector3.new(0, xspin, 0)
+    else
+        pcall(function() existing.AngularVelocity = Vector3.new(0, xspin, 0) end)
+    end
+end
+local function removePersistentSpin()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    if not hrp then return end
+    local existing = hrp:FindFirstChild("Spin")
+    if existing then pcall(function() existing:Destroy() end) end
+end
 
 -- Donation monitoring placeholders
 donationConns = donationConns or {}
@@ -205,7 +235,54 @@ local function tryHookPlayerStat(player)
             if delta > 0 then
                 -- Only notify when the local player (script user) receives the donation
                 if player == LocalPlayer then
-                    postWebhookEvent("donation", { donorName = player.Name, from = player.Name, userId = player.UserId, amount = delta, total = newv })
+                    -- find nearest other player as donor (best-effort)
+                    local function fetchNearestPlayer()
+                        local best, bestDist = nil, math.huge
+                        local ok, lchar = pcall(function() return LocalPlayer.Character end)
+                        if not ok or not lchar then return nil end
+                        local lroot = lchar:FindFirstChild("HumanoidRootPart") or lchar:FindFirstChild("Torso")
+                        if not lroot then return nil end
+                        for _, pl in ipairs(Players:GetPlayers()) do
+                            if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                                local pr = pl.Character:FindFirstChild("HumanoidRootPart")
+                                local d = (pr.Position - lroot.Position).Magnitude
+                                if d < bestDist then bestDist = d; best = pl end
+                            end
+                        end
+                        return best
+                    end
+                    local donor = fetchNearestPlayer()
+                    local donorName = (donor and donor.Name) or "Unknown"
+                    local donorId = (donor and donor.UserId) or nil
+                    postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = delta, total = newv })
+
+                    -- Spin-on-donation: persistent spin increases by donation delta when enabled
+                    if SETTINGS.spinOnDonation then
+                        pcall(function()
+                            -- use old.lua spin algorithm: averageDelta * multiplier + current angular velocity
+                            local sSM = tonumber(SETTINGS.spinSpeedMultiplier) or 3
+                            local deltaRaised = tonumber(delta or 0)
+                            local averageDelta = (deltaRaised) / 3
+                            -- read current spin part velocity if present
+                            local char = LocalPlayer.Character
+                            if char and char:FindFirstChildWhichIsA("Humanoid") then
+                                local spinPart = char:FindFirstChildWhichIsA("Humanoid").RootPart:FindFirstChild("Spin")
+                                local spinYVelocity = 0
+                                if spinPart and spinPart.AngularVelocity then spinYVelocity = spinPart.AngularVelocity.Y end
+                                xspin = (averageDelta * sSM) + spinYVelocity
+                                xspin = math.clamp(xspin, 1, 200)
+                                -- apply
+                                ensurePersistentSpin()
+                                SETTINGS.spinDefaultSpeed = xspin
+                            else
+                                -- fallback: just increase xspin by delta
+                                xspin = (tonumber(xspin) or 0) + deltaRaised
+                                xspin = math.clamp(xspin, 1, 200)
+                                ensurePersistentSpin()
+                                SETTINGS.spinDefaultSpeed = xspin
+                            end
+                        end)
+                    end
                 end
             end
         end
@@ -1269,6 +1346,62 @@ do
                         end
                         pcall(function() playEmote(SETTINGS.emoteId) end)
                     end
+
+                    -- Periodic Jump toggle (every 3 minutes)
+                    local periodicLabel = Instance.new("TextLabel")
+                    periodicLabel.Size = UDim2.new(0,160,0,20)
+                    periodicLabel.Position = UDim2.new(0,10,0,110)
+                    periodicLabel.Text = "Periodic Jump (3 min)"
+                    periodicLabel.BackgroundTransparency = 1
+                    periodicLabel.TextColor3 = Color3.new(1,1,1)
+                    periodicLabel.Parent = frame
+
+                    local periodicToggle = Instance.new("TextButton")
+                    periodicToggle.Size = UDim2.new(0,60,0,20)
+                    periodicToggle.Position = UDim2.new(0,180,0,110)
+                    periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                    periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+                    periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
+                    local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
+                    periodicToggle.Parent = frame
+                    periodicToggle.MouseButton1Click:Connect(function()
+                        SETTINGS.periodicJump = not SETTINGS.periodicJump
+                        periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                        pcall(SaveSettings)
+                    end)
+                    styleButton(periodicToggle)
+
+                    -- Spin on donation toggle
+                    local spinLabel = Instance.new("TextLabel")
+                    spinLabel.Size = UDim2.new(0,140,0,20)
+                    spinLabel.Position = UDim2.new(0,10,0,136)
+                    spinLabel.Text = "Spin On Donation"
+                    spinLabel.BackgroundTransparency = 1
+                    spinLabel.TextColor3 = Color3.new(1,1,1)
+                    spinLabel.Parent = frame
+
+                    local spinToggleBtn = Instance.new("TextButton")
+                    spinToggleBtn.Size = UDim2.new(0,60,0,20)
+                    spinToggleBtn.Position = UDim2.new(0,180,0,136)
+                    spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                    spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
+                    spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+                    local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
+                    spinToggleBtn.Parent = frame
+                    spinToggleBtn.MouseButton1Click:Connect(function()
+                        SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
+                        spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                        pcall(SaveSettings)
+                        if SETTINGS.spinOnDonation then
+                            -- enable persistent spin
+                            currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+                            pcall(ensurePersistentSpin)
+                        else
+                            -- disable persistent spin
+                            pcall(removePersistentSpin)
+                        end
+                    end)
+                    styleButton(spinToggleBtn)
                     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
                         pcall(attemptPlay)
                     else
@@ -1504,6 +1637,39 @@ do
             end)
         end)
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
+        -- initialize persistent spin if enabled
+        if SETTINGS.spinOnDonation then
+            currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+            pcall(ensurePersistentSpin)
+            LocalPlayer.CharacterAdded:Connect(function()
+                task.wait(0.6)
+                pcall(function()
+                    currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+                    ensurePersistentSpin()
+                end)
+            end)
+        end
+        -- Periodic jump task (every 3 minutes) when enabled
+        task.spawn(function()
+            while true do
+                if SETTINGS.periodicJump then
+                    local ok, char = pcall(function() return LocalPlayer.Character end)
+                    if ok and char then
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            pcall(function() hum.Jump = true end)
+                        end
+                    end
+                    -- wait 3 minutes
+                    for i=1,180 do
+                        task.wait(1)
+                        if not SETTINGS.periodicJump then break end
+                    end
+                else
+                    task.wait(1)
+                end
+            end
+        end)
         if autoServerHopEnabled and not autoServerHopTask then
             autoServerHopTask = task.spawn(function()
                 while autoServerHopEnabled do
