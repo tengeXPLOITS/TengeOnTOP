@@ -1319,7 +1319,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,228)
+            enforceLabel.Position = UDim2.new(0,10,0,298)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1327,7 +1327,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,228)
+            enforceToggle.Position = UDim2.new(0,180,0,298)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1346,7 +1346,7 @@ do
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,48)
+            emoteLabel.Position = UDim2.new(0,10,0,154)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1354,7 +1354,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,48)
+            emoteBox.Position = UDim2.new(0,140,0,154)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1371,7 +1371,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,84)
+            emotePlayBtn.Position = UDim2.new(0,140,0,190)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1380,7 +1380,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,84)
+            emoteStopBtn.Position = UDim2.new(0,228,0,190)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1389,7 +1389,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,48)
+            presetToggle.Position = UDim2.new(0,304,0,154)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1397,7 +1397,7 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,10,0,200)
+            presetFrame.Position = UDim2.new(0,10,0,212)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
@@ -1499,10 +1499,39 @@ do
             emoteStopBtn.MouseButton1Click:Connect(function()
                 pcall(function() stopEmote() end)
             end)
+
+            -- Auto-play emote toggle
+            local autoEmoteLabel = Instance.new("TextLabel")
+            autoEmoteLabel.Size = UDim2.new(0,120,0,20)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,222)
+            autoEmoteLabel.Text = "Auto-Play Emote"
+            autoEmoteLabel.BackgroundTransparency = 1
+            autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
+            autoEmoteLabel.Parent = frame
+
+            local autoEmoteToggle = Instance.new("TextButton")
+            autoEmoteToggle.Size = UDim2.new(0,60,0,20)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,222)
+            autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
+            autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            autoEmoteToggle.Parent = frame
+            local aec = Instance.new("UICorner") aec.Parent = autoEmoteToggle
+            styleButton(autoEmoteToggle)
+            autoEmoteToggle.MouseButton1Click:Connect(function()
+                SETTINGS.emotePlaying = not SETTINGS.emotePlaying
+                autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    pcall(function() playEmote(SETTINGS.emoteId) end)
+                else
+                    pcall(function() stopEmote() end)
+                end
+            end)
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,260,0,156)
+            spinMultiplierBox.Position = UDim2.new(0,260,0,262)
             spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
             spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
             spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1524,7 +1553,7 @@ do
             -- Periodic Jump toggle (always present in Overview)
             local periodicLabel = Instance.new("TextLabel")
             periodicLabel.Size = UDim2.new(0,160,0,20)
-            periodicLabel.Position = UDim2.new(0,10,0,100)
+            periodicLabel.Position = UDim2.new(0,10,0,46)
             periodicLabel.Text = "Periodic Jump (3 min)"
             periodicLabel.BackgroundTransparency = 1
             periodicLabel.TextColor3 = Color3.new(1,1,1)
@@ -1532,7 +1561,7 @@ do
 
             local periodicToggle = Instance.new("TextButton")
             periodicToggle.Size = UDim2.new(0,60,0,20)
-            periodicToggle.Position = UDim2.new(0,180,0,100)
+            periodicToggle.Position = UDim2.new(0,180,0,46)
             periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
             periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1542,13 +1571,23 @@ do
                 SETTINGS.periodicJump = not SETTINGS.periodicJump
                 periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
                 pcall(SaveSettings)
+                if SETTINGS.periodicJump then
+                    -- perform an immediate jump to confirm feature is active
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            if hum then hum.Jump = true end
+                        end
+                    end)
+                end
             end)
             styleButton(periodicToggle)
 
             -- Spin on donation toggle (always present in Overview)
             local spinLabel = Instance.new("TextLabel")
             spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,148)
+            spinLabel.Position = UDim2.new(0,10,0,226)
             spinLabel.Text = "Spin On Donation"
             spinLabel.BackgroundTransparency = 1
             spinLabel.TextColor3 = Color3.new(1,1,1)
@@ -1556,7 +1595,7 @@ do
 
             local spinToggleBtn = Instance.new("TextButton")
             spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,148)
+            spinToggleBtn.Position = UDim2.new(0,180,0,226)
             spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
             spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
             spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1582,7 +1621,7 @@ do
             -- Periodic jump info message for mobile users
             local pjInfo = Instance.new("TextLabel")
             pjInfo.Size = UDim2.new(0,300,0,18)
-            pjInfo.Position = UDim2.new(0,10,0,136)
+            pjInfo.Position = UDim2.new(0,10,0,82)
             pjInfo.Text = "Periodic Jump runs every 3 minutes. Mobile-friendly."
             pjInfo.BackgroundTransparency = 1
             pjInfo.TextColor3 = Color3.fromRGB(200,200,200)
@@ -1594,7 +1633,7 @@ do
             -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
             local touchLabel = Instance.new("TextLabel")
             touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,192)
+            touchLabel.Position = UDim2.new(0,10,0,118)
             touchLabel.Text = "Touch Prevent AFK"
             touchLabel.BackgroundTransparency = 1
             touchLabel.TextColor3 = Color3.new(1,1,1)
@@ -1602,7 +1641,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,180,0,192)
+            touchToggle.Position = UDim2.new(0,180,0,118)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1612,12 +1651,27 @@ do
                 SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
                 touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
                 pcall(SaveSettings)
+                if SETTINGS.touchPreventAFK then
+                    -- perform an immediate touch/jump action to verify
+                    pcall(function()
+                        local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+                        if ok and vu then
+                            pcall(function() vu:CaptureController(); if vu.ClickButton2 then vu:ClickButton2(Vector2.new(0,0)) end end)
+                        else
+                            local char = LocalPlayer.Character
+                            if char then
+                                local hum = char:FindFirstChildOfClass("Humanoid")
+                                if hum then hum.Jump = true end
+                            end
+                        end
+                    end)
+                end
             end)
             styleButton(touchToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
-                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" and SETTINGS.emotePlaying then
                     local function attemptPlay()
                         local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
                         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -1632,13 +1686,15 @@ do
                     end
 
                     -- (Periodic Jump and Spin controls moved below emote block for consistent layout)
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-                        pcall(attemptPlay)
-                    else
-                        LocalPlayer.CharacterAdded:Connect(function()
-                            task.wait(0.5)
+                    if SETTINGS.emotePlaying then
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
                             pcall(attemptPlay)
-                        end)
+                        else
+                            LocalPlayer.CharacterAdded:Connect(function()
+                                task.wait(0.5)
+                                pcall(attemptPlay)
+                            end)
+                        end
                     end
                 end
             end)
@@ -1879,25 +1935,47 @@ do
                 end)
             end)
         end
-        -- Touch-prevent AFK: simulate a brief touch every 120s when enabled
+        -- Touch-prevent AFK: simulate input every 120s when enabled; robust fallbacks
         task.spawn(function()
             while true do
                 if SETTINGS.touchPreventAFK then
+                    local performed = false
                     local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
                     if ok and vu then
                         pcall(function()
                             vu:CaptureController()
-                            vu:Button1Down(Vector2.new(0,0))
-                            task.wait(0.06)
-                            vu:Button1Up(Vector2.new(0,0))
+                            if vu.Button1Down and vu.Button1Up then
+                                vu:Button1Down(Vector2.new(0,0))
+                                task.wait(0.06)
+                                vu:Button1Up(Vector2.new(0,0))
+                            elseif vu.ClickButton2 then
+                                vu:ClickButton2(Vector2.new(0,0))
+                            else
+                                -- fallback to ClickButton2 call via different name
+                                pcall(function() vu:ClickButton2(Vector2.new(0,0)) end)
+                            end
                         end)
-                    else
-                        -- fallback to ClickButton2 if available
-                        pcall(function()
-                            local vu2 = game:GetService("VirtualUser")
-                            vu2:CaptureController()
-                            vu2:ClickButton2(Vector2.new(0,0))
-                        end)
+                        performed = true
+                    end
+                    if not performed then
+                        -- fallback: nudge humanoid or make it jump to avoid AFK
+                        local okc, char = pcall(function() return LocalPlayer.Character end)
+                        if okc and char then
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                            if hum then
+                                pcall(function()
+                                    hum.Jump = true
+                                end)
+                            elseif root then
+                                pcall(function()
+                                    local orig = root.CFrame
+                                    root.CFrame = orig * CFrame.new(0,0.1,0)
+                                    task.wait(0.05)
+                                    root.CFrame = orig
+                                end)
+                            end
+                        end
                     end
                     for i=1,120 do
                         task.wait(1)
