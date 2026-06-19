@@ -105,8 +105,7 @@ local function notify(title, text, duration)
         task.spawn(function()
             task.wait(duration)
             pcall(function() notif:Destroy() end)
-            end
-        end
+        end)
 
         -- Periodic Jump and Spin controls (Overview tab)
         do
