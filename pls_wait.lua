@@ -113,10 +113,9 @@ local function notify(title, text, duration)
     end)
 end
 
--- Claim position monitor: ensure player doesn't wander far from claimed booth
-local lastClaimPosition = nil
-local lastClaimAwayDir = nil
-local lastClaimMonitorStop = false
+            spinMultiplierBox.Position = UDim2.new(0,260,0,244)
+            enforceLabel.Position = UDim2.new(0,10,0,280)
+            enforceToggle.Position = UDim2.new(0,180,0,280)
 local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
@@ -1503,7 +1502,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,226)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,208)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1511,7 +1510,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,226)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,208)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1587,7 +1586,7 @@ do
             -- Spin on donation toggle (always present in Overview)
             local spinLabel = Instance.new("TextLabel")
             spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,262)
+            spinLabel.Position = UDim2.new(0,10,0,244)
             spinLabel.Text = "Spin On Donation"
             spinLabel.BackgroundTransparency = 1
             spinLabel.TextColor3 = Color3.new(1,1,1)
@@ -1595,7 +1594,7 @@ do
 
             local spinToggleBtn = Instance.new("TextButton")
             spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,262)
+            spinToggleBtn.Position = UDim2.new(0,180,0,244)
             spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
             spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
             spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
