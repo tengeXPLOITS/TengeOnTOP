@@ -106,69 +106,9 @@ local function notify(title, text, duration)
             task.wait(duration)
             pcall(function() notif:Destroy() end)
         end)
-
-        -- Periodic Jump and Spin controls (Overview tab)
-        do
-            -- Periodic Jump toggle (every 3 minutes)
-            local periodicLabel = Instance.new("TextLabel")
-            periodicLabel.Size = UDim2.new(0,160,0,20)
-            periodicLabel.Position = UDim2.new(0,10,0,112)
-            periodicLabel.Text = "Periodic Jump (3 min)"
-            periodicLabel.BackgroundTransparency = 1
-            periodicLabel.TextColor3 = Color3.new(1,1,1)
-            periodicLabel.Parent = tabFrames.Main
-
-            local periodicToggle = Instance.new("TextButton")
-            periodicToggle.Size = UDim2.new(0,60,0,20)
-            periodicToggle.Position = UDim2.new(0,180,0,112)
-            periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-            periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
-            periodicToggle.Parent = tabFrames.Main
-            periodicToggle.MouseButton1Click:Connect(function()
-                SETTINGS.periodicJump = not SETTINGS.periodicJump
-                periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-                pcall(SaveSettings)
-            end)
-            styleButton(periodicToggle)
-
-            -- Spin on donation toggle
-            local spinLabel = Instance.new("TextLabel")
-            spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,148)
-            spinLabel.Text = "Spin On Donation"
-            spinLabel.BackgroundTransparency = 1
-            spinLabel.TextColor3 = Color3.new(1,1,1)
-            spinLabel.Parent = tabFrames.Main
-
-            local spinToggleBtn = Instance.new("TextButton")
-            spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,148)
-            spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-            spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
-            spinToggleBtn.Parent = tabFrames.Main
-            spinToggleBtn.MouseButton1Click:Connect(function()
-                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
-                spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.spinOnDonation then
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
-                    pcall(ensurePersistentSpin)
-                    pcall(startDonationMonitor)
-                else
-                    pcall(removePersistentSpin)
-                    if not SETTINGS.webhookToggle then
-                        pcall(stopDonationMonitor)
-                    end
-                end
-            end)
-            styleButton(spinToggleBtn)
-        end
-
-        -- Server-Hop tab
+        return
+    end
+    pcall(function()
         StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
     end)
 end
@@ -180,19 +120,21 @@ local lastClaimMonitorStop = false
 local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
+    lastClaimAwayDir = nil
 end
 local function startClaimMonitor(stand, pos, awayDir)
     if not stand or not pos then return end
     if typeof(pos) == "CFrame" then
         lastClaimPosition = pos.Position
-    elseif typeof(awayDir) == "Vector3" then
-        lastClaimAwayDir = awayDir
     elseif typeof(pos) == "Vector3" then
         lastClaimPosition = pos
     elseif type(pos) == "table" and pos.Position then
         lastClaimPosition = pos.Position
     else
         return
+    end
+    if typeof(awayDir) == "Vector3" then
+        lastClaimAwayDir = awayDir
     end
     lastClaimMonitorStop = false
     task.spawn(function()
