@@ -113,9 +113,7 @@ local function notify(title, text, duration)
     end)
 end
 
-            spinMultiplierBox.Position = UDim2.new(0,260,0,244)
-            enforceLabel.Position = UDim2.new(0,10,0,280)
-            enforceToggle.Position = UDim2.new(0,180,0,280)
+    
 local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
