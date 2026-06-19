@@ -1319,7 +1319,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,220)
+            enforceLabel.Position = UDim2.new(0,10,0,228)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1327,7 +1327,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,220)
+            enforceToggle.Position = UDim2.new(0,180,0,228)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1346,7 +1346,7 @@ do
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,46)
+            emoteLabel.Position = UDim2.new(0,10,0,48)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1354,7 +1354,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,44)
+            emoteBox.Position = UDim2.new(0,140,0,48)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1371,7 +1371,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,76)
+            emotePlayBtn.Position = UDim2.new(0,140,0,84)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1380,7 +1380,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,76)
+            emoteStopBtn.Position = UDim2.new(0,228,0,84)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1389,7 +1389,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,44)
+            presetToggle.Position = UDim2.new(0,304,0,48)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1502,7 +1502,7 @@ do
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,260,0,148)
+            spinMultiplierBox.Position = UDim2.new(0,260,0,156)
             spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
             spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
             spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1521,6 +1521,64 @@ do
                 end
             end)
 
+            -- Periodic Jump toggle (always present in Overview)
+            local periodicLabel = Instance.new("TextLabel")
+            periodicLabel.Size = UDim2.new(0,160,0,20)
+            periodicLabel.Position = UDim2.new(0,10,0,100)
+            periodicLabel.Text = "Periodic Jump (3 min)"
+            periodicLabel.BackgroundTransparency = 1
+            periodicLabel.TextColor3 = Color3.new(1,1,1)
+            periodicLabel.Parent = frame
+
+            local periodicToggle = Instance.new("TextButton")
+            periodicToggle.Size = UDim2.new(0,60,0,20)
+            periodicToggle.Position = UDim2.new(0,180,0,100)
+            periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+            periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
+            periodicToggle.Parent = frame
+            periodicToggle.MouseButton1Click:Connect(function()
+                SETTINGS.periodicJump = not SETTINGS.periodicJump
+                periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
+            styleButton(periodicToggle)
+
+            -- Spin on donation toggle (always present in Overview)
+            local spinLabel = Instance.new("TextLabel")
+            spinLabel.Size = UDim2.new(0,140,0,20)
+            spinLabel.Position = UDim2.new(0,10,0,148)
+            spinLabel.Text = "Spin On Donation"
+            spinLabel.BackgroundTransparency = 1
+            spinLabel.TextColor3 = Color3.new(1,1,1)
+            spinLabel.Parent = frame
+
+            local spinToggleBtn = Instance.new("TextButton")
+            spinToggleBtn.Size = UDim2.new(0,60,0,20)
+            spinToggleBtn.Position = UDim2.new(0,180,0,148)
+            spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+            spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
+            spinToggleBtn.Parent = frame
+            spinToggleBtn.MouseButton1Click:Connect(function()
+                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
+                spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.spinOnDonation then
+                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+                    pcall(ensurePersistentSpin)
+                    pcall(startDonationMonitor)
+                else
+                    pcall(removePersistentSpin)
+                    if not SETTINGS.webhookToggle then
+                        pcall(stopDonationMonitor)
+                    end
+                end
+            end)
+            styleButton(spinToggleBtn)
+
             -- Periodic jump info message for mobile users
             local pjInfo = Instance.new("TextLabel")
             pjInfo.Size = UDim2.new(0,300,0,18)
@@ -1536,7 +1594,7 @@ do
             -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
             local touchLabel = Instance.new("TextLabel")
             touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,184)
+            touchLabel.Position = UDim2.new(0,10,0,192)
             touchLabel.Text = "Touch Prevent AFK"
             touchLabel.BackgroundTransparency = 1
             touchLabel.TextColor3 = Color3.new(1,1,1)
@@ -1544,7 +1602,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,180,0,184)
+            touchToggle.Position = UDim2.new(0,180,0,192)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
