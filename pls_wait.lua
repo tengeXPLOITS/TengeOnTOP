@@ -350,24 +350,24 @@ local function tryHookPlayerStat(player)
                     -- Spin-on-donation: persistent spin increases by donation delta when enabled
                     if SETTINGS.spinOnDonation then
                         pcall(function()
-                            -- use old.lua spin algorithm: averageDelta * multiplier + current angular velocity
+                            -- Use old.lua-inspired spin algorithm: small average of donation scaled by multiplier added to current spin
                             local sSM = tonumber(SETTINGS.spinSpeedMultiplier) or 3
-                            local deltaRaised = tonumber(delta or 0)
+                            local deltaRaised = tonumber(delta or 0) or 0
                             local averageDelta = (deltaRaised) / 3
-                            -- read current spin part velocity if present (use HRP Spin part)
+                            -- read current spin velocity from the persistent Spin BodyAngularVelocity on the HRP
                             local char = LocalPlayer.Character
+                            local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
                             local spinYVelocity = 0
-                            if char then
-                                local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                                if hrp then
-                                    local spinPart = hrp:FindFirstChild("Spin")
-                                    if spinPart and spinPart:IsA("BodyAngularVelocity") and spinPart.AngularVelocity then
-                                        spinYVelocity = tonumber(spinPart.AngularVelocity.Y) or 0
-                                    end
+                            if hrp then
+                                local spinPart = hrp:FindFirstChild("Spin")
+                                if spinPart and spinPart.AngularVelocity then
+                                    spinYVelocity = tonumber(spinPart.AngularVelocity.Y) or 0
                                 end
                             end
-                            xspin = (averageDelta * sSM) + spinYVelocity
+                            -- compute new xspin and clamp
+                            xspin = (averageDelta * sSM) + (tonumber(spinYVelocity) or 0)
                             xspin = math.clamp(xspin, 1, 200)
+                            -- apply the updated spin value and persist
                             ensurePersistentSpin()
                             SETTINGS.spinDefaultSpeed = xspin
                         end)
@@ -886,19 +886,6 @@ local function claimEmptyStands()
                                             -- move using MoveTo instead of teleporting
                                             pcall(function() moveCharacterToPosition(basePos) end)
                                             pcall(function()
-                                                -- orient character to face AWAY from the booth (awayDir points from pivot to basePos)
-                                                local ch = LocalPlayer.Character
-                                                if ch then
-                                                    local hrp2 = ch:FindFirstChild("HumanoidRootPart") or ch:FindFirstChild("Torso")
-                                                    if hrp2 then
-                                                        pcall(function()
-                                                            hrp2.CFrame = CFrame.new(basePos + Vector3.new(0,2,0), basePos + Vector3.new(0,2,0) + awayDir)
-                                                            pcall(function() hrp2.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
-                                                            local cHum = ch:FindFirstChildOfClass("Humanoid")
-                                                            if cHum then pcall(function() cHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
-                                                        end)
-                                                    end
-                                                end
                                                 notify("Claim Monitor", "Monitoring claimed booth position", 2)
                                                 startClaimMonitor(target.stand, basePos)
                                             end)
@@ -1314,7 +1301,33 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
-            -- (Enforce Mode moved below Touch Prevent AFK per user request)
+            -- Claim enforcement mode (Teleport / Walk)
+            local enforceLabel = Instance.new("TextLabel")
+            enforceLabel.Size = UDim2.new(0,120,0,20)
+            enforceLabel.Position = UDim2.new(0,10,0,96)
+            enforceLabel.Text = "Enforce Mode"
+            enforceLabel.TextColor3 = Color3.new(1,1,1)
+            enforceLabel.BackgroundTransparency = 1
+            enforceLabel.Parent = frame
+
+            local enforceToggle = Instance.new("TextButton")
+            enforceToggle.Size = UDim2.new(0,60,0,20)
+            enforceToggle.Position = UDim2.new(0,140,0,96)
+            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
+            enforceToggle.Parent = frame
+            enforceToggle.MouseButton1Click:Connect(function()
+                if SETTINGS.claimEnforceMode == "teleport" then
+                    SETTINGS.claimEnforceMode = "walk"
+                else
+                    SETTINGS.claimEnforceMode = "teleport"
+                end
+                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+                pcall(SaveSettings)
+            end)
+            styleButton(enforceToggle)
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
@@ -1464,21 +1477,13 @@ do
                     end
                 end)
             end
-            
-            -- play/stop handlers (simple loop behavior)
             emotePlayBtn.MouseButton1Click:Connect(function()
                 local id = tostring(emoteBox.Text or "")
-                if id and id ~= "" then
-                    pcall(function() playEmote(id) end)
-                end
+                if id and id ~= "" then pcall(function() playEmote(id) end) end
             end)
             emoteStopBtn.MouseButton1Click:Connect(function()
                 pcall(function() stopEmote() end)
             end)
-            -- start auto-play if settings indicate emote should be playing
-            if SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
-                pcall(function() playEmote(SETTINGS.emoteId) end)
-            end
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
@@ -1536,34 +1541,6 @@ do
                 pcall(SaveSettings)
             end)
             styleButton(touchToggle)
-
-            -- Claim enforcement mode (Teleport / Walk) - moved below touch toggle
-            local enforceLabel = Instance.new("TextLabel")
-            enforceLabel.Size = UDim2.new(0,180,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,232)
-            enforceLabel.Text = "Enforce Mode"
-            enforceLabel.TextColor3 = Color3.new(1,1,1)
-            enforceLabel.BackgroundTransparency = 1
-            enforceLabel.Parent = frame
-
-            local enforceToggle = Instance.new("TextButton")
-            enforceToggle.Size = UDim2.new(0,80,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,232)
-            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
-            enforceToggle.Parent = frame
-            enforceToggle.MouseButton1Click:Connect(function()
-                if SETTINGS.claimEnforceMode == "teleport" then
-                    SETTINGS.claimEnforceMode = "walk"
-                else
-                    SETTINGS.claimEnforceMode = "teleport"
-                end
-                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-                pcall(SaveSettings)
-            end)
-            styleButton(enforceToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
@@ -1627,8 +1604,8 @@ do
                         spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
                         pcall(SaveSettings)
                         if SETTINGS.spinOnDonation then
-                            -- enable persistent spin
-                            currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+                            -- enable persistent spin (use xspin baseline)
+                            xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
                             pcall(ensurePersistentSpin)
                         else
                             -- disable persistent spin
@@ -1873,12 +1850,12 @@ do
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- initialize persistent spin if enabled
         if SETTINGS.spinOnDonation then
-            currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+            xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
             pcall(ensurePersistentSpin)
             LocalPlayer.CharacterAdded:Connect(function()
                 task.wait(0.6)
                 pcall(function()
-                    currentSpinSpeed = tonumber(SETTINGS.spinDefaultSpeed) or currentSpinSpeed
+                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
                     ensurePersistentSpin()
                 end)
             end)
