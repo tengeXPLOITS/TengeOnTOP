@@ -121,7 +121,15 @@ local function stopClaimMonitor()
 end
 local function startClaimMonitor(pos)
     if not pos then return end
-    lastClaimPosition = pos
+    if typeof(pos) == "CFrame" then
+        lastClaimPosition = pos.Position
+    elseif typeof(pos) == "Vector3" then
+        lastClaimPosition = pos
+    elseif type(pos) == "table" and pos.Position then
+        lastClaimPosition = pos.Position
+    else
+        return
+    end
     lastClaimMonitorStop = false
     task.spawn(function()
         while not lastClaimMonitorStop do
@@ -135,6 +143,7 @@ local function startClaimMonitor(pos)
             if d >= 9 then
                 -- teleport/move back to lastClaimPosition
                 pcall(function()
+                    notify("Claim Monitor", "Returning to claimed booth...", 2)
                     moveCharacterToPosition(lastClaimPosition)
                 end)
                 -- slight pause after teleport
@@ -550,24 +559,67 @@ end
 
 local function moveCharacterToPosition(pos, lookDir)
     if not pos then return false end
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") )
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hrp then
-        pcall(function()
-            local targetPos = pos + Vector3.new(0,2,0)
+    -- accept CFrame or Vector3
+    local targetVec = nil
+    if typeof(pos) == "CFrame" then
+        targetVec = pos.Position
+    elseif typeof(pos) == "Vector3" then
+        targetVec = pos
+    elseif type(pos) == "table" and pos.Position then
+        targetVec = pos.Position
+    else
+        return false
+    end
+    local char = LocalPlayer.Character or (LocalPlayer.CharacterAdded and LocalPlayer.CharacterAdded:Wait())
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local success = false
+    pcall(function()
+        if hrp then
+            local targetPos = targetVec + Vector3.new(0,2,0)
             if lookDir and typeof(lookDir) == "Vector3" and lookDir.Magnitude > 0 then
                 hrp.CFrame = CFrame.new(targetPos, targetPos + lookDir.Unit)
             else
                 hrp.CFrame = CFrame.new(targetPos)
             end
-        end)
-        return true
-    elseif hum then
-        local ok, _ = pcall(function() hum:MoveTo(pos) end)
-        return ok
+            success = true
+        end
+    end)
+    -- verify position; if still far, try Humanoid:MoveTo as fallback
+    task.wait(0.08)
+    local okPos = false
+    pcall(function()
+        local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+        if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then okPos = true end
+    end)
+    if not okPos and hum then
+        local moved = false
+        pcall(function() moved = hum:MoveTo(targetVec) end)
+        if moved then
+            -- wait a short moment for MoveTo to complete
+            for i=1,12 do
+                task.wait(0.08)
+                local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+                if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then okPos = true; break end
+            end
+        end
     end
-    return false
+    -- final attempt: set CFrame again and zero velocities
+    if not okPos then
+        pcall(function()
+            local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+            if curHrp then
+                curHrp.CFrame = CFrame.new(targetVec + Vector3.new(0,2,0))
+                pcall(function() curHrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+                pcall(function()
+                    local curHum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if curHum then curHum:ChangeState(Enum.HumanoidStateType.GettingUp) end
+                end)
+            end
+        end)
+    end
+    return true
 end
 
 -- Compute a reliable center and principal axis for a stand using its BasePart children
