@@ -33,6 +33,7 @@ SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 3
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
+SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 -- runtime spin state (xspin follows old.lua behavior)
 local xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
 local function ensurePersistentSpin()
@@ -1291,7 +1292,17 @@ do
 
         -- Main tab
         do
-            local frame = tabFrames.Main
+            local rootFrame = tabFrames.Main
+            -- Add a scrollable content area so Overview can fit many controls
+            local content = Instance.new("ScrollingFrame")
+            content.Name = "OverviewScroll"
+            content.Size = UDim2.new(1, -12, 1, -12)
+            content.Position = UDim2.new(0, 6, 0, 6)
+            content.BackgroundTransparency = 1
+            content.ScrollBarThickness = 8
+            content.CanvasSize = UDim2.new(0,0,0,800)
+            content.Parent = rootFrame
+            local frame = content
             -- Claim button removed (auto-claim runs on load/teleport)
 
             local afkLabel = Instance.new("TextLabel")
@@ -1320,7 +1331,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,298)
+            enforceLabel.Position = UDim2.new(0,10,0,308)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1328,7 +1339,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,298)
+            enforceToggle.Position = UDim2.new(0,180,0,308)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1504,7 +1515,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,208)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,232)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1512,7 +1523,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,208)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,232)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1532,13 +1543,23 @@ do
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,260,0,262)
+            spinMultiplierBox.Position = UDim2.new(0,260,0,270)
             spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
             spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
             spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
             spinMultiplierBox.TextColor3 = Color3.fromRGB(255,255,255)
             local smbCorner = Instance.new("UICorner") smbCorner.Parent = spinMultiplierBox
             spinMultiplierBox.Parent = frame
+            -- Small label next to multiplier for clarity
+            local spinMultLabel = Instance.new("TextLabel")
+            spinMultLabel.Size = UDim2.new(0,12,0,20)
+            spinMultLabel.Position = UDim2.new(0,246,0,270)
+            spinMultLabel.Text = "x"
+            spinMultLabel.BackgroundTransparency = 1
+            spinMultLabel.TextColor3 = Color3.fromRGB(200,200,200)
+            spinMultLabel.Font = Enum.Font.SourceSans
+            spinMultLabel.TextSize = 14
+            spinMultLabel.Parent = frame
             spinMultiplierBox.FocusLost:Connect(function(enter)
                 if enter then
                     local n = tonumber(spinMultiplierBox.Text)
@@ -1588,7 +1609,7 @@ do
             -- Spin on donation toggle (always present in Overview)
             local spinLabel = Instance.new("TextLabel")
             spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,244)
+            spinLabel.Position = UDim2.new(0,10,0,270)
             spinLabel.Text = "Spin On Donation"
             spinLabel.BackgroundTransparency = 1
             spinLabel.TextColor3 = Color3.new(1,1,1)
@@ -1596,7 +1617,7 @@ do
 
             local spinToggleBtn = Instance.new("TextButton")
             spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,244)
+            spinToggleBtn.Position = UDim2.new(0,180,0,270)
             spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
             spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
             spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
