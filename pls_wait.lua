@@ -1411,7 +1411,6 @@ do
 
             -- emote playback helper
             local currentEmoteTrack = nil
-            local emoteRepeatRunning = false
             local function stopEmote()
                 if currentEmoteTrack then
                     pcall(function() currentEmoteTrack:Stop() end)
@@ -1466,36 +1465,19 @@ do
                 end)
             end
             
-            local function startEmoteRepeater()
-                if emoteRepeatRunning then return end
-                emoteRepeatRunning = true
-                task.spawn(function()
-                    while emoteRepeatRunning and SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" do
-                        task.wait(120)
-                        if not (emoteRepeatRunning and SETTINGS.emotePlaying) then break end
-                        pcall(function() playEmote(SETTINGS.emoteId) end)
-                    end
-                end)
-            end
-            local function stopEmoteRepeater()
-                emoteRepeatRunning = false
-            end
-            -- ensure repeater starts/stops with play/stop
+            -- play/stop handlers (simple loop behavior)
             emotePlayBtn.MouseButton1Click:Connect(function()
-                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
-                    SETTINGS.emotePlaying = true
-                    pcall(SaveSettings)
-                    startEmoteRepeater()
+                local id = tostring(emoteBox.Text or "")
+                if id and id ~= "" then
+                    pcall(function() playEmote(id) end)
                 end
             end)
             emoteStopBtn.MouseButton1Click:Connect(function()
-                stopEmoteRepeater()
-                stopEmote()
+                pcall(function() stopEmote() end)
             end)
-            -- start repeater if settings indicate emote should be playing
+            -- start auto-play if settings indicate emote should be playing
             if SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
                 pcall(function() playEmote(SETTINGS.emoteId) end)
-                startEmoteRepeater()
             end
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
