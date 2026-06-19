@@ -1455,7 +1455,7 @@ do
                     if track then
                         pcall(function()
                             track.Priority = Enum.AnimationPriority.Action
-                            track.Looped = false
+                            track.Looped = true
                             currentEmoteTrack = track
                             task.wait(0.05)
                             track:Play()
