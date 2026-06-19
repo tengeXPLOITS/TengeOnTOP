@@ -1314,33 +1314,7 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
-            -- Claim enforcement mode (Teleport / Walk)
-            local enforceLabel = Instance.new("TextLabel")
-            enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,300,0,10)
-            enforceLabel.Text = "Enforce Mode"
-            enforceLabel.TextColor3 = Color3.new(1,1,1)
-            enforceLabel.BackgroundTransparency = 1
-            enforceLabel.Parent = frame
-
-            local enforceToggle = Instance.new("TextButton")
-            enforceToggle.Size = UDim2.new(0,80,0,20)
-            enforceToggle.Position = UDim2.new(0,420,0,10)
-            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
-            enforceToggle.Parent = frame
-            enforceToggle.MouseButton1Click:Connect(function()
-                if SETTINGS.claimEnforceMode == "teleport" then
-                    SETTINGS.claimEnforceMode = "walk"
-                else
-                    SETTINGS.claimEnforceMode = "teleport"
-                end
-                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-                pcall(SaveSettings)
-            end)
-            styleButton(enforceToggle)
+            -- (Enforce Mode moved below Touch Prevent AFK per user request)
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
@@ -1437,6 +1411,7 @@ do
 
             -- emote playback helper
             local currentEmoteTrack = nil
+            local emoteRepeatRunning = false
             local function stopEmote()
                 if currentEmoteTrack then
                     pcall(function() currentEmoteTrack:Stop() end)
@@ -1480,7 +1455,7 @@ do
                     if track then
                         pcall(function()
                             track.Priority = Enum.AnimationPriority.Action
-                            track.Looped = true
+                            track.Looped = false
                             currentEmoteTrack = track
                             task.wait(0.05)
                             track:Play()
@@ -1490,13 +1465,38 @@ do
                     end
                 end)
             end
+            
+            local function startEmoteRepeater()
+                if emoteRepeatRunning then return end
+                emoteRepeatRunning = true
+                task.spawn(function()
+                    while emoteRepeatRunning and SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" do
+                        task.wait(120)
+                        if not (emoteRepeatRunning and SETTINGS.emotePlaying) then break end
+                        pcall(function() playEmote(SETTINGS.emoteId) end)
+                    end
+                end)
+            end
+            local function stopEmoteRepeater()
+                emoteRepeatRunning = false
+            end
+            -- ensure repeater starts/stops with play/stop
             emotePlayBtn.MouseButton1Click:Connect(function()
-                local id = tostring(emoteBox.Text or "")
-                if id and id ~= "" then pcall(function() playEmote(id) end) end
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    SETTINGS.emotePlaying = true
+                    pcall(SaveSettings)
+                    startEmoteRepeater()
+                end
             end)
             emoteStopBtn.MouseButton1Click:Connect(function()
-                pcall(function() stopEmote() end)
+                stopEmoteRepeater()
+                stopEmote()
             end)
+            -- start repeater if settings indicate emote should be playing
+            if SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                pcall(function() playEmote(SETTINGS.emoteId) end)
+                startEmoteRepeater()
+            end
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
             spinMultiplierBox.Size = UDim2.new(0,80,0,24)
@@ -1554,6 +1554,34 @@ do
                 pcall(SaveSettings)
             end)
             styleButton(touchToggle)
+
+            -- Claim enforcement mode (Teleport / Walk) - moved below touch toggle
+            local enforceLabel = Instance.new("TextLabel")
+            enforceLabel.Size = UDim2.new(0,180,0,20)
+            enforceLabel.Position = UDim2.new(0,10,0,232)
+            enforceLabel.Text = "Enforce Mode"
+            enforceLabel.TextColor3 = Color3.new(1,1,1)
+            enforceLabel.BackgroundTransparency = 1
+            enforceLabel.Parent = frame
+
+            local enforceToggle = Instance.new("TextButton")
+            enforceToggle.Size = UDim2.new(0,80,0,20)
+            enforceToggle.Position = UDim2.new(0,180,0,232)
+            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
+            enforceToggle.Parent = frame
+            enforceToggle.MouseButton1Click:Connect(function()
+                if SETTINGS.claimEnforceMode == "teleport" then
+                    SETTINGS.claimEnforceMode = "walk"
+                else
+                    SETTINGS.claimEnforceMode = "teleport"
+                end
+                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+                pcall(SaveSettings)
+            end)
+            styleButton(enforceToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
