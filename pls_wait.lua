@@ -1275,7 +1275,7 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,140,0,96)
+            presetFrame.Position = UDim2.new(0,10,0,200)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
@@ -1379,8 +1379,8 @@ do
             end)
             -- Spin speed multiplier textbox (editable)
             local spinMultiplierBox = Instance.new("TextBox")
-            spinMultiplierBox.Size = UDim2.new(0,120,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,10,0,100)
+            spinMultiplierBox.Size = UDim2.new(0,80,0,24)
+            spinMultiplierBox.Position = UDim2.new(0,260,0,136)
             spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
             spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
             spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1402,7 +1402,7 @@ do
             -- Periodic jump info message for mobile users
             local pjInfo = Instance.new("TextLabel")
             pjInfo.Size = UDim2.new(0,300,0,18)
-            pjInfo.Position = UDim2.new(0,10,0,132)
+            pjInfo.Position = UDim2.new(0,10,0,168)
             pjInfo.Text = "Periodic Jump runs every 3 minutes. Mobile-friendly."
             pjInfo.BackgroundTransparency = 1
             pjInfo.TextColor3 = Color3.fromRGB(200,200,200)
@@ -1414,7 +1414,7 @@ do
             -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
             local touchLabel = Instance.new("TextLabel")
             touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,156)
+            touchLabel.Position = UDim2.new(0,10,0,200)
             touchLabel.Text = "Touch Prevent AFK"
             touchLabel.BackgroundTransparency = 1
             touchLabel.TextColor3 = Color3.new(1,1,1)
@@ -1422,7 +1422,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,200,0,156)
+            touchToggle.Position = UDim2.new(0,180,0,200)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1454,7 +1454,7 @@ do
                     -- Periodic Jump toggle (every 3 minutes)
                     local periodicLabel = Instance.new("TextLabel")
                     periodicLabel.Size = UDim2.new(0,160,0,20)
-                    periodicLabel.Position = UDim2.new(0,10,0,110)
+                    periodicLabel.Position = UDim2.new(0,10,0,100)
                     periodicLabel.Text = "Periodic Jump (3 min)"
                     periodicLabel.BackgroundTransparency = 1
                     periodicLabel.TextColor3 = Color3.new(1,1,1)
@@ -1462,7 +1462,7 @@ do
 
                     local periodicToggle = Instance.new("TextButton")
                     periodicToggle.Size = UDim2.new(0,60,0,20)
-                    periodicToggle.Position = UDim2.new(0,180,0,110)
+                    periodicToggle.Position = UDim2.new(0,180,0,100)
                     periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
                     periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
                     periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
