@@ -141,13 +141,38 @@ local function startClaimMonitor(pos)
             if not hrp then break end
             local d = (hrp.Position - lastClaimPosition).Magnitude
             if d >= 9 then
-                -- teleport/move back to lastClaimPosition
+                -- teleport/move back to lastClaimPosition (strong enforcement)
                 pcall(function()
                     notify("Claim Monitor", "Returning to claimed booth...", 2)
-                    moveCharacterToPosition(lastClaimPosition)
                 end)
-                -- slight pause after teleport
-                task.wait(0.12)
+                -- Try repeated enforcement attempts: set CFrame, MoveTo, and briefly PlatformStand to prevent walking off
+                for attempt = 1, 8 do
+                    if lastClaimMonitorStop then break end
+                    pcall(function()
+                        local char2 = LocalPlayer.Character
+                        if char2 then
+                            local hrp2 = char2:FindFirstChild("HumanoidRootPart") or char2:FindFirstChild("Torso")
+                            local hum2 = char2:FindFirstChildOfClass("Humanoid")
+                            if hrp2 then
+                                hrp2.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0))
+                                pcall(function() hrp2.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+                            end
+                            if hum2 then
+                                pcall(function() hum2:MoveTo(lastClaimPosition) end)
+                                pcall(function() hum2.PlatformStand = true end)
+                            end
+                        end
+                    end)
+                    task.wait(0.08)
+                    pcall(function()
+                        local hum3 = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                        if hum3 then pcall(function() hum3.PlatformStand = false end) end
+                    end)
+                    task.wait(0.05)
+                    -- stop early if back in range
+                    local okp, curhrp = pcall(function() return LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")) end)
+                    if okp and curhrp and (curhrp.Position - lastClaimPosition).Magnitude <= 3 then break end
+                end
             end
         end
     end)
@@ -860,10 +885,14 @@ local function claimEmptyStands()
                             local basePos
                             local frontDir
                             if hrp then
-                                local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
-                                if basePos and awayDir then
-                                    hrp.CFrame = CFrame.new(basePos, basePos + awayDir)
-                                end
+                                        local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
+                                        if basePos and awayDir then
+                                            hrp.CFrame = CFrame.new(basePos, basePos + awayDir)
+                                            pcall(function()
+                                                notify("Claim Monitor", "Monitoring claimed booth position", 2)
+                                                startClaimMonitor(basePos)
+                                            end)
+                                        end
                             end
                         end
                 end
