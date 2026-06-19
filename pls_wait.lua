@@ -32,6 +32,7 @@ SETTINGS.spinDefaultSpeed = SETTINGS.spinDefaultSpeed or 1
 SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 3
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
+SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
 -- runtime spin state (xspin follows old.lua behavior)
 local xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
 local function ensurePersistentSpin()
@@ -164,13 +165,36 @@ local function startClaimMonitor(stand, pos)
             local d = (hrp.Position - lastClaimPosition).Magnitude
             if d >= 12 then
                 pcall(function() notify("Claim Monitor", "Moving back to claimed booth...", 2) end)
-                -- move back using MoveTo only
-                for attempt = 1, 12 do
-                    if lastClaimMonitorStop then break end
-                    pcall(function() hum:MoveTo(lastClaimPosition) end)
-                    task.wait(0.18)
-                    local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-                    if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
+                local mode = SETTINGS.claimEnforceMode or "teleport"
+                if mode == "teleport" then
+                    -- strong teleport enforcement (repeated CFrame set + velocity clear)
+                    for attempt = 1, 8 do
+                        if lastClaimMonitorStop then break end
+                        pcall(function()
+                            local curChar = LocalPlayer.Character
+                            if curChar then
+                                local curHrp = curChar:FindFirstChild("HumanoidRootPart") or curChar:FindFirstChild("Torso")
+                                if curHrp then
+                                    curHrp.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0))
+                                    pcall(function() curHrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+                                end
+                                local curHum = curChar:FindFirstChildOfClass("Humanoid")
+                                if curHum then pcall(function() curHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+                            end
+                        end)
+                        task.wait(0.08)
+                        local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+                        if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
+                    end
+                else
+                    -- walk mode: MoveTo only
+                    for attempt = 1, 12 do
+                        if lastClaimMonitorStop then break end
+                        pcall(function() hum:MoveTo(lastClaimPosition) end)
+                        task.wait(0.18)
+                        local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+                        if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
+                    end
                 end
             end
         end
@@ -581,7 +605,7 @@ local function findSlotFromStand(stand)
     return nil
 end
 
-local function moveCharacterToPosition(pos)
+local function moveCharacterToPosition(pos, mode)
     if not pos then return false end
     local targetVec = nil
     if typeof(pos) == "CFrame" then
@@ -597,16 +621,28 @@ local function moveCharacterToPosition(pos)
     if not char then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
-    -- Use MoveTo only (no direct CFrame teleport)
-    local ok, started = pcall(function() return hum:MoveTo(targetVec) end)
-    if not ok then return false end
-    -- wait up to ~1s for MoveTo to bring us near
-    for i=1,12 do
-        task.wait(0.08)
-        local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-        if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then return true end
+    mode = mode or SETTINGS.claimEnforceMode or "teleport"
+    if mode == "teleport" then
+        pcall(function()
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+            if hrp then
+                hrp.CFrame = CFrame.new(targetVec + Vector3.new(0,2,0))
+                pcall(function() hrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+            end
+            pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+        end)
+        return true
+    else
+        -- Use MoveTo only (walk enforcement)
+        local ok, started = pcall(function() return hum:MoveTo(targetVec) end)
+        if not ok then return false end
+        for i=1,12 do
+            task.wait(0.08)
+            local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+            if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then return true end
+        end
+        return false
     end
-    return false
 end
 
 -- Compute a reliable center and principal axis for a stand using its BasePart children
@@ -951,6 +987,7 @@ do
                 spinDefaultSpeed = SETTINGS.spinDefaultSpeed,
                 spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                 touchPreventAFK = SETTINGS.touchPreventAFK,
+                claimEnforceMode = SETTINGS.claimEnforceMode,
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
@@ -990,6 +1027,7 @@ do
             SETTINGS.spinDefaultSpeed = decoded.spinDefaultSpeed or SETTINGS.spinDefaultSpeed
             SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier or SETTINGS.spinSpeedMultiplier
             SETTINGS.touchPreventAFK = decoded.touchPreventAFK or SETTINGS.touchPreventAFK
+            SETTINGS.claimEnforceMode = decoded.claimEnforceMode or SETTINGS.claimEnforceMode
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
@@ -1265,6 +1303,33 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
+            -- Claim enforcement mode (Teleport / Walk)
+            local enforceLabel = Instance.new("TextLabel")
+            enforceLabel.Size = UDim2.new(0,120,0,20)
+            enforceLabel.Position = UDim2.new(0,300,0,10)
+            enforceLabel.Text = "Enforce Mode"
+            enforceLabel.TextColor3 = Color3.new(1,1,1)
+            enforceLabel.BackgroundTransparency = 1
+            enforceLabel.Parent = frame
+
+            local enforceToggle = Instance.new("TextButton")
+            enforceToggle.Size = UDim2.new(0,80,0,20)
+            enforceToggle.Position = UDim2.new(0,420,0,10)
+            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
+            enforceToggle.Parent = frame
+            enforceToggle.MouseButton1Click:Connect(function()
+                if SETTINGS.claimEnforceMode == "teleport" then
+                    SETTINGS.claimEnforceMode = "walk"
+                else
+                    SETTINGS.claimEnforceMode = "teleport"
+                end
+                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+                pcall(SaveSettings)
+            end)
+            styleButton(enforceToggle)
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
