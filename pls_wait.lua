@@ -30,6 +30,8 @@ SETTINGS.periodicJump = SETTINGS.periodicJump or false
 SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
 SETTINGS.spinDefaultSpeed = SETTINGS.spinDefaultSpeed or 1
 SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 3
+local touchEnabled = UserInputService and UserInputService.TouchEnabled
+SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 -- runtime spin state (xspin follows old.lua behavior)
 local xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
 local function ensurePersistentSpin()
@@ -107,6 +109,38 @@ local function notify(title, text, duration)
     end
     pcall(function()
         StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
+    end)
+end
+
+-- Claim position monitor: ensure player doesn't wander far from claimed booth
+local lastClaimPosition = nil
+local lastClaimMonitorStop = false
+local function stopClaimMonitor()
+    lastClaimMonitorStop = true
+    lastClaimPosition = nil
+end
+local function startClaimMonitor(pos)
+    if not pos then return end
+    lastClaimPosition = pos
+    lastClaimMonitorStop = false
+    task.spawn(function()
+        while not lastClaimMonitorStop do
+            task.wait(0.8)
+            if lastClaimMonitorStop then break end
+            local char = LocalPlayer.Character
+            if not char then break end
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+            if not hrp then break end
+            local d = (hrp.Position - lastClaimPosition).Magnitude
+            if d >= 9 then
+                -- teleport/move back to lastClaimPosition
+                pcall(function()
+                    moveCharacterToPosition(lastClaimPosition)
+                end)
+                -- slight pause after teleport
+                task.wait(0.12)
+            end
+        end
     end)
 end
 
@@ -676,6 +710,8 @@ local function claimEmptyStands()
     if claimLock then return false end
     claimLock = true
     local function _run()
+    -- stop any prior monitor while attempting a new claim
+    pcall(function() stopClaimMonitor() end)
     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:WaitForChild("Stands", 5)
     if not standsFolder then
         notify("Booth Claim", "No Stands folder found.", 4)
@@ -866,6 +902,11 @@ do
                 webhookToggle = SETTINGS.webhookToggle,
                 webhookUrl = SETTINGS.webhookUrl,
                 antiAfk = SETTINGS.antiAfk,
+                periodicJump = SETTINGS.periodicJump,
+                spinOnDonation = SETTINGS.spinOnDonation,
+                spinDefaultSpeed = SETTINGS.spinDefaultSpeed,
+                spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                touchPreventAFK = SETTINGS.touchPreventAFK,
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
@@ -900,6 +941,11 @@ do
             SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
+            SETTINGS.periodicJump = decoded.periodicJump or SETTINGS.periodicJump
+            SETTINGS.spinOnDonation = decoded.spinOnDonation or SETTINGS.spinOnDonation
+            SETTINGS.spinDefaultSpeed = decoded.spinDefaultSpeed or SETTINGS.spinDefaultSpeed
+            SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier or SETTINGS.spinSpeedMultiplier
+            SETTINGS.touchPreventAFK = decoded.touchPreventAFK or SETTINGS.touchPreventAFK
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
@@ -914,6 +960,7 @@ do
                 SETTINGS.webhookToggle = cfg.webhookToggle or SETTINGS.webhookToggle
                 SETTINGS.webhookUrl = cfg.webhookUrl or SETTINGS.webhookUrl
                 SETTINGS.antiAfk = cfg.antiAfk or SETTINGS.antiAfk
+                SETTINGS.touchPreventAFK = cfg.touchPreventAFK or SETTINGS.touchPreventAFK
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
                 hopRangeText = cfg.hopRange or hopRangeText
@@ -1330,6 +1377,63 @@ do
             emoteStopBtn.MouseButton1Click:Connect(function()
                 pcall(function() stopEmote() end)
             end)
+            -- Spin speed multiplier textbox (editable)
+            local spinMultiplierBox = Instance.new("TextBox")
+            spinMultiplierBox.Size = UDim2.new(0,120,0,24)
+            spinMultiplierBox.Position = UDim2.new(0,10,0,100)
+            spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
+            spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
+            spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            spinMultiplierBox.TextColor3 = Color3.fromRGB(255,255,255)
+            local smbCorner = Instance.new("UICorner") smbCorner.Parent = spinMultiplierBox
+            spinMultiplierBox.Parent = frame
+            spinMultiplierBox.FocusLost:Connect(function(enter)
+                if enter then
+                    local n = tonumber(spinMultiplierBox.Text)
+                    if n and n > 0 then
+                        SETTINGS.spinSpeedMultiplier = n
+                        pcall(SaveSettings)
+                    else
+                        spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
+                    end
+                end
+            end)
+
+            -- Periodic jump info message for mobile users
+            local pjInfo = Instance.new("TextLabel")
+            pjInfo.Size = UDim2.new(0,300,0,18)
+            pjInfo.Position = UDim2.new(0,10,0,132)
+            pjInfo.Text = "Periodic Jump runs every 3 minutes. Mobile-friendly."
+            pjInfo.BackgroundTransparency = 1
+            pjInfo.TextColor3 = Color3.fromRGB(200,200,200)
+            pjInfo.Font = Enum.Font.SourceSans
+            pjInfo.TextSize = 14
+            pjInfo.TextXAlignment = Enum.TextXAlignment.Left
+            pjInfo.Parent = frame
+
+            -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
+            local touchLabel = Instance.new("TextLabel")
+            touchLabel.Size = UDim2.new(0,180,0,20)
+            touchLabel.Position = UDim2.new(0,10,0,156)
+            touchLabel.Text = "Touch Prevent AFK"
+            touchLabel.BackgroundTransparency = 1
+            touchLabel.TextColor3 = Color3.new(1,1,1)
+            touchLabel.Parent = frame
+
+            local touchToggle = Instance.new("TextButton")
+            touchToggle.Size = UDim2.new(0,60,0,20)
+            touchToggle.Position = UDim2.new(0,200,0,156)
+            touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
+            touchToggle.Parent = frame
+            touchToggle.MouseButton1Click:Connect(function()
+                SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
+                touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
+            styleButton(touchToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
@@ -1649,6 +1753,35 @@ do
                 end)
             end)
         end
+        -- Touch-prevent AFK: simulate a brief touch every 120s when enabled
+        task.spawn(function()
+            while true do
+                if SETTINGS.touchPreventAFK then
+                    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+                    if ok and vu then
+                        pcall(function()
+                            vu:CaptureController()
+                            vu:Button1Down(Vector2.new(0,0))
+                            task.wait(0.06)
+                            vu:Button1Up(Vector2.new(0,0))
+                        end)
+                    else
+                        -- fallback to ClickButton2 if available
+                        pcall(function()
+                            local vu2 = game:GetService("VirtualUser")
+                            vu2:CaptureController()
+                            vu2:ClickButton2(Vector2.new(0,0))
+                        end)
+                    end
+                    for i=1,120 do
+                        task.wait(1)
+                        if not SETTINGS.touchPreventAFK then break end
+                    end
+                else
+                    task.wait(1)
+                end
+            end
+        end)
         -- Periodic jump task (every 3 minutes) when enabled
         task.spawn(function()
             while true do
