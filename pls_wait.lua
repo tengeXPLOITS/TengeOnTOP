@@ -105,67 +105,10 @@ local function notify(title, text, duration)
         task.spawn(function()
             task.wait(duration)
             pcall(function() notif:Destroy() end)
-            end
-        end
-
-        -- Periodic Jump and Spin controls (Overview tab)
-        do
-            -- Periodic Jump toggle (every 3 minutes)
-            local periodicLabel = Instance.new("TextLabel")
-            periodicLabel.Size = UDim2.new(0,160,0,20)
-            periodicLabel.Position = UDim2.new(0,10,0,100)
-            periodicLabel.Text = "Periodic Jump (3 min)"
-            periodicLabel.BackgroundTransparency = 1
-            periodicLabel.TextColor3 = Color3.new(1,1,1)
-            periodicLabel.Parent = tabFrames.Main
-
-            local periodicToggle = Instance.new("TextButton")
-            periodicToggle.Size = UDim2.new(0,60,0,20)
-            periodicToggle.Position = UDim2.new(0,180,0,100)
-            periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-            periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
-            periodicToggle.Parent = tabFrames.Main
-            periodicToggle.MouseButton1Click:Connect(function()
-                SETTINGS.periodicJump = not SETTINGS.periodicJump
-                periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-                pcall(SaveSettings)
-            end)
-            styleButton(periodicToggle)
-
-            -- Spin on donation toggle
-            local spinLabel = Instance.new("TextLabel")
-            spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,136)
-            spinLabel.Text = "Spin On Donation"
-            spinLabel.BackgroundTransparency = 1
-            spinLabel.TextColor3 = Color3.new(1,1,1)
-            spinLabel.Parent = tabFrames.Main
-
-            local spinToggleBtn = Instance.new("TextButton")
-            spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,136)
-            spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-            spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
-            spinToggleBtn.Parent = tabFrames.Main
-            spinToggleBtn.MouseButton1Click:Connect(function()
-                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
-                spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.spinOnDonation then
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
-                    pcall(ensurePersistentSpin)
-                else
-                    pcall(removePersistentSpin)
-                end
-            end)
-            styleButton(spinToggleBtn)
-        end
-
-        -- Server-Hop tab
+        end)
+        return
+    end
+    pcall(function()
         StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
     end)
 end
@@ -1361,7 +1304,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,232)
+            enforceLabel.Position = UDim2.new(0,10,0,96)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1369,7 +1312,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,232)
+            enforceToggle.Position = UDim2.new(0,140,0,96)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1615,7 +1558,61 @@ do
                         pcall(function() playEmote(SETTINGS.emoteId) end)
                     end
 
-                    -- (Periodic Jump and Spin controls moved below emote block for consistent layout)
+                    -- Periodic Jump toggle (every 3 minutes)
+                    local periodicLabel = Instance.new("TextLabel")
+                    periodicLabel.Size = UDim2.new(0,160,0,20)
+                    periodicLabel.Position = UDim2.new(0,10,0,100)
+                    periodicLabel.Text = "Periodic Jump (3 min)"
+                    periodicLabel.BackgroundTransparency = 1
+                    periodicLabel.TextColor3 = Color3.new(1,1,1)
+                    periodicLabel.Parent = frame
+
+                    local periodicToggle = Instance.new("TextButton")
+                    periodicToggle.Size = UDim2.new(0,60,0,20)
+                    periodicToggle.Position = UDim2.new(0,180,0,100)
+                    periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                    periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+                    periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
+                    local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
+                    periodicToggle.Parent = frame
+                    periodicToggle.MouseButton1Click:Connect(function()
+                        SETTINGS.periodicJump = not SETTINGS.periodicJump
+                        periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+                        pcall(SaveSettings)
+                    end)
+                    styleButton(periodicToggle)
+
+                    -- Spin on donation toggle
+                    local spinLabel = Instance.new("TextLabel")
+                    spinLabel.Size = UDim2.new(0,140,0,20)
+                    spinLabel.Position = UDim2.new(0,10,0,136)
+                    spinLabel.Text = "Spin On Donation"
+                    spinLabel.BackgroundTransparency = 1
+                    spinLabel.TextColor3 = Color3.new(1,1,1)
+                    spinLabel.Parent = frame
+
+                    local spinToggleBtn = Instance.new("TextButton")
+                    spinToggleBtn.Size = UDim2.new(0,60,0,20)
+                    spinToggleBtn.Position = UDim2.new(0,180,0,136)
+                    spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                    spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
+                    spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+                    local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
+                    spinToggleBtn.Parent = frame
+                    spinToggleBtn.MouseButton1Click:Connect(function()
+                        SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
+                        spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                        pcall(SaveSettings)
+                        if SETTINGS.spinOnDonation then
+                            -- enable persistent spin (use xspin baseline)
+                            xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+                            pcall(ensurePersistentSpin)
+                        else
+                            -- disable persistent spin
+                            pcall(removePersistentSpin)
+                        end
+                    end)
+                    styleButton(spinToggleBtn)
                     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
                         pcall(attemptPlay)
                     else
