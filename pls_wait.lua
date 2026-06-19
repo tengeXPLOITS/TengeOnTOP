@@ -119,8 +119,8 @@ local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
 end
-local function startClaimMonitor(pos)
-    if not pos then return end
+local function startClaimMonitor(stand, pos)
+    if not stand or not pos then return end
     if typeof(pos) == "CFrame" then
         lastClaimPosition = pos.Position
     elseif typeof(pos) == "Vector3" then
@@ -135,43 +135,42 @@ local function startClaimMonitor(pos)
         while not lastClaimMonitorStop do
             task.wait(0.8)
             if lastClaimMonitorStop then break end
+            -- ensure stand still exists
+            if not stand or not stand.Parent then stopClaimMonitor(); break end
+            -- check ownership: Owner (ObjectValue) or StringValue
+            local ownerObj = stand:FindFirstChild("Owner") or stand:FindFirstChild("Wner")
+            local owned = false
+            if ownerObj then
+                pcall(function()
+                    if ownerObj:IsA("ObjectValue") then
+                        if ownerObj.Value == LocalPlayer or tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
+                    elseif ownerObj:IsA("StringValue") then
+                        if tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
+                    else
+                        if tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
+                    end
+                end)
+            end
+            if not owned then
+                -- no longer our stand; stop monitoring
+                stopClaimMonitor()
+                break
+            end
             local char = LocalPlayer.Character
             if not char then break end
             local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            if not hrp then break end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum then break end
             local d = (hrp.Position - lastClaimPosition).Magnitude
-            if d >= 9 then
-                -- teleport/move back to lastClaimPosition (strong enforcement)
-                pcall(function()
-                    notify("Claim Monitor", "Returning to claimed booth...", 2)
-                end)
-                -- Try repeated enforcement attempts: set CFrame, MoveTo, and briefly PlatformStand to prevent walking off
-                for attempt = 1, 8 do
+            if d >= 12 then
+                pcall(function() notify("Claim Monitor", "Moving back to claimed booth...", 2) end)
+                -- move back using MoveTo only
+                for attempt = 1, 12 do
                     if lastClaimMonitorStop then break end
-                    pcall(function()
-                        local char2 = LocalPlayer.Character
-                        if char2 then
-                            local hrp2 = char2:FindFirstChild("HumanoidRootPart") or char2:FindFirstChild("Torso")
-                            local hum2 = char2:FindFirstChildOfClass("Humanoid")
-                            if hrp2 then
-                                hrp2.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0))
-                                pcall(function() hrp2.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
-                            end
-                            if hum2 then
-                                pcall(function() hum2:MoveTo(lastClaimPosition) end)
-                                pcall(function() hum2.PlatformStand = true end)
-                            end
-                        end
-                    end)
-                    task.wait(0.08)
-                    pcall(function()
-                        local hum3 = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                        if hum3 then pcall(function() hum3.PlatformStand = false end) end
-                    end)
-                    task.wait(0.05)
-                    -- stop early if back in range
-                    local okp, curhrp = pcall(function() return LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")) end)
-                    if okp and curhrp and (curhrp.Position - lastClaimPosition).Magnitude <= 3 then break end
+                    pcall(function() hum:MoveTo(lastClaimPosition) end)
+                    task.wait(0.18)
+                    local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
+                    if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
                 end
             end
         end
@@ -582,9 +581,8 @@ local function findSlotFromStand(stand)
     return nil
 end
 
-local function moveCharacterToPosition(pos, lookDir)
+local function moveCharacterToPosition(pos)
     if not pos then return false end
-    -- accept CFrame or Vector3
     local targetVec = nil
     if typeof(pos) == "CFrame" then
         targetVec = pos.Position
@@ -597,54 +595,18 @@ local function moveCharacterToPosition(pos, lookDir)
     end
     local char = LocalPlayer.Character or (LocalPlayer.CharacterAdded and LocalPlayer.CharacterAdded:Wait())
     if not char then return false end
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    local success = false
-    pcall(function()
-        if hrp then
-            local targetPos = targetVec + Vector3.new(0,2,0)
-            if lookDir and typeof(lookDir) == "Vector3" and lookDir.Magnitude > 0 then
-                hrp.CFrame = CFrame.new(targetPos, targetPos + lookDir.Unit)
-            else
-                hrp.CFrame = CFrame.new(targetPos)
-            end
-            success = true
-        end
-    end)
-    -- verify position; if still far, try Humanoid:MoveTo as fallback
-    task.wait(0.08)
-    local okPos = false
-    pcall(function()
+    if not hum then return false end
+    -- Use MoveTo only (no direct CFrame teleport)
+    local ok, started = pcall(function() return hum:MoveTo(targetVec) end)
+    if not ok then return false end
+    -- wait up to ~1s for MoveTo to bring us near
+    for i=1,12 do
+        task.wait(0.08)
         local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-        if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then okPos = true end
-    end)
-    if not okPos and hum then
-        local moved = false
-        pcall(function() moved = hum:MoveTo(targetVec) end)
-        if moved then
-            -- wait a short moment for MoveTo to complete
-            for i=1,12 do
-                task.wait(0.08)
-                local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-                if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then okPos = true; break end
-            end
-        end
+        if curHrp and (curHrp.Position - targetVec).Magnitude <= 3 then return true end
     end
-    -- final attempt: set CFrame again and zero velocities
-    if not okPos then
-        pcall(function()
-            local curHrp = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-            if curHrp then
-                curHrp.CFrame = CFrame.new(targetVec + Vector3.new(0,2,0))
-                pcall(function() curHrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
-                pcall(function()
-                    local curHum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                    if curHum then curHum:ChangeState(Enum.HumanoidStateType.GettingUp) end
-                end)
-            end
-        end)
-    end
-    return true
+    return false
 end
 
 -- Compute a reliable center and principal axis for a stand using its BasePart children
@@ -849,8 +811,8 @@ local function claimEmptyStands()
     local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
     local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
-    -- move and orient directly in front of the booth
-    moveCharacterToPosition(safePos, dir)
+    -- move directly in front of the booth (no teleport)
+    moveCharacterToPosition(safePos)
     task.wait(0.25)
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
@@ -887,10 +849,11 @@ local function claimEmptyStands()
                             if hrp then
                                         local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
                                         if basePos and awayDir then
-                                            hrp.CFrame = CFrame.new(basePos, basePos + awayDir)
+                                            -- move using MoveTo instead of teleporting
+                                            pcall(function() moveCharacterToPosition(basePos) end)
                                             pcall(function()
                                                 notify("Claim Monitor", "Monitoring claimed booth position", 2)
-                                                startClaimMonitor(basePos)
+                                                startClaimMonitor(target.stand, basePos)
                                             end)
                                         end
                             end
