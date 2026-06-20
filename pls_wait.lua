@@ -33,7 +33,7 @@ SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or
 SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 -- runtime spin state (xspin follows old.lua behavior)
-local xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
+local xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
 local function ensurePersistentSpin()
     local char = LocalPlayer.Character
     if not char then return end
@@ -1110,7 +1110,7 @@ do
         if not SETTINGS.spinDefaultSpeed or SETTINGS.spinDefaultSpeed < 1 then
             SETTINGS.spinDefaultSpeed = 1
         end
-        xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
+        xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
         -- (initialization guard will be checked after SharedEnv is defined)
         -- Provide a small UI helper used by buttons
         local function styleButton(btn)
@@ -1663,6 +1663,15 @@ do
                     if n and n > 0 then
                         SETTINGS.spinSpeedMultiplier = n
                         pcall(SaveSettings)
+                        -- if spin-on-donation is active, immediately apply multiplier to current/default spin
+                        pcall(function()
+                            if SETTINGS.spinOnDonation then
+                                local base = tonumber(SETTINGS.spinDefaultSpeed) or 1
+                                local mult = tonumber(SETTINGS.spinSpeedMultiplier) or 1
+                                xspin = math.clamp(base * mult, 1, 200)
+                                ensurePersistentSpin()
+                            end
+                        end)
                     else
                         spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
                     end
@@ -1725,7 +1734,9 @@ do
                 spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
                 pcall(SaveSettings)
                 if SETTINGS.spinOnDonation then
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
+                    local base = tonumber(SETTINGS.spinDefaultSpeed) or 1
+                    local mult = tonumber(SETTINGS.spinSpeedMultiplier) or 1
+                    xspin = math.clamp(base * mult, 1, 200)
                     pcall(ensurePersistentSpin)
                     pcall(startDonationMonitor)
                 else
@@ -2044,7 +2055,7 @@ do
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- initialize persistent spin if enabled
         if SETTINGS.spinOnDonation then
-            xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
+            xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
             pcall(ensurePersistentSpin)
             LocalPlayer.CharacterAdded:Connect(function()
                 task.wait(0.6)
