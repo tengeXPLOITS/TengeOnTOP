@@ -301,11 +301,15 @@ local function tryHookPlayerStat(player)
     local function parseAmount(v)
         if type(v) == "number" then return math.floor(v) end
         local s = tostring(v or "")
-        local n = s:match("%-?%d+")
-        if not n then
-            n = s:gsub("[^%d]", "")
-        end
-        return tonumber(n) or 0
+        -- Remove any non-digit or non-minus characters (handles emojis, symbols, commas, parentheses)
+        local cleaned = s:gsub("[^%d%-]", "")
+        if cleaned == "" then return 0 end
+        -- If cleaned contains multiple minus signs or is malformed, fall back to extracting first sequence of digits
+        local ok, num = pcall(function() return tonumber(cleaned) end)
+        if ok and type(num) == "number" then return math.floor(num) end
+        local m = s:match("%-?%d+")
+        if m then return tonumber(m) or 0 end
+        return 0
     end
     local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
     if not ls then return false end
