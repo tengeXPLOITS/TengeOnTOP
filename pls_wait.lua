@@ -407,9 +407,51 @@ end
 -- queueOnTeleport helper (supports executors)
 local function queueOnTeleport(codeString)
     if not codeString or codeString == "" then return false end
-    if queue_on_teleport then pcall(function() queue_on_teleport(codeString) end); return true end
-    if syn and syn.queue_on_teleport then pcall(function() syn.queue_on_teleport(codeString) end); return true end
-    if fluxus and fluxus.queue_on_teleport then pcall(function() fluxus.queue_on_teleport(codeString) end); return true end
+    -- try common globals/providers
+    local ok
+    if queue_on_teleport then ok = pcall(function() queue_on_teleport(codeString) end); if ok then return true end end
+    if syn and syn.queue_on_teleport then ok = pcall(function() syn.queue_on_teleport(codeString) end); if ok then return true end end
+    if fluxus and fluxus.queue_on_teleport then ok = pcall(function() fluxus.queue_on_teleport(codeString) end); if ok then return true end end
+    -- some executors expose a different name; attempt invoke via pcall on global
+    if _G and _G.queue_on_teleport then ok = pcall(function() _G.queue_on_teleport(codeString) end); if ok then return true end end
+    return false
+end
+
+-- ensureQueuedScript: try to queue the provided code string; if unsupported, attempt a writefile-based fallback
+local function ensureQueuedScript(codeString)
+    if not codeString or codeString == "" then return false end
+    local queued = false
+    pcall(function() queued = queueOnTeleport(codeString) end)
+    if queued then return true end
+
+    -- Fallback: if writefile available, write a small bootstrap that will load the remote core on next launch
+    local okWrite = false
+    pcall(function()
+        if writefile then
+            writefile("pls_wait_queued.lua", codeString)
+            okWrite = true
+        elseif syn and syn.write_file then
+            syn.write_file("pls_wait_queued.lua", codeString)
+            okWrite = true
+        end
+    end)
+    if okWrite then
+        -- Try to queue execution using syn.queue_on_teleport pointing to dofile if available
+        local okQueueFile = false
+        pcall(function()
+            if syn and syn.queue_on_teleport then
+                syn.queue_on_teleport("dofile('pls_wait_queued.lua')")
+                okQueueFile = true
+            end
+        end)
+        if okQueueFile then return true end
+        -- notify the user that a fallback file was written but automatic queuing wasn't available
+        pcall(function() notify("Persistence", "Wrote pls_wait_queued.lua locally; your executor may not support queue_on_teleport. If teleporting, re-run this file after join.", 8) end)
+        return true
+    end
+
+    -- final fallback: inform user that automatic persistence isn't available
+    pcall(function() notify("Persistence", "queue_on_teleport not supported by your executor; enable persistToggles manually.", 8) end)
     return false
 end
 
@@ -454,7 +496,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
             if ok2 and cfgJson then
                 qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
             end
-            pcall(function() queueOnTeleport(qcode) end)
+            pcall(function() ensureQueuedScript(qcode) end)
             local ts = game:GetService("TeleportService")
             local okt, terr = pcall(function()
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
@@ -473,7 +515,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
 
                 if isGameFull then
                     -- ensure qcode available; queue it again to be safe
-                    pcall(function() queueOnTeleport(qcode) end)
+                    pcall(function() ensureQueuedScript(qcode) end)
                     -- Kick the player so Roblox will attempt the queued script on rejoin
                     task.spawn(function()
                         task.wait(0.05)
@@ -1092,10 +1134,13 @@ do
             end)
         end
 
-        -- Prevent duplicate UIs across teleports / multiple runs: always remove any existing UI
+        -- Prevent duplicate UIs across teleports / multiple runs: use a shared env flag
         local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-        -- If the script was already initialized elsewhere, abort to avoid duplication
-        if SharedEnv.PLS_WAIT_SCRIPT_LOADED then return end
+        -- If the script was already initialized elsewhere, allow re-init (some executors persist getgenv across teleports)
+        if SharedEnv.PLS_WAIT_SCRIPT_LOADED then
+            -- clear previous marker and allow re-initialization so UI reliably appears after queue_on_teleport
+            pcall(function() SharedEnv.PLS_WAIT_SCRIPT_LOADED = nil end)
+        end
         SharedEnv.PLS_WAIT_SCRIPT_LOADED = true
         pcall(function()
             local existing = playerGui:FindFirstChild("PlsWaitUI")
@@ -1108,6 +1153,19 @@ do
         screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         screen.Parent = playerGui
         SharedEnv.PLS_WAIT_UI_LOADED = true
+
+        -- Mini toggle button for open/close (persistent, outside mainFrame)
+        local uiToggle = Instance.new("ImageButton")
+        uiToggle.Name = "PlsWaitToggle"
+        uiToggle.Size = UDim2.new(0, 40, 0, 40)
+        uiToggle.Position = UDim2.new(0, 12, 1, -64)
+        uiToggle.AnchorPoint = Vector2.new(0,0)
+        uiToggle.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        uiToggle.Image = ""
+        uiToggle.Parent = screen
+        local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
+        local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 14; togLabel.Parent = uiToggle
+        uiToggle.Visible = true
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
         local MAIN_W, MAIN_H = 620, 420
@@ -1154,6 +1212,18 @@ do
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
 
+        -- Add a close/minimize button in the title bar
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Size = UDim2.new(0, 32, 0, 20)
+        closeBtn.Position = UDim2.new(1, -44, 0, 4)
+        closeBtn.Text = "_"
+        closeBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
+        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.TextSize = 16
+        closeBtn.Parent = titleBar
+        styleButton(closeBtn)
+
         -- (dropdown/collapse button removed as it was non-functional)
 
         -- Dragging logic (mouse + touch)
@@ -1185,6 +1255,32 @@ do
                 if input == dragInput and dragging then
                     pcall(update, input)
                 end
+            end)
+            -- store original mainFrame position for restore animations
+            local originalMainPos = mainFrame.Position
+            local minimized = false
+            local TweenService = game:GetService("TweenService")
+            local function minimizeUI()
+                if minimized then return end
+                minimized = true
+                -- fly into toggle button
+                local targetPos = uiToggle.Position
+                local info = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+                pcall(function() TweenService:Create(mainFrame, info, { Position = targetPos, Size = UDim2.new(0,40,0,40) }):Play() end)
+                task.delay(0.45, function() mainFrame.Visible = false end)
+            end
+            local function restoreUI()
+                if not minimized then return end
+                mainFrame.Visible = true
+                local info = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+                pcall(function() TweenService:Create(mainFrame, info, { Position = originalMainPos, Size = UDim2.new(0, MAIN_W, 0, MAIN_H) }):Play() end)
+                task.delay(0.45, function() minimized = false end)
+            end
+            closeBtn.MouseButton1Click:Connect(function()
+                if minimized then restoreUI() else minimizeUI() end
+            end)
+            uiToggle.MouseButton1Click:Connect(function()
+                if minimized then restoreUI() else minimizeUI() end
             end)
         end
         local mainCorner = Instance.new("UICorner")
@@ -1931,7 +2027,7 @@ do
                 if ok2 and cfgJson then
                     qcode = ("(function() local _json = %q; local ok,cfg = pcall(function() return game:GetService('HttpService'):JSONDecode(_json) end); if ok and type(cfg)=='table' then _G.__PLS_WAIT_CONFIG = cfg end; local f,err = loadstring(game:HttpGet('https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua')); if f then pcall(f) else warn(err) end end)()"):format(cfgJson)
                 end
-                pcall(function() queueOnTeleport(qcode) end)
+                pcall(function() ensureQueuedScript(qcode) end)
             end
         end)
         -- Ensure claim runs after teleports/character spawn
