@@ -19,10 +19,8 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
--- Minimal SETTINGS/defaults used across the script
 SETTINGS = SETTINGS or {}
-SETTINGS.webhookToggle = SETTINGS.webhookToggle or false
-SETTINGS.webhookUrl = SETTINGS.webhookUrl or ""
+-- Webhook / donation helpers
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
@@ -593,16 +591,7 @@ local function stopDonationMonitor()
     donationTotals = {}
 end
 
--- Handle teleport 'server full' error by showing a KICKED modal and kicking the player
-local function handleTeleportFullKick(reason)
-    -- Use the default Roblox kick screen: just kick the player with the provided reason.
-    task.spawn(function()
-        task.wait(0.6)
-        pcall(function()
-            LocalPlayer:Kick(tostring(reason or "finding a suitable server for you"))
-        end)
-    end)
-end
+-- (previously had a helper to show kick modal on teleport failure; removed as unused)
 
 -- BOOTH CLAIMING: paste or require your booth claiming code here and call it
 -- Example placeholder function:
@@ -1081,8 +1070,8 @@ do
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
             SETTINGS.periodicJump = decoded.periodicJump or SETTINGS.periodicJump
             SETTINGS.spinOnDonation = decoded.spinOnDonation or SETTINGS.spinOnDonation
-            SETTINGS.spinDefaultSpeed = decoded.spinDefaultSpeed or SETTINGS.spinDefaultSpeed
-            SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier or SETTINGS.spinSpeedMultiplier
+            SETTINGS.spinDefaultSpeed = tonumber(decoded.spinDefaultSpeed) or SETTINGS.spinDefaultSpeed
+            SETTINGS.spinSpeedMultiplier = tonumber(decoded.spinSpeedMultiplier) or SETTINGS.spinSpeedMultiplier
             SETTINGS.touchPreventAFK = decoded.touchPreventAFK or SETTINGS.touchPreventAFK
             SETTINGS.claimEnforceMode = decoded.claimEnforceMode or SETTINGS.claimEnforceMode
             hopRangeText = decoded.hopRange or hopRangeText
@@ -1105,11 +1094,23 @@ do
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
+                -- coerce and apply spin default from queued config (ensure numeric and sane default)
+                if cfg.spinDefaultSpeed then
+                    SETTINGS.spinDefaultSpeed = tonumber(cfg.spinDefaultSpeed) or SETTINGS.spinDefaultSpeed
+                end
+                SETTINGS.spinOnDonation = cfg.spinOnDonation or SETTINGS.spinOnDonation
+                SETTINGS.spinSpeedMultiplier = tonumber(cfg.spinSpeedMultiplier) or SETTINGS.spinSpeedMultiplier
                 _G.__PLS_WAIT_CONFIG = nil
             end
         end)
 
         pcall(LoadSettings)
+        -- Ensure spin default is numeric and apply initial xspin (default to 1)
+        SETTINGS.spinDefaultSpeed = tonumber(SETTINGS.spinDefaultSpeed) or 1
+        if not SETTINGS.spinDefaultSpeed or SETTINGS.spinDefaultSpeed < 1 then
+            SETTINGS.spinDefaultSpeed = 1
+        end
+        xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
         -- (initialization guard will be checked after SharedEnv is defined)
         -- Provide a small UI helper used by buttons
         local function styleButton(btn)
@@ -1724,7 +1725,7 @@ do
                 spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
                 pcall(SaveSettings)
                 if SETTINGS.spinOnDonation then
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
                     pcall(ensurePersistentSpin)
                     pcall(startDonationMonitor)
                 else
@@ -2043,12 +2044,12 @@ do
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- initialize persistent spin if enabled
         if SETTINGS.spinOnDonation then
-            xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+            xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
             pcall(ensurePersistentSpin)
             LocalPlayer.CharacterAdded:Connect(function()
                 task.wait(0.6)
                 pcall(function()
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or xspin
+                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
                     ensurePersistentSpin()
                 end)
             end)
