@@ -24,16 +24,20 @@ SETTINGS = SETTINGS or {}
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
--- periodicJump feature removed
+-- legacy periodic jump and spin features removed
+SETTINGS.periodicJump = false
 SETTINGS.spinOnDonation = false
+SETTINGS.spinDefaultSpeed = 1
+SETTINGS.spinSpeedMultiplier = 1
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
-SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
+-- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
--- distance (studs) to check for nearby players before attempting a claim
-SETTINGS.claimAvoidRadius = SETTINGS.claimAvoidRadius or 6
 -- runtime spin state (xspin follows old.lua behavior)
--- spin-on-donation removed (settings disabled)
+-- spin helpers removed; no-op placeholders kept for compatibility
+local xspin = 1
+local function ensurePersistentSpin() end
+local function removePersistentSpin() end
 
 -- Donation monitoring placeholders
 donationConns = donationConns or {}
@@ -146,7 +150,7 @@ local function startClaimMonitor(stand, pos, awayDir)
             local d = (hrp.Position - lastClaimPosition).Magnitude
             if d >= 12 then
                 pcall(function() notify("Claim Monitor", "Moving back to claimed booth...", 2) end)
-                local mode = SETTINGS.claimEnforceMode or "teleport"
+                local mode = "teleport"
                 if mode == "teleport" then
                     -- strong teleport enforcement (repeated CFrame set + velocity clear)
                     for attempt = 1, 8 do
@@ -257,6 +261,21 @@ local function postWebhookEvent(kind, data)
     end)
 end
 
+local function sendPlainWebhook(msg)
+    if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local url = tostring(SETTINGS.webhookUrl or "")
+    local payload = HttpService:JSONEncode({ content = tostring(msg or "") })
+    pcall(function()
+        if syn and syn.request then
+            syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+        elseif request then
+            request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+        else
+            HttpService:PostAsync(url, payload, Enum.HttpContentType.ApplicationJson)
+        end
+    end)
+end
+
 local function tryHookPlayerStat(player)
     if not player then return false end
     local uid = tostring(player.UserId)
@@ -333,7 +352,7 @@ local function tryHookPlayerStat(player)
                     local donorId = (donor and donor.UserId) or nil
                     postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = delta, total = newv })
 
-                    -- (spin-on-donation removed)
+                    -- spin-on-donation feature removed
                 end
             end
         end
@@ -356,22 +375,6 @@ local function performHttpRequest(options)
     if request then return request(options) end
     if http_request then return http_request(options) end
     return nil
-end
-
--- sendPlainWebhook: post a simple content message to webhook URL (preserves donation embed elsewhere)
-local function sendPlainWebhook(msg)
-    if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
-    local url = tostring(SETTINGS.webhookUrl or "")
-    local body = HttpService:JSONEncode({ content = tostring(msg) })
-    pcall(function()
-        if syn and syn.request then
-            syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
-        elseif request then
-            request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
-        else
-            HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
-        end
-    end)
 end
 
 -- queueOnTeleport helper (supports executors)
@@ -472,6 +475,8 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
             end)
             if okt then
+                return true
+            else
                 local terrs = tostring(terr or "")
                 local lterrs = terrs:lower()
                 -- Robust detection for "GameFull" / Error 772 / raiseTeleportInitFailedEvent messages
@@ -628,7 +633,7 @@ local function moveCharacterToPosition(pos, mode, lookDir)
     if not char then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
-    mode = mode or SETTINGS.claimEnforceMode or "teleport"
+    mode = mode or "teleport"
     if mode == "teleport" then
         pcall(function()
             local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
@@ -642,38 +647,6 @@ local function moveCharacterToPosition(pos, mode, lookDir)
         return true
     else
         -- Use MoveTo only (walk enforcement)
-        -- temporarily hide nearby obstructing parts/models to avoid getting stuck
-        local function tempHideNearby(radius)
-            local hidden = {}
-            local root = LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso"))
-            if not root then return hidden end
-            local origin = root.Position
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("BasePart") and obj.CanCollide and obj.Transparency < 1 then
-                    local d = (obj.Position - origin).Magnitude
-                    if d <= (radius or 8) then
-                        hidden[#hidden+1] = {obj = obj, cancollide = obj.CanCollide, trans = obj.Transparency}
-                        pcall(function() obj.CanCollide = false; obj.Transparency = math.min(1, obj.Transparency + 0.6) end)
-                    end
-                end
-            end
-            return hidden
-        end
-        local function restoreHidden(hidden)
-            if not hidden then return end
-            for _, v in ipairs(hidden) do
-                pcall(function()
-                    if v.obj and v.obj.Parent then
-                        v.obj.CanCollide = v.cancollide
-                        v.obj.Transparency = v.trans
-                    end
-                end)
-            end
-        end
-        local hiddenSaved = nil
-        if (SETTINGS.claimEnforceMode or "walk") == "walk" then
-            hiddenSaved = tempHideNearby(8)
-        end
         local ok, started = pcall(function() return hum:MoveTo(targetVec) end)
         if not ok then return false end
         for i=1,12 do
@@ -686,11 +659,9 @@ local function moveCharacterToPosition(pos, mode, lookDir)
                         curHrp.CFrame = CFrame.new(curHrp.Position, curHrp.Position + lookDir.Unit)
                     end)
                 end
-                if hiddenSaved then restoreHidden(hiddenSaved) end
                 return true
             end
         end
-        if hiddenSaved then restoreHidden(hiddenSaved) end
         return false
     end
 end
@@ -858,7 +829,6 @@ local function claimEmptyStands()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local playerPos = hrp and hrp.Position
 
-    local avoidRadius = tonumber(SETTINGS.claimAvoidRadius) or 6
     local candidates = {}
     for _, stand in ipairs(standsList) do
         if stand and stand.Parent and not stand:FindFirstChild("ButtonPrompt") then
@@ -870,20 +840,7 @@ local function claimEmptyStands()
             if ownerEmpty then
                 local pivot = tryGetPivotPosition(stand)
                 if pivot then
-                    -- check for nearby players to this pivot
-                    local foundNearby = false
-                    pcall(function()
-                        for _, pl in ipairs(Players:GetPlayers()) do
-                            if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                                local pr = pl.Character:FindFirstChild("HumanoidRootPart")
-                                if pr and (pr.Position - pivot).Magnitude <= avoidRadius then
-                                    foundNearby = true
-                                    break
-                                end
-                            end
-                        end
-                    end)
-                    candidates[#candidates+1] = { stand = stand, pivot = pivot, clear = not foundNearby }
+                    candidates[#candidates+1] = { stand = stand, pivot = pivot }
                 end
             end
         end
@@ -894,15 +851,13 @@ local function claimEmptyStands()
         return false
     end
 
-    -- prefer stands that have no nearby players; fall back to nearest
-    local clearList = {}
-    for _, c in ipairs(candidates) do if c.clear then table.insert(clearList, c) end end
-    local pickList = (#clearList > 0) and clearList or candidates
-    table.sort(pickList, function(a,b)
+    -- choose nearest to player (or first if player position unknown)
+    table.sort(candidates, function(a,b)
         if not playerPos then return true end
         return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
     end)
-    local target = pickList[1]
+
+    local target = candidates[1]
     if not target or not target.stand then
         notify("Booth Claim", "No valid stand target.", 3)
         return false
@@ -914,38 +869,8 @@ local function claimEmptyStands()
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
     local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
     -- move directly in front of the booth (no teleport)
-    moveCharacterToPosition(safePos, SETTINGS.claimEnforceMode or "teleport", dir)
+    moveCharacterToPosition(safePos, "teleport", dir)
     task.wait(0.25)
-
-    -- If this target had nearby players, retry up to 2 times waiting briefly
-    local avoidRadius = tonumber(SETTINGS.claimAvoidRadius) or 6
-    if not target.clear then
-        local tries = 2
-        local okToProceed = false
-        for attempt = 1, tries do
-            local foundNearby = false
-            pcall(function()
-                for _, pl in ipairs(Players:GetPlayers()) do
-                    if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                        local pr = pl.Character:FindFirstChild("HumanoidRootPart")
-                        if pr and (pr.Position - target.pivot).Magnitude <= avoidRadius then
-                            foundNearby = true
-                            break
-                        end
-                    end
-                end
-            end)
-            if not foundNearby then okToProceed = true; break end
-            if attempt < tries then
-                task.wait(1.5)
-            end
-        end
-        if not okToProceed then
-            notify("Booth Claim", "Nearby player(s) present — aborting claim after retries.", 4)
-            claimLock = false
-            return false
-        end
-    end
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
     local slot = findSlotFromStand(target.stand)
@@ -961,26 +886,6 @@ local function claimEmptyStands()
     if ok then
         notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
         if tostring(res) == "Success" or res == true then
-            -- verify Owner/Wner on the stand to ensure claim succeeded (poll briefly)
-            local ownerConfirmed = false
-            for i=1,6 do
-                pcall(function()
-                    local ownerObj = target.stand and (target.stand:FindFirstChild("Owner") or target.stand:FindFirstChild("Wner"))
-                    if ownerObj then
-                        if ownerObj:IsA("ObjectValue") then
-                            if ownerObj.Value == LocalPlayer then ownerConfirmed = true end
-                        else
-                            if tostring(ownerObj.Value) == LocalPlayer.Name then ownerConfirmed = true end
-                        end
-                    end
-                end)
-                if ownerConfirmed then break end
-                task.wait(0.12)
-            end
-            if not ownerConfirmed then
-                notify("Booth Claim", "Claim invoked but Owner value not updated; aborting.", 4)
-                return false
-            end
             -- place character directly in front of the booth and orient them looking away from it
             pcall(function()
                 local char = LocalPlayer.Character
@@ -1002,7 +907,7 @@ local function claimEmptyStands()
                                         local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
                                         if basePos and awayDir then
                                             -- move using configured mode and orient to face away from the booth
-                                            pcall(function() moveCharacterToPosition(basePos, SETTINGS.claimEnforceMode or "teleport", awayDir) end)
+                                            pcall(function() moveCharacterToPosition(basePos, "teleport", awayDir) end)
                                             pcall(function()
                                                 notify("Claim Monitor", "Monitoring claimed booth position", 2)
                                                 startClaimMonitor(target.stand, basePos, awayDir)
@@ -1095,21 +1000,17 @@ do
 
         local function SaveSettings()
             local data = {
-                    webhookToggle = SETTINGS.webhookToggle,
-                    webhookUrl = SETTINGS.webhookUrl,
-                    antiAfk = SETTINGS.antiAfk,
-                    spinOnDonation = SETTINGS.spinOnDonation,
-                    spinDefaultSpeed = SETTINGS.spinDefaultSpeed,
-                    spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
-                    touchPreventAFK = SETTINGS.touchPreventAFK,
-                    claimEnforceMode = SETTINGS.claimEnforceMode,
-                    hopRange = hopRangeText,
-                    serverStayTime = serverStayTime,
-                    persistToggles = SETTINGS.persistToggles,
-                    emoteId = SETTINGS.emoteId,
-                    emotePlaying = SETTINGS.emotePlaying and true or false,
-                    autoServerHop = autoServerHopEnabled,
-                }
+                webhookToggle = SETTINGS.webhookToggle,
+                webhookUrl = SETTINGS.webhookUrl,
+                antiAfk = SETTINGS.antiAfk,
+                touchPreventAFK = SETTINGS.touchPreventAFK,
+                hopRange = hopRangeText,
+                serverStayTime = serverStayTime,
+                persistToggles = SETTINGS.persistToggles,
+                emoteId = SETTINGS.emoteId,
+                emotePlaying = SETTINGS.emotePlaying and true or false,
+                autoServerHop = autoServerHopEnabled,
+            }
             SETTINGS.hopRange = hopRangeText
             local ok, encoded = pcall(function() return Http:JSONEncode(data) end)
             if not ok then return end
@@ -1137,11 +1038,9 @@ do
             SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
-            SETTINGS.spinOnDonation = decoded.spinOnDonation or SETTINGS.spinOnDonation
-            SETTINGS.spinDefaultSpeed = tonumber(decoded.spinDefaultSpeed) or SETTINGS.spinDefaultSpeed
-            SETTINGS.spinSpeedMultiplier = tonumber(decoded.spinSpeedMultiplier) or SETTINGS.spinSpeedMultiplier
+            -- legacy spin/periodic settings removed
             SETTINGS.touchPreventAFK = decoded.touchPreventAFK or SETTINGS.touchPreventAFK
-            SETTINGS.claimEnforceMode = decoded.claimEnforceMode or SETTINGS.claimEnforceMode
+            -- enforce mode option removed; always use teleport
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
@@ -1162,23 +1061,14 @@ do
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
-                -- coerce and apply spin default from queued config (ensure numeric and sane default)
-                if cfg.spinDefaultSpeed then
-                    SETTINGS.spinDefaultSpeed = tonumber(cfg.spinDefaultSpeed) or SETTINGS.spinDefaultSpeed
-                end
-                SETTINGS.spinOnDonation = cfg.spinOnDonation or SETTINGS.spinOnDonation
-                SETTINGS.spinSpeedMultiplier = tonumber(cfg.spinSpeedMultiplier) or SETTINGS.spinSpeedMultiplier
+                -- legacy spin settings ignored from queued config
                 _G.__PLS_WAIT_CONFIG = nil
             end
         end)
 
         pcall(LoadSettings)
-        -- Ensure spin default is numeric and apply initial xspin (default to 1)
-        SETTINGS.spinDefaultSpeed = tonumber(SETTINGS.spinDefaultSpeed) or 1
-        if not SETTINGS.spinDefaultSpeed or SETTINGS.spinDefaultSpeed < 1 then
-            SETTINGS.spinDefaultSpeed = 1
-        end
-        xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
+        -- spin feature removed; ensure placeholder value
+        xspin = 1
         -- (initialization guard will be checked after SharedEnv is defined)
         -- Provide a small UI helper used by buttons
         local function styleButton(btn)
@@ -1226,22 +1116,14 @@ do
         -- Mini toggle button for open/close (persistent, outside mainFrame)
         local uiToggle = Instance.new("ImageButton")
         uiToggle.Name = "PlsWaitToggle"
-        uiToggle.Size = UDim2.new(0, 56, 0, 56)
-        uiToggle.Position = UDim2.new(0, 12, 1, -76)
+        uiToggle.Size = UDim2.new(0, 40, 0, 40)
+        uiToggle.Position = UDim2.new(0, 12, 1, -64)
         uiToggle.AnchorPoint = Vector2.new(0,0)
         uiToggle.BackgroundColor3 = Color3.fromRGB(30,30,30)
         uiToggle.Image = ""
         uiToggle.Parent = screen
         local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
-        local togLabel = Instance.new("TextLabel")
-        togLabel.Text = ""
-        togLabel.Size = UDim2.new(1,0,1,0)
-        togLabel.BackgroundTransparency = 1
-        togLabel.TextTransparency = 1
-        togLabel.TextColor3 = Color3.fromRGB(220,220,220)
-        togLabel.Font = Enum.Font.GothamBold
-        togLabel.TextSize = 14
-        togLabel.Parent = uiToggle
+        local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 14; togLabel.Parent = uiToggle
         uiToggle.Visible = true
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
@@ -1364,10 +1246,27 @@ do
         mainCorner.CornerRadius = UDim.new(0,12)
         mainCorner.Parent = mainFrame
 
-        -- Simplified flat background (squiggle layers removed per user request)
-        mainFrame.BackgroundTransparency = 0
-        mainFrame.BackgroundColor3 = Color3.fromRGB(22,22,22)
-        mainFrame.ZIndex = 5
+        -- Squiggly background effect: layered slightly offset rounded frames
+        do
+            local function makeLayer(offsetX, offsetY, sizePad, cornerRadius, c1, c2, rot)
+                local f = Instance.new("Frame")
+                f.Size = UDim2.new(1, sizePad, 1, sizePad)
+                f.Position = UDim2.new(0, offsetX, 0, offsetY)
+                f.BackgroundColor3 = Color3.fromRGB(20,20,20)
+                f.BorderSizePixel = 0
+                f.BackgroundTransparency = 0.6
+                f.Parent = mainFrame
+                local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, cornerRadius); uc.Parent = f
+                local g = Instance.new("UIGradient")
+                g.Rotation = rot or 90
+                g.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2)})
+                g.Parent = f
+                return f
+            end
+            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
+            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
+            makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
+        end
 
         -- Left menu column
         local leftCol = Instance.new("Frame")
@@ -1484,37 +1383,11 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
-            -- Claim enforcement mode (Teleport / Walk)
-            local enforceLabel = Instance.new("TextLabel")
-            enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,46)
-            enforceLabel.Text = "Enforce Mode"
-            enforceLabel.TextColor3 = Color3.new(1,1,1)
-            enforceLabel.BackgroundTransparency = 1
-            enforceLabel.Parent = frame
-
-            local enforceToggle = Instance.new("TextButton")
-            enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,46)
-            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
-            enforceToggle.Parent = frame
-            enforceToggle.MouseButton1Click:Connect(function()
-                if SETTINGS.claimEnforceMode == "teleport" then
-                    SETTINGS.claimEnforceMode = "walk"
-                else
-                    SETTINGS.claimEnforceMode = "teleport"
-                end
-                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
-                pcall(SaveSettings)
-            end)
-            styleButton(enforceToggle)
+            -- Enforce mode removed: always use teleport
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,82)
+            emoteLabel.Position = UDim2.new(0,10,0,154)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1522,7 +1395,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,82)
+            emoteBox.Position = UDim2.new(0,140,0,154)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1539,7 +1412,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,118)
+            emotePlayBtn.Position = UDim2.new(0,140,0,190)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1548,7 +1421,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,118)
+            emoteStopBtn.Position = UDim2.new(0,228,0,190)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1557,7 +1430,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,82)
+            presetToggle.Position = UDim2.new(0,304,0,154)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1565,11 +1438,10 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,140,0,146)
+            presetFrame.Position = UDim2.new(0,10,0,212)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
-            presetFrame.BorderSizePixel = 0
             local pfCorner = Instance.new("UICorner") pfCorner.Parent = presetFrame
 
             local presetEmotes = {
@@ -1672,7 +1544,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,154)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,232)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1680,7 +1552,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,154)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,232)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1697,7 +1569,76 @@ do
                     pcall(function() stopEmote() end)
                 end
             end)
-            -- Spin controls removed
+            -- Spin and periodic jump features removed from Overview
+
+            -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
+            local touchLabel = Instance.new("TextLabel")
+            touchLabel.Size = UDim2.new(0,180,0,20)
+            touchLabel.Position = UDim2.new(0,10,0,118)
+            touchLabel.Text = "Touch Prevent AFK"
+            touchLabel.BackgroundTransparency = 1
+            touchLabel.TextColor3 = Color3.new(1,1,1)
+            touchLabel.Parent = frame
+
+            local touchToggle = Instance.new("TextButton")
+            touchToggle.Size = UDim2.new(0,60,0,20)
+            touchToggle.Position = UDim2.new(0,180,0,118)
+            touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
+            touchToggle.Parent = frame
+            touchToggle.MouseButton1Click:Connect(function()
+                SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
+                touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.touchPreventAFK then
+                    -- perform an immediate touch/jump action to verify
+                    pcall(function()
+                        local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+                        if ok and vu then
+                            pcall(function() vu:CaptureController(); if vu.ClickButton2 then vu:ClickButton2(Vector2.new(0,0)) end end)
+                        else
+                            local char = LocalPlayer.Character
+                            if char then
+                                local hum = char:FindFirstChildOfClass("Humanoid")
+                                if hum then hum.Jump = true end
+                            end
+                        end
+                    end)
+                end
+            end)
+            styleButton(touchToggle)
+
+            -- Auto-play emote on UI/script execution if an emote is selected
+            pcall(function()
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" and SETTINGS.emotePlaying then
+                    local function attemptPlay()
+                        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        if not hum then
+                            for i=1,20 do
+                                hum = char:FindFirstChildOfClass("Humanoid")
+                                if hum then break end
+                                task.wait(0.05)
+                            end
+                        end
+                        pcall(function() playEmote(SETTINGS.emoteId) end)
+                    end
+
+                    -- (Periodic Jump and Spin controls moved below emote block for consistent layout)
+                    if SETTINGS.emotePlaying then
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                            pcall(attemptPlay)
+                        else
+                            LocalPlayer.CharacterAdded:Connect(function()
+                                task.wait(0.5)
+                                pcall(attemptPlay)
+                            end)
+                        end
+                    end
+                end
+            end)
         end
 
         -- Server-Hop tab
@@ -1884,11 +1825,7 @@ do
         if SETTINGS.webhookToggle then
             startDonationMonitor()
             pcall(function()
-                local playersOnline = tostring(#Players:GetPlayers())
-                local range = tostring(hopRangeText or "any")
-                -- send simple serverhop notifier as requested: @local.user serverhopped
-                local uname = tostring(LocalPlayer and LocalPlayer.Name or "Unknown")
-                pcall(function() sendPlainWebhook("@"..uname.." serverhopped") end)
+                sendPlainWebhook("@local.user serverhopped")
             end)
         end
         -- If user requested persistence across hops, ensure queue_on_teleport is set now
@@ -1925,20 +1862,59 @@ do
             end)
         end)
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
-        -- initialize persistent spin if enabled
-        if SETTINGS.spinOnDonation then
-            xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
-            pcall(ensurePersistentSpin)
-            LocalPlayer.CharacterAdded:Connect(function()
-                task.wait(0.6)
-                pcall(function()
-                    xspin = tonumber(SETTINGS.spinDefaultSpeed) or 1
-                    ensurePersistentSpin()
-                end)
-            end)
-        end
-        -- Touch-prevent AFK removed per user request; keep Anti-AFK toggle only
-        -- periodic jump feature removed
+        -- spin feature removed
+        -- Touch-prevent AFK: simulate input every 120s when enabled; robust fallbacks
+        task.spawn(function()
+            while true do
+                if SETTINGS.touchPreventAFK then
+                    local performed = false
+                    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+                    if ok and vu then
+                        pcall(function()
+                            vu:CaptureController()
+                            if vu.Button1Down and vu.Button1Up then
+                                vu:Button1Down(Vector2.new(0,0))
+                                task.wait(0.06)
+                                vu:Button1Up(Vector2.new(0,0))
+                            elseif vu.ClickButton2 then
+                                vu:ClickButton2(Vector2.new(0,0))
+                            else
+                                -- fallback to ClickButton2 call via different name
+                                pcall(function() vu:ClickButton2(Vector2.new(0,0)) end)
+                            end
+                        end)
+                        performed = true
+                    end
+                    if not performed then
+                        -- fallback: nudge humanoid or make it jump to avoid AFK
+                        local okc, char = pcall(function() return LocalPlayer.Character end)
+                        if okc and char then
+                            local hum = char:FindFirstChildOfClass("Humanoid")
+                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                            if hum then
+                                pcall(function()
+                                    hum.Jump = true
+                                end)
+                            elseif root then
+                                pcall(function()
+                                    local orig = root.CFrame
+                                    root.CFrame = orig * CFrame.new(0,0.1,0)
+                                    task.wait(0.05)
+                                    root.CFrame = orig
+                                end)
+                            end
+                        end
+                    end
+                    for i=1,120 do
+                        task.wait(1)
+                        if not SETTINGS.touchPreventAFK then break end
+                    end
+                else
+                    task.wait(1)
+                end
+            end
+        end)
+        -- Periodic jump feature removed
         if autoServerHopEnabled and not autoServerHopTask then
             autoServerHopTask = task.spawn(function()
                 while autoServerHopEnabled do
@@ -1954,3 +1930,8 @@ do
         end
     end
 end
+
+-- Script loaded: use functions directly (not returning a module table)
+-- Auto-run a single claim on script execution
+-- Script loaded: use functions directly (not returning a module table)
+-- Auto-run handled by UI initialization above (avoid duplicate claims)
