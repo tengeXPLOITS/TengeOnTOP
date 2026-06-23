@@ -30,6 +30,8 @@ local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
+-- distance (studs) to check for nearby players before attempting a claim
+SETTINGS.claimAvoidRadius = SETTINGS.claimAvoidRadius or 6
 -- runtime spin state (xspin follows old.lua behavior)
 -- spin-on-donation removed (settings disabled)
 
@@ -470,8 +472,6 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
             end)
             if okt then
-                return true
-            else
                 local terrs = tostring(terr or "")
                 local lterrs = terrs:lower()
                 -- Robust detection for "GameFull" / Error 772 / raiseTeleportInitFailedEvent messages
@@ -858,6 +858,7 @@ local function claimEmptyStands()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local playerPos = hrp and hrp.Position
 
+    local avoidRadius = tonumber(SETTINGS.claimAvoidRadius) or 6
     local candidates = {}
     for _, stand in ipairs(standsList) do
         if stand and stand.Parent and not stand:FindFirstChild("ButtonPrompt") then
@@ -869,7 +870,20 @@ local function claimEmptyStands()
             if ownerEmpty then
                 local pivot = tryGetPivotPosition(stand)
                 if pivot then
-                    candidates[#candidates+1] = { stand = stand, pivot = pivot }
+                    -- check for nearby players to this pivot
+                    local foundNearby = false
+                    pcall(function()
+                        for _, pl in ipairs(Players:GetPlayers()) do
+                            if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                                local pr = pl.Character:FindFirstChild("HumanoidRootPart")
+                                if pr and (pr.Position - pivot).Magnitude <= avoidRadius then
+                                    foundNearby = true
+                                    break
+                                end
+                            end
+                        end
+                    end)
+                    candidates[#candidates+1] = { stand = stand, pivot = pivot, clear = not foundNearby }
                 end
             end
         end
@@ -880,13 +894,15 @@ local function claimEmptyStands()
         return false
     end
 
-    -- choose nearest to player (or first if player position unknown)
-    table.sort(candidates, function(a,b)
+    -- prefer stands that have no nearby players; fall back to nearest
+    local clearList = {}
+    for _, c in ipairs(candidates) do if c.clear then table.insert(clearList, c) end end
+    local pickList = (#clearList > 0) and clearList or candidates
+    table.sort(pickList, function(a,b)
         if not playerPos then return true end
         return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
     end)
-
-    local target = candidates[1]
+    local target = pickList[1]
     if not target or not target.stand then
         notify("Booth Claim", "No valid stand target.", 3)
         return false
@@ -900,6 +916,36 @@ local function claimEmptyStands()
     -- move directly in front of the booth (no teleport)
     moveCharacterToPosition(safePos, SETTINGS.claimEnforceMode or "teleport", dir)
     task.wait(0.25)
+
+    -- If this target had nearby players, retry up to 2 times waiting briefly
+    local avoidRadius = tonumber(SETTINGS.claimAvoidRadius) or 6
+    if not target.clear then
+        local tries = 2
+        local okToProceed = false
+        for attempt = 1, tries do
+            local foundNearby = false
+            pcall(function()
+                for _, pl in ipairs(Players:GetPlayers()) do
+                    if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                        local pr = pl.Character:FindFirstChild("HumanoidRootPart")
+                        if pr and (pr.Position - target.pivot).Magnitude <= avoidRadius then
+                            foundNearby = true
+                            break
+                        end
+                    end
+                end
+            end)
+            if not foundNearby then okToProceed = true; break end
+            if attempt < tries then
+                task.wait(1.5)
+            end
+        end
+        if not okToProceed then
+            notify("Booth Claim", "Nearby player(s) present — aborting claim after retries.", 4)
+            claimLock = false
+            return false
+        end
+    end
 
     -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
     local slot = findSlotFromStand(target.stand)
@@ -915,6 +961,26 @@ local function claimEmptyStands()
     if ok then
         notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
         if tostring(res) == "Success" or res == true then
+            -- verify Owner/Wner on the stand to ensure claim succeeded (poll briefly)
+            local ownerConfirmed = false
+            for i=1,6 do
+                pcall(function()
+                    local ownerObj = target.stand and (target.stand:FindFirstChild("Owner") or target.stand:FindFirstChild("Wner"))
+                    if ownerObj then
+                        if ownerObj:IsA("ObjectValue") then
+                            if ownerObj.Value == LocalPlayer then ownerConfirmed = true end
+                        else
+                            if tostring(ownerObj.Value) == LocalPlayer.Name then ownerConfirmed = true end
+                        end
+                    end
+                end)
+                if ownerConfirmed then break end
+                task.wait(0.12)
+            end
+            if not ownerConfirmed then
+                notify("Booth Claim", "Claim invoked but Owner value not updated; aborting.", 4)
+                return false
+            end
             -- place character directly in front of the booth and orient them looking away from it
             pcall(function()
                 local char = LocalPlayer.Character
@@ -1421,7 +1487,7 @@ do
             -- Claim enforcement mode (Teleport / Walk)
             local enforceLabel = Instance.new("TextLabel")
             enforceLabel.Size = UDim2.new(0,120,0,20)
-            enforceLabel.Position = UDim2.new(0,10,0,308)
+            enforceLabel.Position = UDim2.new(0,10,0,46)
             enforceLabel.Text = "Enforce Mode"
             enforceLabel.TextColor3 = Color3.new(1,1,1)
             enforceLabel.BackgroundTransparency = 1
@@ -1429,7 +1495,7 @@ do
 
             local enforceToggle = Instance.new("TextButton")
             enforceToggle.Size = UDim2.new(0,60,0,20)
-            enforceToggle.Position = UDim2.new(0,180,0,308)
+            enforceToggle.Position = UDim2.new(0,180,0,46)
             enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
             enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1448,7 +1514,7 @@ do
             -- Emote selector / play (Overview)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,154)
+            emoteLabel.Position = UDim2.new(0,10,0,82)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1456,7 +1522,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,154)
+            emoteBox.Position = UDim2.new(0,140,0,82)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1473,7 +1539,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,190)
+            emotePlayBtn.Position = UDim2.new(0,140,0,118)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1482,7 +1548,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,190)
+            emoteStopBtn.Position = UDim2.new(0,228,0,118)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1491,7 +1557,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,154)
+            presetToggle.Position = UDim2.new(0,304,0,82)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1499,7 +1565,7 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,140,0,184)
+            presetFrame.Position = UDim2.new(0,140,0,146)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
@@ -1606,7 +1672,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,232)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,154)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1614,7 +1680,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,232)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,154)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
