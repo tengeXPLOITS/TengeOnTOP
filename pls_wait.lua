@@ -24,7 +24,7 @@ SETTINGS = SETTINGS or {}
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
-SETTINGS.periodicJump = SETTINGS.periodicJump or false
+-- periodicJump feature removed
 SETTINGS.spinOnDonation = false
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
@@ -1029,22 +1029,21 @@ do
 
         local function SaveSettings()
             local data = {
-                webhookToggle = SETTINGS.webhookToggle,
-                webhookUrl = SETTINGS.webhookUrl,
-                antiAfk = SETTINGS.antiAfk,
-                periodicJump = SETTINGS.periodicJump,
-                spinOnDonation = SETTINGS.spinOnDonation,
-                spinDefaultSpeed = SETTINGS.spinDefaultSpeed,
-                spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
-                touchPreventAFK = SETTINGS.touchPreventAFK,
-                claimEnforceMode = SETTINGS.claimEnforceMode,
-                hopRange = hopRangeText,
-                serverStayTime = serverStayTime,
-                persistToggles = SETTINGS.persistToggles,
-                emoteId = SETTINGS.emoteId,
-                emotePlaying = SETTINGS.emotePlaying and true or false,
-                autoServerHop = autoServerHopEnabled,
-            }
+                    webhookToggle = SETTINGS.webhookToggle,
+                    webhookUrl = SETTINGS.webhookUrl,
+                    antiAfk = SETTINGS.antiAfk,
+                    spinOnDonation = SETTINGS.spinOnDonation,
+                    spinDefaultSpeed = SETTINGS.spinDefaultSpeed,
+                    spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                    touchPreventAFK = SETTINGS.touchPreventAFK,
+                    claimEnforceMode = SETTINGS.claimEnforceMode,
+                    hopRange = hopRangeText,
+                    serverStayTime = serverStayTime,
+                    persistToggles = SETTINGS.persistToggles,
+                    emoteId = SETTINGS.emoteId,
+                    emotePlaying = SETTINGS.emotePlaying and true or false,
+                    autoServerHop = autoServerHopEnabled,
+                }
             SETTINGS.hopRange = hopRangeText
             local ok, encoded = pcall(function() return Http:JSONEncode(data) end)
             if not ok then return end
@@ -1072,7 +1071,6 @@ do
             SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
             SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
-            SETTINGS.periodicJump = decoded.periodicJump or SETTINGS.periodicJump
             SETTINGS.spinOnDonation = decoded.spinOnDonation or SETTINGS.spinOnDonation
             SETTINGS.spinDefaultSpeed = tonumber(decoded.spinDefaultSpeed) or SETTINGS.spinDefaultSpeed
             SETTINGS.spinSpeedMultiplier = tonumber(decoded.spinSpeedMultiplier) or SETTINGS.spinSpeedMultiplier
@@ -1168,18 +1166,20 @@ do
         uiToggle.BackgroundColor3 = Color3.fromRGB(30,30,30)
         uiToggle.Image = ""
         uiToggle.Parent = screen
+        uiToggle.ZIndex = 10
         local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
         local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 16; togLabel.Parent = uiToggle
         uiToggle.Visible = true
         -- small green spinning ring effect behind the toggle
         local ring = Instance.new("ImageLabel")
         ring.Size = UDim2.new(0,64,0,64)
-        ring.Position = UDim2.new(0, 6, 1, -78)
-        ring.AnchorPoint = Vector2.new(0,0)
+        ring.AnchorPoint = uiToggle.AnchorPoint
+        ring.Position = UDim2.new(uiToggle.Position.X.Scale, uiToggle.Position.X.Offset - 7, uiToggle.Position.Y.Scale, uiToggle.Position.Y.Offset - 8)
         ring.BackgroundTransparency = 1
         ring.Image = ""
         ring.Parent = screen
-        local ringFrame = Instance.new("Frame") ringFrame.Size = UDim2.new(1,1); ringFrame.BackgroundColor3 = Color3.fromRGB(30,30,30); ringFrame.BackgroundTransparency = 0.6; ringFrame.Parent = ring
+        ring.ZIndex = uiToggle.ZIndex - 1
+        local ringFrame = Instance.new("Frame") ringFrame.Size = UDim2.new(1,1); ringFrame.BackgroundColor3 = Color3.fromRGB(30,30,30); ringFrame.BackgroundTransparency = 0.6; ringFrame.BorderSizePixel = 0; ringFrame.Parent = ring
         local gf = Instance.new("UICorner") gf.CornerRadius = UDim.new(1,0); gf.Parent = ringFrame
         local g = Instance.new("UIGradient") g.Color = ColorSequence.new(Color3.fromRGB(50,205,50), Color3.fromRGB(10,150,50)); g.Rotation = 0; g.Parent = ringFrame
         -- rotate ring periodically
@@ -1192,7 +1192,7 @@ do
         end)
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
-        local MAIN_W, MAIN_H = 720, 520
+        local MAIN_W, MAIN_H = 620, 420
         local LEFT_W = 200
         local GAP = 16
         local mainFrame = Instance.new("Frame")
@@ -1314,6 +1314,7 @@ do
         -- Simplified flat background (squiggle layers removed per user request)
         mainFrame.BackgroundTransparency = 0
         mainFrame.BackgroundColor3 = Color3.fromRGB(22,22,22)
+        mainFrame.ZIndex = 5
 
         -- Left menu column
         local leftCol = Instance.new("Frame")
@@ -1644,84 +1645,122 @@ do
             end)
             -- Spin controls removed
 
-            -- Periodic Jump toggle (always present in Overview)
-            local periodicLabel = Instance.new("TextLabel")
-            periodicLabel.Size = UDim2.new(0,160,0,20)
-            periodicLabel.Position = UDim2.new(0,10,0,46)
-            periodicLabel.Text = "Periodic Jump (3 min)"
-            periodicLabel.BackgroundTransparency = 1
-            periodicLabel.TextColor3 = Color3.new(1,1,1)
-            periodicLabel.Parent = frame
+            -- Create a vertical list of rows for tidy Overview layout
+            local rows = Instance.new("Frame")
+            rows.Size = UDim2.new(1, -24, 0, 160)
+            rows.Position = UDim2.new(0, 12, 0, 8)
+            rows.BackgroundTransparency = 1
+            rows.Parent = frame
+            local layout = Instance.new("UIListLayout")
+            layout.Padding = UDim.new(0, 8)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Parent = rows
 
-            local periodicToggle = Instance.new("TextButton")
-            periodicToggle.Size = UDim2.new(0,60,0,20)
-            periodicToggle.Position = UDim2.new(0,180,0,46)
-            periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
-            periodicToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            periodicToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local perCorner = Instance.new("UICorner") perCorner.Parent = periodicToggle
-            periodicToggle.Parent = frame
-            periodicToggle.MouseButton1Click:Connect(function()
-                SETTINGS.periodicJump = not SETTINGS.periodicJump
-                periodicToggle.Text = SETTINGS.periodicJump and "ON" or "OFF"
+            local function makeRow(order)
+                local r = Instance.new("Frame")
+                r.Size = UDim2.new(1,0,0,36)
+                r.BackgroundTransparency = 1
+                r.LayoutOrder = order or 1
+                r.Parent = rows
+                return r
+            end
+
+            -- Row 1: Anti-AFK
+            local r1 = makeRow(1)
+            local afkLabel = Instance.new("TextLabel")
+            afkLabel.Size = UDim2.new(0,140,1,0)
+            afkLabel.Position = UDim2.new(0,8,0,0)
+            afkLabel.Text = "Anti-AFK"
+            afkLabel.TextColor3 = Color3.new(1,1,1)
+            afkLabel.BackgroundTransparency = 1
+            afkLabel.Parent = r1
+            local afkToggle = Instance.new("TextButton")
+            afkToggle.Size = UDim2.new(0,80,0,28)
+            afkToggle.Position = UDim2.new(1,-92,0,4)
+            afkToggle.AnchorPoint = Vector2.new(0,0)
+            afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
+            afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local afkCorner = Instance.new("UICorner") afkCorner.Parent = afkToggle
+            afkToggle.Parent = r1
+            afkToggle.MouseButton1Click:Connect(function()
+                SETTINGS.antiAfk = not SETTINGS.antiAfk
+                afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
                 pcall(SaveSettings)
-                if SETTINGS.periodicJump then
-                    -- perform an immediate jump to confirm feature is active
-                    pcall(function()
-                        local char = LocalPlayer.Character
-                        if char then
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            if hum then hum.Jump = true end
-                        end
-                    end)
+                if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
+            end)
+            styleButton(afkToggle)
+
+            -- Row 2: Enforce Mode
+            local r2 = makeRow(2)
+            local enforceLabel = Instance.new("TextLabel")
+            enforceLabel.Size = UDim2.new(0,140,1,0)
+            enforceLabel.Position = UDim2.new(0,8,0,0)
+            enforceLabel.Text = "Enforce Mode"
+            enforceLabel.TextColor3 = Color3.new(1,1,1)
+            enforceLabel.BackgroundTransparency = 1
+            enforceLabel.Parent = r2
+            local enforceToggle = Instance.new("TextButton")
+            enforceToggle.Size = UDim2.new(0,100,0,28)
+            enforceToggle.Position = UDim2.new(1,-112,0,4)
+            enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+            enforceToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            enforceToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local etCorner = Instance.new("UICorner") etCorner.Parent = enforceToggle
+            enforceToggle.Parent = r2
+            enforceToggle.MouseButton1Click:Connect(function()
+                if SETTINGS.claimEnforceMode == "teleport" then
+                    SETTINGS.claimEnforceMode = "walk"
+                else
+                    SETTINGS.claimEnforceMode = "teleport"
+                end
+                enforceToggle.Text = (SETTINGS.claimEnforceMode == "teleport") and "TELEPORT" or "WALK"
+                pcall(SaveSettings)
+            end)
+            styleButton(enforceToggle)
+
+            -- Row 3: Emote
+            local r3 = makeRow(3)
+            local emoteLabel = Instance.new("TextLabel")
+            emoteLabel.Size = UDim2.new(0,140,1,0)
+            emoteLabel.Position = UDim2.new(0,8,0,0)
+            emoteLabel.Text = "Emote (asset id)"
+            emoteLabel.TextColor3 = Color3.new(1,1,1)
+            emoteLabel.BackgroundTransparency = 1
+            emoteLabel.Parent = r3
+            local emoteBox = Instance.new("TextBox")
+            emoteBox.Size = UDim2.new(0,160,0,24)
+            emoteBox.Position = UDim2.new(0,160,0,6)
+            emoteBox.Text = tostring(SETTINGS.emoteId or "")
+            emoteBox.PlaceholderText = "9527883498"
+            emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            emoteBox.TextColor3 = Color3.fromRGB(255,255,255)
+            local ebCorner = Instance.new("UICorner") ebCorner.Parent = emoteBox
+            emoteBox.Parent = r3
+            emoteBox.FocusLost:Connect(function()
+                SETTINGS.emoteId = tostring(emoteBox.Text or "")
+                pcall(SaveSettings)
+                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    pcall(function() playEmote(SETTINGS.emoteId) end)
                 end
             end)
-            styleButton(periodicToggle)
-
-            -- Spin controls removed
-
-            -- Periodic jump info message for mobile users
-            local pjInfo = Instance.new("TextLabel")
-            pjInfo.Size = UDim2.new(0,300,0,18)
-            pjInfo.Position = UDim2.new(0,10,0,82)
-            pjInfo.Text = "Periodic Jump runs every 3 minutes. Mobile-friendly."
-            pjInfo.BackgroundTransparency = 1
-            pjInfo.TextColor3 = Color3.fromRGB(200,200,200)
-            pjInfo.Font = Enum.Font.SourceSans
-            pjInfo.TextSize = 14
-            pjInfo.TextXAlignment = Enum.TextXAlignment.Left
-            pjInfo.Parent = frame
-
-            -- Touch-prevent AFK removed from UI per request; keep Anti-AFK toggle elsewhere
-            styleButton(touchToggle)
-
-            -- Auto-play emote on UI/script execution if an emote is selected
-            pcall(function()
-                if SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" and SETTINGS.emotePlaying then
-                    local function attemptPlay()
-                        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if not hum then
-                            for i=1,20 do
-                                hum = char:FindFirstChildOfClass("Humanoid")
-                                if hum then break end
-                                task.wait(0.05)
-                            end
-                        end
-                        pcall(function() playEmote(SETTINGS.emoteId) end)
-                    end
-
-                    -- (Periodic Jump and Spin controls moved below emote block for consistent layout)
-                    if SETTINGS.emotePlaying then
-                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-                            pcall(attemptPlay)
-                        else
-                            LocalPlayer.CharacterAdded:Connect(function()
-                                task.wait(0.5)
-                                pcall(attemptPlay)
-                            end)
-                        end
-                    end
+            local autoEmoteToggle = Instance.new("TextButton")
+            autoEmoteToggle.Size = UDim2.new(0,80,0,28)
+            autoEmoteToggle.Position = UDim2.new(1,-92,0,4)
+            autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
+            autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            autoEmoteToggle.Parent = r3
+            local aec = Instance.new("UICorner") aec.Parent = autoEmoteToggle
+            styleButton(autoEmoteToggle)
+            autoEmoteToggle.MouseButton1Click:Connect(function()
+                SETTINGS.emotePlaying = not SETTINGS.emotePlaying
+                autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.emotePlaying and SETTINGS.emoteId and tostring(SETTINGS.emoteId) ~= "" then
+                    pcall(function() playEmote(SETTINGS.emoteId) end)
+                else
+                    pcall(function() stopEmote() end)
                 end
             end)
         end
@@ -1964,27 +2003,7 @@ do
             end)
         end
         -- Touch-prevent AFK removed per user request; keep Anti-AFK toggle only
-        -- Periodic jump task (every 3 minutes) when enabled
-        task.spawn(function()
-            while true do
-                if SETTINGS.periodicJump then
-                    local ok, char = pcall(function() return LocalPlayer.Character end)
-                    if ok and char then
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        if hum then
-                            pcall(function() hum.Jump = true end)
-                        end
-                    end
-                    -- wait 3 minutes
-                    for i=1,180 do
-                        task.wait(1)
-                        if not SETTINGS.periodicJump then break end
-                    end
-                else
-                    task.wait(1)
-                end
-            end
-        end)
+        -- periodic jump feature removed
         if autoServerHopEnabled and not autoServerHopTask then
             autoServerHopTask = task.spawn(function()
                 while autoServerHopEnabled do
