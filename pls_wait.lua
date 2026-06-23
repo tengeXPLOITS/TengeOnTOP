@@ -25,39 +25,13 @@ SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
 SETTINGS.periodicJump = SETTINGS.periodicJump or false
-SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
-SETTINGS.spinDefaultSpeed = SETTINGS.spinDefaultSpeed or 1
-SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 3
+SETTINGS.spinOnDonation = false
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 SETTINGS.claimEnforceMode = SETTINGS.claimEnforceMode or "teleport"
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 -- runtime spin state (xspin follows old.lua behavior)
-local xspin = (tonumber(SETTINGS.spinDefaultSpeed) or 1) * (tonumber(SETTINGS.spinSpeedMultiplier) or 1)
-local function ensurePersistentSpin()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-    if not hrp then return end
-    local existing = hrp:FindFirstChild("Spin")
-    if not existing then
-        local bav = Instance.new("BodyAngularVelocity")
-        bav.Name = "Spin"
-        bav.Parent = hrp
-        bav.MaxTorque = Vector3.new(0, math.huge, 0)
-        bav.AngularVelocity = Vector3.new(0, xspin, 0)
-    else
-        pcall(function() existing.AngularVelocity = Vector3.new(0, xspin, 0) end)
-    end
-end
-local function removePersistentSpin()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-    if not hrp then return end
-    local existing = hrp:FindFirstChild("Spin")
-    if existing then pcall(function() existing:Destroy() end) end
-end
+-- spin-on-donation removed (settings disabled)
 
 -- Donation monitoring placeholders
 donationConns = donationConns or {}
@@ -357,31 +331,7 @@ local function tryHookPlayerStat(player)
                     local donorId = (donor and donor.UserId) or nil
                     postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = delta, total = newv })
 
-                    -- Spin-on-donation: persistent spin increases by donation delta when enabled
-                    if SETTINGS.spinOnDonation then
-                        pcall(function()
-                            -- Use old.lua-inspired spin algorithm: small average of donation scaled by multiplier added to current spin
-                            local sSM = tonumber(SETTINGS.spinSpeedMultiplier) or 3
-                            local deltaRaised = tonumber(delta or 0) or 0
-                            local averageDelta = (deltaRaised) / 3
-                            -- read current spin velocity from the persistent Spin BodyAngularVelocity on the HRP
-                            local char = LocalPlayer.Character
-                            local hrp = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso"))
-                            local spinYVelocity = 0
-                            if hrp then
-                                local spinPart = hrp:FindFirstChild("Spin")
-                                if spinPart and spinPart.AngularVelocity then
-                                    spinYVelocity = tonumber(spinPart.AngularVelocity.Y) or 0
-                                end
-                            end
-                            -- compute new xspin and clamp
-                            xspin = (averageDelta * sSM) + (tonumber(spinYVelocity) or 0)
-                            xspin = math.clamp(xspin, 1, 200)
-                            -- apply the updated spin value and persist
-                            ensurePersistentSpin()
-                            SETTINGS.spinDefaultSpeed = xspin
-                        end)
-                    end
+                    -- (spin-on-donation removed)
                 end
             end
         end
@@ -404,6 +354,22 @@ local function performHttpRequest(options)
     if request then return request(options) end
     if http_request then return http_request(options) end
     return nil
+end
+
+-- sendPlainWebhook: post a simple content message to webhook URL (preserves donation embed elsewhere)
+local function sendPlainWebhook(msg)
+    if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local url = tostring(SETTINGS.webhookUrl or "")
+    local body = HttpService:JSONEncode({ content = tostring(msg) })
+    pcall(function()
+        if syn and syn.request then
+            syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        elseif request then
+            request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        else
+            HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
+        end
+    end)
 end
 
 -- queueOnTeleport helper (supports executors)
@@ -676,6 +642,38 @@ local function moveCharacterToPosition(pos, mode, lookDir)
         return true
     else
         -- Use MoveTo only (walk enforcement)
+        -- temporarily hide nearby obstructing parts/models to avoid getting stuck
+        local function tempHideNearby(radius)
+            local hidden = {}
+            local root = LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso"))
+            if not root then return hidden end
+            local origin = root.Position
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and obj.CanCollide and obj.Transparency < 1 then
+                    local d = (obj.Position - origin).Magnitude
+                    if d <= (radius or 8) then
+                        hidden[#hidden+1] = {obj = obj, cancollide = obj.CanCollide, trans = obj.Transparency}
+                        pcall(function() obj.CanCollide = false; obj.Transparency = math.min(1, obj.Transparency + 0.6) end)
+                    end
+                end
+            end
+            return hidden
+        end
+        local function restoreHidden(hidden)
+            if not hidden then return end
+            for _, v in ipairs(hidden) do
+                pcall(function()
+                    if v.obj and v.obj.Parent then
+                        v.obj.CanCollide = v.cancollide
+                        v.obj.Transparency = v.trans
+                    end
+                end)
+            end
+        end
+        local hiddenSaved = nil
+        if (SETTINGS.claimEnforceMode or "walk") == "walk" then
+            hiddenSaved = tempHideNearby(8)
+        end
         local ok, started = pcall(function() return hum:MoveTo(targetVec) end)
         if not ok then return false end
         for i=1,12 do
@@ -688,9 +686,11 @@ local function moveCharacterToPosition(pos, mode, lookDir)
                         curHrp.CFrame = CFrame.new(curHrp.Position, curHrp.Position + lookDir.Unit)
                     end)
                 end
+                if hiddenSaved then restoreHidden(hiddenSaved) end
                 return true
             end
         end
+        if hiddenSaved then restoreHidden(hiddenSaved) end
         return false
     end
 end
@@ -1162,18 +1162,37 @@ do
         -- Mini toggle button for open/close (persistent, outside mainFrame)
         local uiToggle = Instance.new("ImageButton")
         uiToggle.Name = "PlsWaitToggle"
-        uiToggle.Size = UDim2.new(0, 40, 0, 40)
-        uiToggle.Position = UDim2.new(0, 12, 1, -64)
+        uiToggle.Size = UDim2.new(0, 50, 0, 50)
+        uiToggle.Position = UDim2.new(0, 12, 1, -72)
         uiToggle.AnchorPoint = Vector2.new(0,0)
         uiToggle.BackgroundColor3 = Color3.fromRGB(30,30,30)
         uiToggle.Image = ""
         uiToggle.Parent = screen
         local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
-        local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 14; togLabel.Parent = uiToggle
+        local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 16; togLabel.Parent = uiToggle
         uiToggle.Visible = true
+        -- small green spinning ring effect behind the toggle
+        local ring = Instance.new("ImageLabel")
+        ring.Size = UDim2.new(0,64,0,64)
+        ring.Position = UDim2.new(0, 6, 1, -78)
+        ring.AnchorPoint = Vector2.new(0,0)
+        ring.BackgroundTransparency = 1
+        ring.Image = ""
+        ring.Parent = screen
+        local ringFrame = Instance.new("Frame") ringFrame.Size = UDim2.new(1,1); ringFrame.BackgroundColor3 = Color3.fromRGB(30,30,30); ringFrame.BackgroundTransparency = 0.6; ringFrame.Parent = ring
+        local gf = Instance.new("UICorner") gf.CornerRadius = UDim.new(1,0); gf.Parent = ringFrame
+        local g = Instance.new("UIGradient") g.Color = ColorSequence.new(Color3.fromRGB(50,205,50), Color3.fromRGB(10,150,50)); g.Rotation = 0; g.Parent = ringFrame
+        -- rotate ring periodically
+        task.spawn(function()
+            local ang = 0
+            while ring and ring.Parent do
+                ang = ang + 60 * task.wait()
+                pcall(function() ring.Rotation = ang % 360 end)
+            end
+        end)
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
-        local MAIN_W, MAIN_H = 620, 420
+        local MAIN_W, MAIN_H = 720, 520
         local LEFT_W = 200
         local GAP = 16
         local mainFrame = Instance.new("Frame")
@@ -1292,27 +1311,9 @@ do
         mainCorner.CornerRadius = UDim.new(0,12)
         mainCorner.Parent = mainFrame
 
-        -- Squiggly background effect: layered slightly offset rounded frames
-        do
-            local function makeLayer(offsetX, offsetY, sizePad, cornerRadius, c1, c2, rot)
-                local f = Instance.new("Frame")
-                f.Size = UDim2.new(1, sizePad, 1, sizePad)
-                f.Position = UDim2.new(0, offsetX, 0, offsetY)
-                f.BackgroundColor3 = Color3.fromRGB(20,20,20)
-                f.BorderSizePixel = 0
-                f.BackgroundTransparency = 0.6
-                f.Parent = mainFrame
-                local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, cornerRadius); uc.Parent = f
-                local g = Instance.new("UIGradient")
-                g.Rotation = rot or 90
-                g.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2)})
-                g.Parent = f
-                return f
-            end
-            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
-            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
-            makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
-        end
+        -- Simplified flat background (squiggle layers removed per user request)
+        mainFrame.BackgroundTransparency = 0
+        mainFrame.BackgroundColor3 = Color3.fromRGB(22,22,22)
 
         -- Left menu column
         local leftCol = Instance.new("Frame")
@@ -1641,46 +1642,7 @@ do
                     pcall(function() stopEmote() end)
                 end
             end)
-            -- Spin speed multiplier textbox (editable)
-            local spinMultiplierBox = Instance.new("TextBox")
-            spinMultiplierBox.Size = UDim2.new(0,80,0,24)
-            spinMultiplierBox.Position = UDim2.new(0,260,0,270)
-            spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
-            spinMultiplierBox.PlaceholderText = "Spin Speed Multiplier"
-            spinMultiplierBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            spinMultiplierBox.TextColor3 = Color3.fromRGB(255,255,255)
-            local smbCorner = Instance.new("UICorner") smbCorner.Parent = spinMultiplierBox
-            spinMultiplierBox.Parent = frame
-            -- Small label next to multiplier for clarity
-            local spinMultLabel = Instance.new("TextLabel")
-            spinMultLabel.Size = UDim2.new(0,12,0,20)
-            spinMultLabel.Position = UDim2.new(0,246,0,270)
-            spinMultLabel.Text = "x"
-            spinMultLabel.BackgroundTransparency = 1
-            spinMultLabel.TextColor3 = Color3.fromRGB(200,200,200)
-            spinMultLabel.Font = Enum.Font.SourceSans
-            spinMultLabel.TextSize = 14
-            spinMultLabel.Parent = frame
-            spinMultiplierBox.FocusLost:Connect(function(enter)
-                if enter then
-                    local n = tonumber(spinMultiplierBox.Text)
-                    if n and n > 0 then
-                        SETTINGS.spinSpeedMultiplier = n
-                        pcall(SaveSettings)
-                        -- if spin-on-donation is active, immediately apply multiplier to current/default spin
-                        pcall(function()
-                            if SETTINGS.spinOnDonation then
-                                local base = tonumber(SETTINGS.spinDefaultSpeed) or 1
-                                local mult = tonumber(SETTINGS.spinSpeedMultiplier) or 1
-                                xspin = math.clamp(base * mult, 1, 200)
-                                ensurePersistentSpin()
-                            end
-                        end)
-                    else
-                        spinMultiplierBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 3)
-                    end
-                end
-            end)
+            -- Spin controls removed
 
             -- Periodic Jump toggle (always present in Overview)
             local periodicLabel = Instance.new("TextLabel")
@@ -1716,41 +1678,7 @@ do
             end)
             styleButton(periodicToggle)
 
-            -- Spin on donation toggle (always present in Overview)
-            local spinLabel = Instance.new("TextLabel")
-            spinLabel.Size = UDim2.new(0,140,0,20)
-            spinLabel.Position = UDim2.new(0,10,0,270)
-            spinLabel.Text = "Spin On Donation"
-            spinLabel.BackgroundTransparency = 1
-            spinLabel.TextColor3 = Color3.new(1,1,1)
-            spinLabel.Parent = frame
-
-            local spinToggleBtn = Instance.new("TextButton")
-            spinToggleBtn.Size = UDim2.new(0,60,0,20)
-            spinToggleBtn.Position = UDim2.new(0,180,0,270)
-            spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-            spinToggleBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            spinToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local spCorner = Instance.new("UICorner") spCorner.Parent = spinToggleBtn
-            spinToggleBtn.Parent = frame
-            spinToggleBtn.MouseButton1Click:Connect(function()
-                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
-                spinToggleBtn.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.spinOnDonation then
-                    local base = tonumber(SETTINGS.spinDefaultSpeed) or 1
-                    local mult = tonumber(SETTINGS.spinSpeedMultiplier) or 1
-                    xspin = math.clamp(base * mult, 1, 200)
-                    pcall(ensurePersistentSpin)
-                    pcall(startDonationMonitor)
-                else
-                    pcall(removePersistentSpin)
-                    if not SETTINGS.webhookToggle then
-                        pcall(stopDonationMonitor)
-                    end
-                end
-            end)
-            styleButton(spinToggleBtn)
+            -- Spin controls removed
 
             -- Periodic jump info message for mobile users
             local pjInfo = Instance.new("TextLabel")
@@ -1764,43 +1692,7 @@ do
             pjInfo.TextXAlignment = Enum.TextXAlignment.Left
             pjInfo.Parent = frame
 
-            -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
-            local touchLabel = Instance.new("TextLabel")
-            touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,118)
-            touchLabel.Text = "Touch Prevent AFK"
-            touchLabel.BackgroundTransparency = 1
-            touchLabel.TextColor3 = Color3.new(1,1,1)
-            touchLabel.Parent = frame
-
-            local touchToggle = Instance.new("TextButton")
-            touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,180,0,118)
-            touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
-            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
-            touchToggle.Parent = frame
-            touchToggle.MouseButton1Click:Connect(function()
-                SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
-                touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.touchPreventAFK then
-                    -- perform an immediate touch/jump action to verify
-                    pcall(function()
-                        local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
-                        if ok and vu then
-                            pcall(function() vu:CaptureController(); if vu.ClickButton2 then vu:ClickButton2(Vector2.new(0,0)) end end)
-                        else
-                            local char = LocalPlayer.Character
-                            if char then
-                                local hum = char:FindFirstChildOfClass("Humanoid")
-                                if hum then hum.Jump = true end
-                            end
-                        end
-                    end)
-                end
-            end)
+            -- Touch-prevent AFK removed from UI per request; keep Anti-AFK toggle elsewhere
             styleButton(touchToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
@@ -2020,7 +1912,9 @@ do
             pcall(function()
                 local playersOnline = tostring(#Players:GetPlayers())
                 local range = tostring(hopRangeText or "any")
-                postWebhookEvent("serverhop", { user = tostring(LocalPlayer and LocalPlayer.Name or "Unknown"), players = playersOnline, range = range, auto = autoServerHopEnabled })
+                -- send simple serverhop notifier as requested: @local.user serverhopped
+                local uname = tostring(LocalPlayer and LocalPlayer.Name or "Unknown")
+                pcall(function() sendPlainWebhook("@"..uname.." serverhopped") end)
             end)
         end
         -- If user requested persistence across hops, ensure queue_on_teleport is set now
@@ -2069,57 +1963,7 @@ do
                 end)
             end)
         end
-        -- Touch-prevent AFK: simulate input every 120s when enabled; robust fallbacks
-        task.spawn(function()
-            while true do
-                if SETTINGS.touchPreventAFK then
-                    local performed = false
-                    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
-                    if ok and vu then
-                        pcall(function()
-                            vu:CaptureController()
-                            if vu.Button1Down and vu.Button1Up then
-                                vu:Button1Down(Vector2.new(0,0))
-                                task.wait(0.06)
-                                vu:Button1Up(Vector2.new(0,0))
-                            elseif vu.ClickButton2 then
-                                vu:ClickButton2(Vector2.new(0,0))
-                            else
-                                -- fallback to ClickButton2 call via different name
-                                pcall(function() vu:ClickButton2(Vector2.new(0,0)) end)
-                            end
-                        end)
-                        performed = true
-                    end
-                    if not performed then
-                        -- fallback: nudge humanoid or make it jump to avoid AFK
-                        local okc, char = pcall(function() return LocalPlayer.Character end)
-                        if okc and char then
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                            if hum then
-                                pcall(function()
-                                    hum.Jump = true
-                                end)
-                            elseif root then
-                                pcall(function()
-                                    local orig = root.CFrame
-                                    root.CFrame = orig * CFrame.new(0,0.1,0)
-                                    task.wait(0.05)
-                                    root.CFrame = orig
-                                end)
-                            end
-                        end
-                    end
-                    for i=1,120 do
-                        task.wait(1)
-                        if not SETTINGS.touchPreventAFK then break end
-                    end
-                else
-                    task.wait(1)
-                end
-            end
-        end)
+        -- Touch-prevent AFK removed per user request; keep Anti-AFK toggle only
         -- Periodic jump task (every 3 minutes) when enabled
         task.spawn(function()
             while true do
@@ -2156,8 +2000,3 @@ do
         end
     end
 end
-
--- Script loaded: use functions directly (not returning a module table)
--- Auto-run a single claim on script execution
--- Script loaded: use functions directly (not returning a module table)
--- Auto-run handled by UI initialization above (avoid duplicate claims)
