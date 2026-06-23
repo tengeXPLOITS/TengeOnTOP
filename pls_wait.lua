@@ -1123,7 +1123,7 @@ do
         uiToggle.Image = ""
         uiToggle.Parent = screen
         local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
-        local togLabel = Instance.new("TextLabel") togLabel.Text = "PLS"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 14; togLabel.Parent = uiToggle
+        local togLabel = Instance.new("TextLabel") togLabel.Text = "💰"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 16; togLabel.Parent = uiToggle
         uiToggle.Visible = true
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
@@ -1175,7 +1175,7 @@ do
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 32, 0, 20)
         closeBtn.Position = UDim2.new(1, -44, 0, 4)
-        closeBtn.Text = "_"
+        closeBtn.Text = "💰"
         closeBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
         closeBtn.Font = Enum.Font.GothamBold
@@ -1246,27 +1246,7 @@ do
         mainCorner.CornerRadius = UDim.new(0,12)
         mainCorner.Parent = mainFrame
 
-        -- Squiggly background effect: layered slightly offset rounded frames
-        do
-            local function makeLayer(offsetX, offsetY, sizePad, cornerRadius, c1, c2, rot)
-                local f = Instance.new("Frame")
-                f.Size = UDim2.new(1, sizePad, 1, sizePad)
-                f.Position = UDim2.new(0, offsetX, 0, offsetY)
-                f.BackgroundColor3 = Color3.fromRGB(20,20,20)
-                f.BorderSizePixel = 0
-                f.BackgroundTransparency = 0.6
-                f.Parent = mainFrame
-                local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, cornerRadius); uc.Parent = f
-                local g = Instance.new("UIGradient")
-                g.Rotation = rot or 90
-                g.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2)})
-                g.Parent = f
-                return f
-            end
-            makeLayer(-8, -6, 16, 18, Color3.fromRGB(28,28,28), Color3.fromRGB(12,12,12), 80)
-            makeLayer(-4, -3, 8, 12, Color3.fromRGB(26,26,26), Color3.fromRGB(14,14,14), 85)
-            makeLayer(0, 0, 0, 10, Color3.fromRGB(24,24,24), Color3.fromRGB(12,12,12), 90)
-        end
+        -- Decorative squiggle layers removed per user request
 
         -- Left menu column
         local leftCol = Instance.new("Frame")
@@ -1825,7 +1805,7 @@ do
         if SETTINGS.webhookToggle then
             startDonationMonitor()
             pcall(function()
-                sendPlainWebhook("@local.user serverhopped")
+                pcall(function() sendPlainWebhook(("@%s serverhopped"):format(tostring(LocalPlayer and LocalPlayer.Name or "Unknown"))) end)
             end)
         end
         -- If user requested persistence across hops, ensure queue_on_teleport is set now
