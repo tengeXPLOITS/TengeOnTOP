@@ -408,6 +408,27 @@ local function resolveDonationDonor(donorOverrideId, donorOverrideName)
             end
         end
     end
+
+    local ok, lchar = pcall(function() return LocalPlayer.Character end)
+    if not ok or not lchar then return nil, nil, nil end
+    local lroot = lchar:FindFirstChild("HumanoidRootPart") or lchar:FindFirstChild("Torso")
+    if not lroot then return nil, nil, nil end
+
+    local best, bestDist = nil, math.huge
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl and pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+            local pr = pl.Character:FindFirstChild("HumanoidRootPart")
+            local d = (pr.Position - lroot.Position).Magnitude
+            if d < bestDist then
+                bestDist = d
+                best = pl
+            end
+        end
+    end
+
+    if best then
+        return best, best.Name, best.UserId
+    end
     return nil, nil, nil
 end
 
@@ -1507,7 +1528,7 @@ do
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
                 local donor = nil
-                local donorName = SETTINGS.followDonorOverrideName or "TestDonor"
+                local donorName = SETTINGS.followDonorOverrideName or ""
                 local donorId = tonumber(SETTINGS.followDonorOverrideId) or 0
                 if donorId and donorId > 0 then
                     donor = Players:GetPlayerByUserId(donorId)
@@ -1519,6 +1540,9 @@ do
                             break
                         end
                     end
+                end
+                if not donor then
+                    donor, donorName, donorId = resolveDonationDonor(nil, nil)
                 end
                 if not donor then
                     donorName = "TestDonor"
