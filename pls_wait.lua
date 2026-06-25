@@ -220,13 +220,20 @@ local function postWebhookEvent(kind, data)
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
         local donorLabel = donorName
+        local followAttempted = data and data.followAttempted or false
+        local followStatus = data and data.followStatus or "disabled"
+        local followSuccessful = data and data.followSuccessful or false
+        local fields = {
+            { name = "Donor 👤", value = donorLabel, inline = false },
+            { name = "Amount 💵", value = tostring(amount), inline = true },
+        }
+        if followAttempted then
+            table.insert(fields, { name = "Follow 🔗", value = tostring(followSuccessful and "Yes" or followStatus), inline = true })
+        end
         table.insert(embeds, {
             title = "New Donation Received! ✅",
             color = 0x00FF00,
-            fields = {
-                { name = "Donor 👤", value = donorLabel, inline = false },
-                { name = "Amount 💵", value = tostring(amount), inline = true },
-            },
+            fields = fields,
         })
     else
         if kind == "serverhop" then
@@ -351,13 +358,17 @@ local function tryHookPlayerStat(player)
                     local donor = fetchNearestPlayer()
                     local donorName = (donor and donor.Name) or "Unknown"
                     local donorId = (donor and donor.UserId) or nil
-                    postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = delta, total = newv })
-                    if SETTINGS.followPlayerOnDonation and donor and donor.UserId and donor.UserId > 0 then
-                        local okFollow = pcall(function() return tryFollowDonor(donor.UserId) end)
-                        if okFollow then
-                            notify("Donation", ("Follow sent to %s"):format(donorName), 3)
-                        end
-                    end
+                    local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
+                    postWebhookEvent("donation", {
+                        donorName = donorName,
+                        from = donorName,
+                        userId = donorId,
+                        amount = delta,
+                        total = newv,
+                        followAttempted = SETTINGS.followPlayerOnDonation,
+                        followStatus = followStatus,
+                        followSuccessful = followOk,
+                    })
 
                     -- spin-on-donation feature removed
                 end
@@ -397,6 +408,28 @@ local function tryFollowDonor(userId)
         if response.StatusCode then return tonumber(response.StatusCode) >= 200 and tonumber(response.StatusCode) < 400 end
     end
     return true
+end
+
+local function handleDonationFollow(donor, donorName, donorId)
+    local donorLabel = tostring(donorName or donor and donor.Name or "Unknown")
+    if not SETTINGS.followPlayerOnDonation then
+        return false, "disabled"
+    end
+    if not donor or not donorId or tonumber(donorId) <= 0 then
+        notify("Donation", "Follow skipped: no donor found", 3)
+        return false, "no-donor"
+    end
+    if tonumber(donorId) == (LocalPlayer and LocalPlayer.UserId or 0) then
+        notify("Donation", "Follow skipped: donor is you", 3)
+        return false, "self"
+    end
+
+    notify("Donation", ("Follow attempt for %s"):format(donorLabel), 3)
+    local okFollow = pcall(function() return tryFollowDonor(donorId) end)
+    local success = okFollow and tryFollowDonor(donorId) or false
+    local status = success and "followed" or "failed"
+    notify("Donation", (success and ("Follow sent to %s"):format(donorLabel) or ("Follow failed for %s"):format(donorLabel)), 3)
+    return success, status
 end
 
 -- performHttpRequest helper (syn/request or common aliases)
@@ -1383,7 +1416,7 @@ do
 
             local afkToggle = Instance.new("TextButton")
             afkToggle.Size = UDim2.new(0,60,0,20)
-            afkToggle.Position = UDim2.new(0,140,0,10)
+            afkToggle.Position = UDim2.new(0,150,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1407,7 +1440,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,140,0,42)
+            touchToggle.Position = UDim2.new(0,150,0,42)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1443,12 +1476,30 @@ do
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
-                local donorName = (LocalPlayer and LocalPlayer.Name) or "Test"
-                local donorId = (LocalPlayer and LocalPlayer.UserId) or 0
+                local donor = nil
+                for _, pl in ipairs(Players:GetPlayers()) do
+                    if pl ~= LocalPlayer then
+                        donor = pl
+                        break
+                    end
+                end
+                local donorName = (donor and donor.Name) or (LocalPlayer and LocalPlayer.Name) or "Test"
+                local donorId = (donor and donor.UserId) or (LocalPlayer and LocalPlayer.UserId) or 0
+                local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
                 pcall(function()
-                    postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = 1, total = 1, test = true })
+                    postWebhookEvent("donation", {
+                        donorName = donorName,
+                        from = donorName,
+                        userId = donorId,
+                        amount = 1,
+                        total = 1,
+                        test = true,
+                        followAttempted = SETTINGS.followPlayerOnDonation,
+                        followStatus = followStatus,
+                        followSuccessful = followOk,
+                    })
                 end)
-                notify("Donation Test", "A test donation event was sent.", 3)
+                notify("Donation Test", (SETTINGS.followPlayerOnDonation and (followOk and ("Follow sent to %s"):format(donorName) or ("Follow status: %s"):format(followStatus)) or "Test donation event sent."), 4)
             end)
 
             -- Emote selector / play (Main)
@@ -1832,7 +1883,7 @@ do
             end)
 
             local followLabel = Instance.new("TextLabel")
-            followLabel.Size = UDim2.new(0,200,0,20)
+            followLabel.Size = UDim2.new(0,180,0,20)
             followLabel.Position = UDim2.new(0,10,0,40)
             followLabel.Text = "Follow player on donation"
             followLabel.BackgroundTransparency = 1
@@ -1841,7 +1892,7 @@ do
 
             local followToggle = Instance.new("TextButton")
             followToggle.Size = UDim2.new(0,60,0,20)
-            followToggle.Position = UDim2.new(0,220,0,40)
+            followToggle.Position = UDim2.new(0,140,0,40)
             followToggle.Text = SETTINGS.followPlayerOnDonation and "ON" or "OFF"
             followToggle.Parent = frame
             followToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
