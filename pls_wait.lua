@@ -25,6 +25,8 @@ SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
 SETTINGS.followPlayerOnDonation = SETTINGS.followPlayerOnDonation or false
+SETTINGS.followDonorOverrideId = SETTINGS.followDonorOverrideId or nil
+SETTINGS.followDonorOverrideName = SETTINGS.followDonorOverrideName or nil
 -- legacy periodic jump and spin features removed
 SETTINGS.periodicJump = false
 SETTINGS.spinOnDonation = false
@@ -355,9 +357,12 @@ local function tryHookPlayerStat(player)
                         end
                         return best
                     end
-                    local donor = fetchNearestPlayer()
-                    local donorName = (donor and donor.Name) or "Unknown"
-                    local donorId = (donor and donor.UserId) or nil
+                    local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                    if not donor then
+                        donor = LocalPlayer
+                        donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
+                        donorId = (LocalPlayer and LocalPlayer.UserId) or nil
+                    end
                     local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
                     postWebhookEvent("donation", {
                         donorName = donorName,
@@ -387,6 +392,25 @@ local function tryHookPlayerStat(player)
     return true
 end
 
+local function resolveDonationDonor(donorOverrideId, donorOverrideName)
+    local overrideId = tonumber(donorOverrideId or SETTINGS.followDonorOverrideId)
+    if overrideId and overrideId > 0 then
+        local player = Players:GetPlayerByUserId(overrideId)
+        if player then
+            return player, player.Name, player.UserId
+        end
+    end
+    local overrideName = tostring(donorOverrideName or SETTINGS.followDonorOverrideName or "")
+    if overrideName ~= "" then
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl and pl.Name == overrideName then
+                return pl, pl.Name, pl.UserId
+            end
+        end
+    end
+    return nil, nil, nil
+end
+
 local function tryFollowDonor(userId)
     if not SETTINGS.followPlayerOnDonation then return false end
     local donorId = tonumber(userId)
@@ -394,11 +418,11 @@ local function tryFollowDonor(userId)
     local followUrl = "https://www.roblox.com/user/follow?userId=" .. tostring(donorId)
     local ok, response = pcall(function()
         if syn and syn.request then
-            return syn.request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+            return syn.request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
         elseif request then
-            return request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+            return request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
         elseif http_request then
-            return http_request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+            return http_request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
         end
         return { Success = true, Body = game:HttpGet(followUrl) }
     end)
@@ -415,8 +439,14 @@ local function handleDonationFollow(donor, donorName, donorId)
     if not SETTINGS.followPlayerOnDonation then
         return false, "disabled"
     end
+    local resolvedDonor, resolvedName, resolvedId = resolveDonationDonor(donorId, donorName)
+    if resolvedDonor then
+        donor = resolvedDonor
+        donorName = resolvedName
+        donorId = resolvedId
+    end
     if not donor or not donorId or tonumber(donorId) <= 0 then
-        notify("Donation", "Follow skipped: no donor found", 3)
+        notify("Donation", "Follow skipped: donor not set", 3)
         return false, "no-donor"
     end
     if tonumber(donorId) == (LocalPlayer and LocalPlayer.UserId or 0) then
@@ -424,11 +454,11 @@ local function handleDonationFollow(donor, donorName, donorId)
         return false, "self"
     end
 
-    notify("Donation", ("Follow attempt for %s"):format(donorLabel), 3)
+    notify("Donation", ("Follow attempt for %s"):format(tostring(donorName or donorLabel)), 3)
     local okFollow = pcall(function() return tryFollowDonor(donorId) end)
     local success = okFollow and tryFollowDonor(donorId) or false
     local status = success and "followed" or "failed"
-    notify("Donation", (success and ("Follow sent to %s"):format(donorLabel) or ("Follow failed for %s"):format(donorLabel)), 3)
+    notify("Donation", (success and ("Follow sent to %s"):format(tostring(donorName or donorLabel)) or ("Follow failed for %s"):format(tostring(donorName or donorLabel))), 3)
     return success, status
 end
 
@@ -1476,15 +1506,9 @@ do
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
-                local donor = nil
-                for _, pl in ipairs(Players:GetPlayers()) do
-                    if pl ~= LocalPlayer then
-                        donor = pl
-                        break
-                    end
-                end
-                local donorName = (donor and donor.Name) or (LocalPlayer and LocalPlayer.Name) or "Test"
-                local donorId = (donor and donor.UserId) or (LocalPlayer and LocalPlayer.UserId) or 0
+                local donor = LocalPlayer
+                local donorName = (LocalPlayer and LocalPlayer.Name) or "Test"
+                local donorId = (LocalPlayer and LocalPlayer.UserId) or 0
                 local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
                 pcall(function()
                     postWebhookEvent("donation", {
