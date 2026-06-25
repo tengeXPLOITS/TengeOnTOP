@@ -24,6 +24,7 @@ SETTINGS = SETTINGS or {}
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
+SETTINGS.followPlayerOnDonation = SETTINGS.followPlayerOnDonation or false
 -- legacy periodic jump and spin features removed
 SETTINGS.periodicJump = false
 SETTINGS.spinOnDonation = false
@@ -351,6 +352,12 @@ local function tryHookPlayerStat(player)
                     local donorName = (donor and donor.Name) or "Unknown"
                     local donorId = (donor and donor.UserId) or nil
                     postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = delta, total = newv })
+                    if SETTINGS.followPlayerOnDonation and donor and donor.UserId and donor.UserId > 0 then
+                        local okFollow = pcall(function() return tryFollowDonor(donor.UserId) end)
+                        if okFollow then
+                            notify("Donation", ("Follow sent to %s"):format(donorName), 3)
+                        end
+                    end
 
                     -- spin-on-donation feature removed
                 end
@@ -366,6 +373,29 @@ local function tryHookPlayerStat(player)
         task.wait(0.05)
         tryHookPlayerStat(player)
     end)
+    return true
+end
+
+local function tryFollowDonor(userId)
+    if not SETTINGS.followPlayerOnDonation then return false end
+    local donorId = tonumber(userId)
+    if not donorId or donorId <= 0 or donorId == (LocalPlayer and LocalPlayer.UserId or 0) then return false end
+    local followUrl = "https://www.roblox.com/user/follow?userId=" .. tostring(donorId)
+    local ok, response = pcall(function()
+        if syn and syn.request then
+            return syn.request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+        elseif request then
+            return request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+        elseif http_request then
+            return http_request({ Url = followUrl, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
+        end
+        return { Success = true, Body = game:HttpGet(followUrl) }
+    end)
+    if not ok then return false end
+    if type(response) == "table" then
+        if response.Success ~= nil then return response.Success ~= false end
+        if response.StatusCode then return tonumber(response.StatusCode) >= 200 and tonumber(response.StatusCode) < 400 end
+    end
     return true
 end
 
@@ -1007,6 +1037,7 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
+                followPlayerOnDonation = SETTINGS.followPlayerOnDonation and true or false,
                 emoteId = SETTINGS.emoteId,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
@@ -1044,6 +1075,7 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
+            if decoded.followPlayerOnDonation ~= nil then SETTINGS.followPlayerOnDonation = decoded.followPlayerOnDonation end
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
@@ -1058,6 +1090,7 @@ do
                 SETTINGS.touchPreventAFK = cfg.touchPreventAFK or SETTINGS.touchPreventAFK
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
+                if cfg.followPlayerOnDonation ~= nil then SETTINGS.followPlayerOnDonation = cfg.followPlayerOnDonation end
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
@@ -1266,7 +1299,7 @@ do
         leftList.VerticalAlignment = Enum.VerticalAlignment.Top
         leftList.Parent = leftCol
 
-        local menu = { {key="Main", icon="📋", text="Overview"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
+        local menu = { {key="Main", icon="📋", text="Main"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
         local tabButtons = {}
         local tabFrames = {}
         for i, item in ipairs(menu) do
@@ -1350,7 +1383,7 @@ do
 
             local afkToggle = Instance.new("TextButton")
             afkToggle.Size = UDim2.new(0,60,0,20)
-            afkToggle.Position = UDim2.new(0,180,0,10)
+            afkToggle.Position = UDim2.new(0,140,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1363,11 +1396,65 @@ do
                 if SETTINGS.antiAfk then pcall(enableAntiAfk) else pcall(disableAntiAfk) end
             end)
             styleButton(afkToggle)
-            -- Enforce mode removed: always use teleport
-            -- Emote selector / play (Overview)
+
+            local touchLabel = Instance.new("TextLabel")
+            touchLabel.Size = UDim2.new(0,180,0,20)
+            touchLabel.Position = UDim2.new(0,10,0,42)
+            touchLabel.Text = "Touch Prevent AFK"
+            touchLabel.BackgroundTransparency = 1
+            touchLabel.TextColor3 = Color3.new(1,1,1)
+            touchLabel.Parent = frame
+
+            local touchToggle = Instance.new("TextButton")
+            touchToggle.Size = UDim2.new(0,60,0,20)
+            touchToggle.Position = UDim2.new(0,140,0,42)
+            touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
+            touchToggle.Parent = frame
+            touchToggle.MouseButton1Click:Connect(function()
+                SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
+                touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.touchPreventAFK then
+                    pcall(function()
+                        local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
+                        if ok and vu then
+                            pcall(function() vu:CaptureController(); if vu.ClickButton2 then vu:ClickButton2(Vector2.new(0,0)) end end)
+                        else
+                            local char = LocalPlayer.Character
+                            if char then
+                                local hum = char:FindFirstChildOfClass("Humanoid")
+                                if hum then hum.Jump = true end
+                            end
+                        end
+                    end)
+                end
+            end)
+            styleButton(touchToggle)
+
+            local donationTestBtn = Instance.new("TextButton")
+            donationTestBtn.Size = UDim2.new(0,160,0,24)
+            donationTestBtn.Position = UDim2.new(0,10,0,74)
+            donationTestBtn.Text = "Test Donation"
+            donationTestBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
+            donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            donationTestBtn.Parent = frame
+            styleButton(donationTestBtn)
+            donationTestBtn.MouseButton1Click:Connect(function()
+                local donorName = (LocalPlayer and LocalPlayer.Name) or "Test"
+                local donorId = (LocalPlayer and LocalPlayer.UserId) or 0
+                pcall(function()
+                    postWebhookEvent("donation", { donorName = donorName, from = donorName, userId = donorId, amount = 1, total = 1, test = true })
+                end)
+                notify("Donation Test", "A test donation event was sent.", 3)
+            end)
+
+            -- Emote selector / play (Main)
             local emoteLabel = Instance.new("TextLabel")
             emoteLabel.Size = UDim2.new(0,120,0,20)
-            emoteLabel.Position = UDim2.new(0,10,0,154)
+            emoteLabel.Position = UDim2.new(0,10,0,112)
             emoteLabel.Text = "Emote (asset id)"
             emoteLabel.TextColor3 = Color3.new(1,1,1)
             emoteLabel.BackgroundTransparency = 1
@@ -1375,7 +1462,7 @@ do
 
             local emoteBox = Instance.new("TextBox")
             emoteBox.Size = UDim2.new(0,160,0,24)
-            emoteBox.Position = UDim2.new(0,140,0,154)
+            emoteBox.Position = UDim2.new(0,140,0,112)
             emoteBox.Text = tostring(SETTINGS.emoteId or "")
             emoteBox.PlaceholderText = "9527883498"
             emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1392,7 +1479,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,190)
+            emotePlayBtn.Position = UDim2.new(0,140,0,144)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1401,7 +1488,7 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,190)
+            emoteStopBtn.Position = UDim2.new(0,228,0,144)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1410,7 +1497,7 @@ do
 
             local presetToggle = Instance.new("TextButton")
             presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,304,0,154)
+            presetToggle.Position = UDim2.new(0,312,0,112)
             presetToggle.Text = "▾"
             presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
             presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1418,7 +1505,7 @@ do
             styleButton(presetToggle)
 
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,10,0,212)
+            presetFrame.Position = UDim2.new(0,10,0,176)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.Parent = frame
@@ -1524,7 +1611,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,232)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,180)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1532,7 +1619,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,232)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,180)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1550,45 +1637,6 @@ do
                 end
             end)
             -- Spin and periodic jump features removed from Overview
-
-            -- Touch-prevent AFK toggle (simulate screen touch every 2 minutes)
-            local touchLabel = Instance.new("TextLabel")
-            touchLabel.Size = UDim2.new(0,180,0,20)
-            touchLabel.Position = UDim2.new(0,10,0,118)
-            touchLabel.Text = "Touch Prevent AFK"
-            touchLabel.BackgroundTransparency = 1
-            touchLabel.TextColor3 = Color3.new(1,1,1)
-            touchLabel.Parent = frame
-
-            local touchToggle = Instance.new("TextButton")
-            touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,180,0,118)
-            touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
-            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
-            touchToggle.Parent = frame
-            touchToggle.MouseButton1Click:Connect(function()
-                SETTINGS.touchPreventAFK = not SETTINGS.touchPreventAFK
-                touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.touchPreventAFK then
-                    -- perform an immediate touch/jump action to verify
-                    pcall(function()
-                        local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
-                        if ok and vu then
-                            pcall(function() vu:CaptureController(); if vu.ClickButton2 then vu:ClickButton2(Vector2.new(0,0)) end end)
-                        else
-                            local char = LocalPlayer.Character
-                            if char then
-                                local hum = char:FindFirstChildOfClass("Humanoid")
-                                if hum then hum.Jump = true end
-                            end
-                        end
-                    end)
-                end
-            end)
-            styleButton(touchToggle)
 
             -- Auto-play emote on UI/script execution if an emote is selected
             pcall(function()
@@ -1783,9 +1831,30 @@ do
                 pcall(SaveSettings)
             end)
 
+            local followLabel = Instance.new("TextLabel")
+            followLabel.Size = UDim2.new(0,200,0,20)
+            followLabel.Position = UDim2.new(0,10,0,40)
+            followLabel.Text = "Follow player on donation"
+            followLabel.BackgroundTransparency = 1
+            followLabel.TextColor3 = Color3.new(1,1,1)
+            followLabel.Parent = frame
+
+            local followToggle = Instance.new("TextButton")
+            followToggle.Size = UDim2.new(0,60,0,20)
+            followToggle.Position = UDim2.new(0,220,0,40)
+            followToggle.Text = SETTINGS.followPlayerOnDonation and "ON" or "OFF"
+            followToggle.Parent = frame
+            followToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            styleButton(followToggle)
+            followToggle.MouseButton1Click:Connect(function()
+                SETTINGS.followPlayerOnDonation = not SETTINGS.followPlayerOnDonation
+                followToggle.Text = SETTINGS.followPlayerOnDonation and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
+
             local urlBox = Instance.new("TextBox")
             urlBox.Size = UDim2.new(1, -20, 0, 24)
-            urlBox.Position = UDim2.new(0,10,0,40)
+            urlBox.Position = UDim2.new(0,10,0,72)
             urlBox.Text = SETTINGS.webhookUrl
             urlBox.PlaceholderText = "https://discord.com/api/webhooks..."
             urlBox.TextXAlignment = Enum.TextXAlignment.Left
