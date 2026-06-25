@@ -436,21 +436,97 @@ local function tryFollowDonor(userId)
     if not SETTINGS.followPlayerOnDonation then return false end
     local donorId = tonumber(userId)
     if not donorId or donorId <= 0 or donorId == (LocalPlayer and LocalPlayer.UserId or 0) then return false end
-    local followUrl = "https://www.roblox.com/user/follow?userId=" .. tostring(donorId)
+
+    local csrfToken = nil
+    local okCsrf, responseCsrf = pcall(function()
+        return game:HttpPost("https://auth.roblox.com/v2/logout", "", true)
+    end)
+    if okCsrf and responseCsrf and responseCsrf.Headers then
+        csrfToken = responseCsrf.Headers["x-csrf-token"] or responseCsrf.Headers["X-CSRF-Token"]
+    end
+
+    if not csrfToken then
+        warn("Follow failed: unable to obtain X-CSRF-TOKEN")
+        return false
+    end
+
+    local followUrl = "https://friends.roblox.com/v1/users/" .. tostring(donorId) .. "/follow"
     local ok, response = pcall(function()
         if syn and syn.request then
-            return syn.request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
+            return syn.request({
+                Url = followUrl,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-CSRF-TOKEN"] = csrfToken,
+                    ["User-Agent"] = "Mozilla/5.0",
+                },
+                Body = HttpService:JSONEncode({}),
+            })
         elseif request then
-            return request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
+            return request({
+                Url = followUrl,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-CSRF-TOKEN"] = csrfToken,
+                    ["User-Agent"] = "Mozilla/5.0",
+                },
+                Body = HttpService:JSONEncode({}),
+            })
         elseif http_request then
-            return http_request({ Url = followUrl, Method = "POST", Headers = { ["User-Agent"] = "Mozilla/5.0", ["Referer"] = "https://www.roblox.com/" } })
+            return http_request({
+                Url = followUrl,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-CSRF-TOKEN"] = csrfToken,
+                    ["User-Agent"] = "Mozilla/5.0",
+                },
+                Body = HttpService:JSONEncode({}),
+            })
         end
-        return { Success = true, Body = game:HttpGet(followUrl) }
+        return HttpService:RequestAsync({
+            Url = followUrl,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["X-CSRF-TOKEN"] = csrfToken,
+            },
+            Body = HttpService:JSONEncode({}),
+        })
     end)
-    if not ok then return false end
+
+    if not ok then
+        warn("Follow request error")
+        return false
+    end
+
     if type(response) == "table" then
-        if response.Success ~= nil then return response.Success ~= false end
-        if response.StatusCode then return tonumber(response.StatusCode) >= 200 and tonumber(response.StatusCode) < 400 end
+        if response.Success ~= nil then
+            if response.Success then
+                return true
+            end
+            if response.Body then
+                local okBody, body = pcall(function() return HttpService:JSONDecode(response.Body) end)
+                if okBody and type(body) == "table" then
+                    warn((body.message or "Follow failed"))
+                end
+            end
+            return false
+        end
+        if response.StatusCode then
+            if tonumber(response.StatusCode) >= 200 and tonumber(response.StatusCode) < 400 then
+                return true
+            end
+            if response.Body then
+                local okBody, body = pcall(function() return HttpService:JSONDecode(response.Body) end)
+                if okBody and type(body) == "table" then
+                    warn((body.message or "Follow failed"))
+                end
+            end
+            return false
+        end
     end
     return true
 end
