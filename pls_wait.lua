@@ -1506,9 +1506,24 @@ do
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
-                local donor = LocalPlayer
-                local donorName = (LocalPlayer and LocalPlayer.Name) or "Test"
-                local donorId = (LocalPlayer and LocalPlayer.UserId) or 0
+                local donor = nil
+                local donorName = SETTINGS.followDonorOverrideName or "TestDonor"
+                local donorId = tonumber(SETTINGS.followDonorOverrideId) or 0
+                if donorId and donorId > 0 then
+                    donor = Players:GetPlayerByUserId(donorId)
+                end
+                if not donor and donorName and donorName ~= "" then
+                    for _, pl in ipairs(Players:GetPlayers()) do
+                        if pl and pl.Name == donorName then
+                            donor = pl
+                            break
+                        end
+                    end
+                end
+                if not donor then
+                    donorName = "TestDonor"
+                    donorId = 0
+                end
                 local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
                 pcall(function()
                     postWebhookEvent("donation", {
