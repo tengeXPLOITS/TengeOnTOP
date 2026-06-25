@@ -460,20 +460,31 @@ local function tryFollowDonor(userId)
     if not donorId or donorId <= 0 or donorId == (LocalPlayer and LocalPlayer.UserId or 0) then return false end
 
     local csrfToken = nil
+    local csrfError = nil
     local okCsrf, responseCsrf = pcall(function()
         return HttpService:RequestAsync({
             Url = "https://auth.roblox.com/v2/logout",
             Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["User-Agent"] = "Mozilla/5.0",
+            },
             Body = HttpService:JSONEncode({}),
         })
     end)
-    if okCsrf and responseCsrf and responseCsrf.Headers then
-        csrfToken = responseCsrf.Headers["x-csrf-token"] or responseCsrf.Headers["X-CSRF-Token"]
+    if okCsrf and responseCsrf then
+        if responseCsrf.Headers then
+            csrfToken = responseCsrf.Headers["x-csrf-token"] or responseCsrf.Headers["X-CSRF-Token"]
+        end
+        if not csrfToken then
+            csrfError = responseCsrf.StatusCode or responseCsrf.StatusMessage or "no csrf header"
+        end
+    else
+        csrfError = "request failed"
     end
 
     if not csrfToken then
-        warn("Follow failed: unable to obtain X-CSRF-TOKEN")
+        warn(("Follow failed: unable to obtain X-CSRF-TOKEN (%s)"):format(tostring(csrfError or "unknown")))
         return false
     end
 
