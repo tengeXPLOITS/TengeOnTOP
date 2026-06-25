@@ -392,6 +392,24 @@ local function tryHookPlayerStat(player)
     return true
 end
 
+local function getUserIdFromUsername(username)
+    local name = tostring(username or "")
+    if name == "" then return nil end
+    local ok, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = "https://users.roblox.com/v1/usernames/users",
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({ usernames = { name }, excludeBannedUsers = true }),
+        })
+    end)
+    if not ok or not response or not response.Success or not response.Body then return nil end
+    local okBody, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+    if not okBody or type(data) ~= "table" or type(data.data) ~= "table" then return nil end
+    if data.data[1] and data.data[1].id then return tonumber(data.data[1].id) end
+    return nil
+end
+
 local function resolveDonationDonor(donorOverrideId, donorOverrideName)
     local overrideId = tonumber(donorOverrideId or SETTINGS.followDonorOverrideId)
     if overrideId and overrideId > 0 then
@@ -406,6 +424,10 @@ local function resolveDonationDonor(donorOverrideId, donorOverrideName)
             if pl and pl.Name == overrideName then
                 return pl, pl.Name, pl.UserId
             end
+        end
+        local resolvedId = getUserIdFromUsername(overrideName)
+        if resolvedId and resolvedId > 0 then
+            return nil, overrideName, resolvedId
         end
     end
 
@@ -439,7 +461,12 @@ local function tryFollowDonor(userId)
 
     local csrfToken = nil
     local okCsrf, responseCsrf = pcall(function()
-        return game:HttpPost("https://auth.roblox.com/v2/logout", "", true)
+        return HttpService:RequestAsync({
+            Url = "https://auth.roblox.com/v2/logout",
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({}),
+        })
     end)
     if okCsrf and responseCsrf and responseCsrf.Headers then
         csrfToken = responseCsrf.Headers["x-csrf-token"] or responseCsrf.Headers["X-CSRF-Token"]
@@ -452,40 +479,6 @@ local function tryFollowDonor(userId)
 
     local followUrl = "https://friends.roblox.com/v1/users/" .. tostring(donorId) .. "/follow"
     local ok, response = pcall(function()
-        if syn and syn.request then
-            return syn.request({
-                Url = followUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-CSRF-TOKEN"] = csrfToken,
-                    ["User-Agent"] = "Mozilla/5.0",
-                },
-                Body = HttpService:JSONEncode({}),
-            })
-        elseif request then
-            return request({
-                Url = followUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-CSRF-TOKEN"] = csrfToken,
-                    ["User-Agent"] = "Mozilla/5.0",
-                },
-                Body = HttpService:JSONEncode({}),
-            })
-        elseif http_request then
-            return http_request({
-                Url = followUrl,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-CSRF-TOKEN"] = csrfToken,
-                    ["User-Agent"] = "Mozilla/5.0",
-                },
-                Body = HttpService:JSONEncode({}),
-            })
-        end
         return HttpService:RequestAsync({
             Url = followUrl,
             Method = "POST",
@@ -552,11 +545,10 @@ local function handleDonationFollow(donor, donorName, donorId)
     end
 
     notify("Donation", ("Follow attempt for %s"):format(tostring(donorName or donorLabel)), 3)
-    local okFollow = pcall(function() return tryFollowDonor(donorId) end)
-    local success = okFollow and tryFollowDonor(donorId) or false
-    local status = success and "followed" or "failed"
-    notify("Donation", (success and ("Follow sent to %s"):format(tostring(donorName or donorLabel)) or ("Follow failed for %s"):format(tostring(donorName or donorLabel))), 3)
-    return success, status
+    local okFollow, success = pcall(function() return tryFollowDonor(donorId) end)
+    local status = (okFollow and success) and "followed" or "failed"
+    notify("Donation", ((okFollow and success) and ("Follow sent to %s"):format(tostring(donorName or donorLabel)) or ("Follow failed for %s"):format(tostring(donorName or donorLabel))), 3)
+    return (okFollow and success), status
 end
 
 -- performHttpRequest helper (syn/request or common aliases)
