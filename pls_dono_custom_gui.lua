@@ -1213,70 +1213,6 @@ local function getRobloxAvatarThumbnailUrl(userId)
     return nil
 end
 
-local attentionWebhookLastSent = 0
-
-local function getNearbyPlayerCountForAttention()
-    local character = LocalPlayer.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then
-        return 0
-    end
-
-    local position = root.Position
-    local count = 0
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer then
-            local otherCharacter = pl.Character
-            local otherRoot = otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart")
-            if otherRoot and (otherRoot.Position - position).Magnitude <= 30 then
-                count += 1
-            end
-        end
-    end
-
-    return count
-end
-
-local function getAttentionWebhookStatusText()
-    local nearbyCount = getNearbyPlayerCountForAttention()
-    if nearbyCount > 7 then
-        return "Attention status: the bot is gaining attention and has a high chance of being donated."
-    end
-    return "Attention status: not enough players nearby yet."
-end
-
-local function sendAttentionWebhookNotification()
-    if not settings or not settings.webhookToggle then
-        return
-    end
-
-    local url = tostring(settings.webhookBox or ""):match("%S+")
-    if not url or url == "" then
-        return
-    end
-
-    local now = tick()
-    if now - attentionWebhookLastSent < 30 then
-        return
-    end
-
-    local nearbyCount = getNearbyPlayerCountForAttention()
-    if nearbyCount <= 7 then
-        return
-    end
-
-    attentionWebhookLastSent = now
-    postWebhookJson(url, {
-        username = "webhook by K_0YG...",
-        embeds = {{
-            color = 0x1B5E20,
-            title = "Nearby attention detected",
-            description = ("There are %d players nearby, so the bot is gaining attention and has a high chance of being donated."):format(nearbyCount),
-            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        }},
-    })
-end
-
 local function sendDonationWebhook(amount, donorInfo)
     if not settings then
         return
@@ -1292,7 +1228,8 @@ local function sendDonationWebhook(amount, donorInfo)
     end
 
     local received = math.max(0, tonumber(amount) or 0)
-    local taxed = math.floor((tonumber(amount) or 0) * 0.6)
+    local actualReceived = math.floor(received * 0.6)
+    local receivedLabel = "How much you actually received"
     local donorName = trimText(donorInfo and donorInfo.name) ~= "" and tostring(donorInfo.name) or "Unknown"
     local donorDisplay = trimText(donorInfo and donorInfo.displayName) ~= "" and tostring(donorInfo.displayName) or donorName
     local donorLabel
@@ -1307,21 +1244,18 @@ local function sendDonationWebhook(amount, donorInfo)
     local recipientDisplay = trimText(LocalPlayer.DisplayName) ~= "" and tostring(LocalPlayer.DisplayName) or tostring(LocalPlayer.Name or "Unknown")
     local donorUserId = tonumber(donorInfo and donorInfo.userId) or 0
     local donorAvatar = donorUserId > 0 and getRobloxAvatarThumbnailUrl(donorUserId) or nil
-    local attentionStatus = getAttentionWebhookStatusText()
 
     postWebhookJson(url, {
         username = "webhook by K_0YG...",
         embeds = {{
             color = 0x1B5E20,
             title = ("@%s just got donated! 🤑"):format(recipientDisplay),
-            description = ("**%d R$** by **%s**\n• How much you actually received: %d R$\n• UR raised amount: %d R$\n• %s"):format(received, donorLabel, taxed, math.max(0, tonumber(getCurrentRaisedAmount()) or 0), attentionStatus),
+            description = ("**%d R$** by **%s**\n• %s: %d R$\n• UR raised amount: %d R$"):format(received, donorLabel, receivedLabel, actualReceived, math.max(0, tonumber(getCurrentRaisedAmount()) or 0)),
             thumbnail = donorAvatar and {url = donorAvatar, proxy_url = donorAvatar} or nil,
             author = donorAvatar and {name = donorLabel, icon_url = donorAvatar} or nil,
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
     })
-
-    sendAttentionWebhookNotification()
 end
 
 local function pickRandomMessage(list, fallback)
