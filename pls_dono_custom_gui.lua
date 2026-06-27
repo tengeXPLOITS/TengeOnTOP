@@ -25,14 +25,11 @@ end
 local ALLOWED_PLACE_IDS = {
     [137150797605098] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
     [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
-    [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
     [14212732626] = true, -- PLS WAIT (unreleased as of 2024-06)
 }
 
-
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
-local VC_PLS_DONATE_PLACE_ID = 8943844393
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -610,7 +607,6 @@ local defaults = {
     serverHopDelay = 15,
     minPlayerCount = 23,
     maxPlayerCount = 24,
-    vcServerHopToggle = false,
     plusHopToggle = false,
     plusHopMinPlayers = 3,
     -- antiLagBeta removed
@@ -899,7 +895,7 @@ local BOT_HOP_REASONS = {
 
 local function shouldTrackFarmHop(reason)
     local normalizedReason = tostring(reason or "")
-    return normalizedReason ~= "" and normalizedReason ~= "manual-button" and normalizedReason ~= "vc-server-hop-toggle"
+    return normalizedReason ~= "" and normalizedReason ~= "manual-button"
 end
 
 local function markPendingFarmHop(reason, placeId, targetServerId)
@@ -1177,24 +1173,94 @@ local function getCurrentRaisedAmount()
     return raised
 end
 
-local function getRobloxAvatarThumbnailUrl(userId, size)
-    if type(userId) ~= "number" or userId <= 0 then
+local function getRobloxAvatarThumbnailUrl(userId)
+    local numericUserId = tonumber(userId)
+    if not numericUserId or numericUserId <= 0 then
         return nil
     end
 
     local ok, thumbnailUrl = pcall(function()
         if Players.GetUserThumbnailAsync then
-            local thumbType = Enum.ThumbnailType.AvatarBust
-            local thumbSize = Enum.ThumbnailSize[size] or Enum.ThumbnailSize.Size256x256
-            local url, isReady = Players:GetUserThumbnailAsync(userId, thumbType, thumbSize)
-            if type(url) == "string" and url ~= "" then
+            local success, url = pcall(function()
+                return Players:GetUserThumbnailAsync(numericUserId, Enum.ThumbnailType.AvatarBust, Enum.ThumbnailSize.Size420x420)
+            end)
+            if success and type(url) == "string" and url ~= "" then
                 return url
             end
         end
-        return nil
+
+        return ("https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png"):format(numericUserId)
     end)
 
-    return ok and thumbnailUrl or nil
+    if ok and type(thumbnailUrl) == "string" and thumbnailUrl ~= "" then
+        return thumbnailUrl
+    end
+
+    return nil
+end
+
+local attentionWebhookLastSent = 0
+
+local function getNearbyPlayerCountForAttention()
+    local character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        return 0
+    end
+
+    local position = root.Position
+    local count = 0
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer then
+            local otherCharacter = pl.Character
+            local otherRoot = otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart")
+            if otherRoot and (otherRoot.Position - position).Magnitude <= 30 then
+                count += 1
+            end
+        end
+    end
+
+    return count
+end
+
+local function getAttentionWebhookStatusText()
+    local nearbyCount = getNearbyPlayerCountForAttention()
+    if nearbyCount > 7 then
+        return "Attention status: the bot is gaining attention and has a high chance of being donated."
+    end
+    return "Attention status: not enough players nearby yet."
+end
+
+local function sendAttentionWebhookNotification()
+    if not settings or not settings.webhookToggle then
+        return
+    end
+
+    local url = tostring(settings.webhookBox or ""):match("%S+")
+    if not url or url == "" then
+        return
+    end
+
+    local now = tick()
+    if now - attentionWebhookLastSent < 30 then
+        return
+    end
+
+    local nearbyCount = getNearbyPlayerCountForAttention()
+    if nearbyCount <= 7 then
+        return
+    end
+
+    attentionWebhookLastSent = now
+    postWebhookJson(url, {
+        username = "webhook by K_0YG...",
+        embeds = {{
+            color = 0x1B5E20,
+            title = "Nearby attention detected",
+            description = ("There are %d players nearby, so the bot is gaining attention and has a high chance of being donated."):format(nearbyCount),
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        }},
+    })
 end
 
 local function sendDonationWebhook(amount, donorInfo)
@@ -1222,109 +1288,22 @@ local function sendDonationWebhook(amount, donorInfo)
 
     local recipientDisplay = trimText(LocalPlayer.DisplayName) ~= "" and tostring(LocalPlayer.DisplayName) or tostring(LocalPlayer.Name or "Unknown")
     local donorUserId = tonumber(donorInfo and donorInfo.userId) or 0
-    local donorAvatar = donorUserId > 0 and getRobloxAvatarThumbnailUrl(donorUserId, "Size256x256") or nil
+    local donorAvatar = donorUserId > 0 and getRobloxAvatarThumbnailUrl(donorUserId) or nil
+    local attentionStatus = getAttentionWebhookStatusText()
 
     postWebhookJson(url, {
         username = "webhook by K_0YG...",
         embeds = {{
             color = 0x1B5E20,
             title = ("@%s just got donated! 🤑"):format(recipientDisplay),
-            description = ("**%d R$** by **%s**\n• A/T: %d R$\n• UR raised amount: %d R$"):format(received, donorLabel, taxed, math.max(0, tonumber(getCurrentRaisedAmount()) or 0)),
-            thumbnail = donorAvatar and {url = donorAvatar} or nil,
+            description = ("**%d R$** by **%s**\n• How much you actually received: %d R$\n• UR raised amount: %d R$\n• %s"):format(received, donorLabel, taxed, math.max(0, tonumber(getCurrentRaisedAmount()) or 0), attentionStatus),
+            thumbnail = donorAvatar and {url = donorAvatar, proxy_url = donorAvatar} or nil,
+            author = donorAvatar and {name = donorLabel, icon_url = donorAvatar} or nil,
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
     })
-end
 
--- Report errors to configured webhook (rate-limited)
--- Send a concise error code to webhook (e.g. "KICK", "BAN", "SHUTDOWN", "ERROR")
-local function reportErrorToWebhook(code)
-    if not settings or not settings.webhookToggle then return end
-    local url = tostring(settings.webhookBox or ""):match("%S+")
-    if not url or url == "" then return end
-    local now = tick()
-    local last = notificationTimestamps["webhook_error"] or 0
-    if now - last < 60 then
-        return
-    end
-    notificationTimestamps["webhook_error"] = now
-    pcall(function()
-        postWebhookJson(url, {
-            username = "K_OYG's UI - Client",
-            embeds = {{
-                title = "Client Error Code",
-                description = tostring(code or "UNKNOWN"),
-                color = 0xFF3333,
-            }},
-        })
-    end)
-end
-
-local function detectErrorCodeFromText(text)
-    local lower = tostring(text or ""):lower()
-    if lower:find("you have been kicked") or lower:find("you were kicked") or lower:find("kicked") then
-        return "KICK"
-    end
-    if lower:find("banned") or lower:find("ban") then
-        return "BAN"
-    end
-    if lower:find("shut down") or lower:find("shutting down") or lower:find("server is shutting") or lower:find("game closed") then
-        return "SHUTDOWN"
-    end
-    if lower:find("disconnected") or lower:find("connection closed") or lower:find("closed connection") then
-        return "DISCONNECT"
-    end
-    if lower:find("exception") or lower:find("stack traceback") or lower:find("stack") or lower:find("error") then
-        return "ERROR"
-    end
-    return nil
-end
-
--- Hook LogService to send webhook on error-like messages
-pcall(function()
-    LogService.MessageOut:Connect(function(message)
-        local text = tostring(message or "")
-        local lower = text:lower()
-        local isError = false
-        if lower:find("kick") or lower:find("kicked") or lower:find("you have been kicked") or lower:find("you were kicked") then
-            isError = true
-        end
-        if lower:find("ban") or lower:find("banned") then
-            isError = true
-        end
-        if lower:find("disconnected") or lower:find("disconnected from") or lower:find("closed connection") or lower:find("connection closed") then
-            isError = true
-        end
-        if lower:find("shut down") or lower:find("shutting down") or lower:find("server is shutting") or lower:find("game closed") then
-            isError = true
-        end
-
-        if isError then
-            local code = detectErrorCodeFromText(text) or "ERROR"
-            pcall(reportErrorToWebhook, code)
-        end
-    end)
-
-    -- Try to detect client shutdowns
-    pcall(function()
-        if type(game.BindToClose) == "function" then
-            game:BindToClose(function()
-                pcall(reportErrorToWebhook, "SHUTDOWN")
-            end)
-        end
-    end)
-end)
-
-
-
-local function resetHopTimer()
-    hopTimerResetTick = tick()
-    donatedSinceHopTimerReset = 0
-end
-
-local function markDonationForHopTimer(delta)
-    hopTimerResetTick = tick()
-    donatedSinceHopTimerReset += math.max(0, tonumber(delta) or 0)
+    sendAttentionWebhookNotification()
 end
 
 local function pickRandomMessage(list, fallback)
@@ -1335,37 +1314,16 @@ local function pickRandomMessage(list, fallback)
     return tostring(fallback or "")
 end
 
-local function getRaisedStatObject()
-    local leaderstats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:WaitForChild("leaderstats", 12)
-    if not leaderstats then
-        return nil
-    end
-    return leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("Donated") or leaderstats:WaitForChild("Raised", 8)
-end
-
-local function formatBoothNumber(n)
-    local value = tonumber(n) or 0
-    if value == 420 or value == 425 then
-        value += 10
-    end
-    if value >= 10000 then
-        return string.format("%.1fk", value / 1000)
-    elseif value >= 1000 then
-        return string.format("%.2fk", value / 1000)
-    end
-    return tostring(math.floor(value))
-end
-
--- Booth text / goal-bar helpers removed (booth apply feature disabled)
-
--- `updateBoothTextNow` removed: booth apply functionality disabled by design
+local hopCooldownSeconds = 1
+local lastHopTick = 0
+local serverHopIsActive = false
+local hopTimerResetTick = tick()
+local donatedSinceHopTimerReset = 0
+local lastDonationTick = 0
+local donationHopBlockSeconds = 3
+local plusHopAttemptCount = 0
 
 local function choosePlaceId()
-    if settings.vcServerHopToggle then
-        return VC_PLS_DONATE_PLACE_ID
-    end
-    -- If user enabled VC server hop, use VC place
-    -- Otherwise, if current place is in allowed list, use it; else pick a random allowed place
     local cur = tonumber(game.PlaceId) or 0
     if ALLOWED_PLACE_IDS[cur] then
         return cur
@@ -1434,7 +1392,6 @@ serverHopNow = function(reason)
                     end)
 
                     if teleported then
-                        markPendingFarmHop(reason, placeId, selectedServer.id)
                         serverHopIsActive = false
                         return
                     end
@@ -1448,7 +1405,6 @@ serverHopNow = function(reason)
 end
 
 requestServerHop = function(reason)
-    -- Track plus-hop attempts and enforce a soft pause/kick if excessive
     if tostring(reason or "") == "plus-hop" then
         plusHopAttemptCount = (plusHopAttemptCount or 0) + 1
         if plusHopAttemptCount > 5 then
@@ -1458,7 +1414,6 @@ requestServerHop = function(reason)
             pcall(function()
                 notify("Plus Hop", "searching for PLUS servers, pls wait!", 6, "plus-hop-kick", 10)
             end)
-            -- Removed forced client kick for plus-hop; user opted to avoid kicking
             return false
         end
     end
@@ -1474,15 +1429,12 @@ requestServerHop = function(reason)
     return serverHopNow(reason)
 end
 
--- Plus-hop: if enabled, upon joining a supported place, immediately hop if current server
--- does not have enough players with Premium (Plus). This avoids servers with few Plus users.
 task.spawn(function()
     task.wait(1.5)
     if not settings or not settings.plusHopToggle then
         return
     end
     local pid = tonumber(game.PlaceId) or 0
-    -- Only run plus-hop in allowed places (user-managed allowlist)
     if not ALLOWED_PLACE_IDS[pid] then
         return
     end
@@ -1508,6 +1460,31 @@ task.spawn(function()
         requestServerHop("plus-hop")
     end)
 end)
+
+local function getRaisedStatObject()
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:WaitForChild("leaderstats", 12)
+    if not leaderstats then
+        return nil
+    end
+    return leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("Donated") or leaderstats:WaitForChild("Raised", 8)
+end
+
+local function formatBoothNumber(n)
+    local value = tonumber(n) or 0
+    if value == 420 or value == 425 then
+        value += 10
+    end
+    if value >= 10000 then
+        return string.format("%.1fk", value / 1000)
+    elseif value >= 1000 then
+        return string.format("%.2fk", value / 1000)
+    end
+    return tostring(math.floor(value))
+end
+
+-- Booth text / goal-bar helpers removed (booth apply feature disabled)
+
+-- `updateBoothTextNow` removed: booth apply functionality disabled by design
 
 findOwnedBoothSlot = function(boothUiFolder)
     if not boothUiFolder then
@@ -2512,11 +2489,15 @@ local function performHelicopterBurst(raisedAmount)
                 heliBody.AngularVelocity = Vector3.new(0, spinSpeed, 0)
 
                 local startTime = tick()
+                local travelRadius = math.clamp(10 + (math.sqrt(amount) * 1.8), 10, 22)
+                local startAngle = 0
                 while tick() - startTime < duration and root.Parent and char.Parent do
                     local t = math.clamp((tick() - startTime) / duration, 0, 1)
                     local eased = 0.5 - (0.5 * math.cos(t * math.pi))
-                    local targetPos = Vector3.new(startPos.X, startPos.Y + (riseHeight * eased), startPos.Z)
-                    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, yaw, 0)
+                    local angle = (t * math.pi * 2) + startAngle
+                    local orbitOffset = Vector3.new(math.cos(angle) * travelRadius, 0, math.sin(angle) * travelRadius)
+                    local targetPos = Vector3.new(startPos.X + orbitOffset.X, startPos.Y + (riseHeight * eased), startPos.Z + orbitOffset.Z)
+                    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, yaw + (angle * 0.5), 0)
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                     end)
@@ -2632,11 +2613,6 @@ settingHandlers = {
         end
         settings.maxPlayerCount = maxVal
         saveSettings()
-    end,
-    vcServerHopToggle = function(value)
-        if value then
-            serverHopNow("vc-server-hop-toggle")
-        end
     end,
     -- antiLagBeta handler removed
     antiAfkToggle = function(value)
@@ -3199,9 +3175,6 @@ do
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
-
-    -- VC Server Hop
-    createToggle(serverSection, "VC Server Hop (All Servers)", "vcServerHopToggle")
 end
 
 end
@@ -3270,7 +3243,6 @@ task.spawn(function()
         end
 
         lastRaised = current
-        markDonationForHopTimer(delta)
 
         if settings.spinSet then
             local spin = getSpinMover()
@@ -3332,7 +3304,8 @@ task.spawn(function()
             local delayMinutes = math.max(1, tonumber(settings.serverHopDelay) or 15)
             if tick() - hopTimerResetTick >= (delayMinutes * 60) then
                 if requestServerHop("auto-timer") then
-                    resetHopTimer()
+                    hopTimerResetTick = tick()
+                    donatedSinceHopTimerReset = 0
                 end
             end
         else
