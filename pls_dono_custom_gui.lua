@@ -1069,15 +1069,29 @@ end
 local function postWebhookJson(url, bodyTable)
     local payload = HttpService:JSONEncode(bodyTable)
     local sent = false
+
     pcall(function()
-        local response = performHttpRequest({
-            Url = url,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = payload,
-        })
-        sent = response ~= nil or sent
+        local ok, response = pcall(function()
+            if HttpService.PostAsync then
+                return HttpService:PostAsync(url, payload, Enum.HttpContentType.ApplicationJson, false)
+            end
+            return nil
+        end)
+        sent = ok and response ~= nil
     end)
+
+    if not sent then
+        pcall(function()
+            local response = performHttpRequest({
+                Url = url,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = payload,
+            })
+            sent = response ~= nil
+        end)
+    end
+
     return sent
 end
 
@@ -1264,12 +1278,16 @@ local function sendAttentionWebhookNotification()
 end
 
 local function sendDonationWebhook(amount, donorInfo)
-    if not settings.webhookToggle then
+    if not settings then
         return
     end
 
     local url = tostring(settings.webhookBox or ""):match("%S+")
     if not url or url == "" then
+        return
+    end
+
+    if not settings.webhookToggle and not url then
         return
     end
 
@@ -2450,6 +2468,22 @@ local function startHelicopterIdleMode()
     end)
 end
 
+local function getOrCreateHelicopterMarker()
+    local marker = workspace:FindFirstChild("_HIGHLIGHT.CF")
+    if marker and marker:IsA("BasePart") then
+        return marker
+    end
+
+    marker = Instance.new("Part")
+    marker.Name = "_HIGHLIGHT.CF"
+    marker.Size = Vector3.new(20, 2, 20)
+    marker.Transparency = 1
+    marker.CanCollide = false
+    marker.Anchored = true
+    marker.Parent = workspace
+    return marker
+end
+
 local function performHelicopterBurst(raisedAmount)
     pendingHelicopterRaisedAmount += math.max(1, tonumber(raisedAmount) or 1)
     if currentHelicopterSpinTask then
@@ -2469,8 +2503,8 @@ local function performHelicopterBurst(raisedAmount)
             end
 
             local ok, err = pcall(function()
-                loadAstronautIdle()
                 stopHelicopterIdleTask()
+                stopAstronautIdle()
 
                 local heliBody = root:FindFirstChild("HL1__HELI")
                 if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
@@ -2480,33 +2514,70 @@ local function performHelicopterBurst(raisedAmount)
                     heliBody.Parent = root
                 end
 
+                local marker = getOrCreateHelicopterMarker()
                 local riseHeight = getHelicopterRiseHeight(amount, 8)
-                local duration = getHelicopterFlightDuration(amount)
-                local startPos = root.Position
-                local startCF = root.CFrame
-                local _, yaw, _ = startCF:ToOrientation()
+                local movementDuration = math.clamp(1.2 + (amount * 0.02), 1.2, 2.2)
+                local settleDuration = math.clamp(0.9 + (amount * 0.01), 0.9, 1.5)
                 local spinSpeed = math.clamp(HELICOPTER_IDLE_SPIN_SPEED + (amount * HELICOPTER_SPIN_SPEED_PER_RUBUX), HELICOPTER_IDLE_SPIN_SPEED, HELICOPTER_MAX_SPIN_SPEED)
+
+                marker.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
                 heliBody.AngularVelocity = Vector3.new(0, spinSpeed, 0)
 
-                local startTime = tick()
-                local travelRadius = math.clamp(10 + (math.sqrt(amount) * 1.8), 10, 22)
-                local startAngle = 0
-                while tick() - startTime < duration and root.Parent and char.Parent do
-                    local t = math.clamp((tick() - startTime) / duration, 0, 1)
-                    local eased = 0.5 - (0.5 * math.cos(t * math.pi))
-                    local angle = (t * math.pi * 2) + startAngle
-                    local orbitOffset = Vector3.new(math.cos(angle) * travelRadius, 0, math.sin(angle) * travelRadius)
-                    local targetPos = Vector3.new(startPos.X + orbitOffset.X, startPos.Y + (riseHeight * eased), startPos.Z + orbitOffset.Z)
-                    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, yaw + (angle * 0.5), 0)
-                    pcall(function()
-                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                    end)
-                    task.wait()
-                end
+                pcall(function()
+                    sendChatMessage("Enabling engines...")
+                    Players:Chat("/e dance2")
+                end)
 
-                if root.Parent then
-                    root.CFrame = CFrame.new(startPos) * CFrame.Angles(0, yaw, 0)
-                end
+                task.wait(3)
+
+                local fastSpinTween = TweenService:Create(
+                    heliBody,
+                    TweenInfo.new(0.9, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+                    { AngularVelocity = Vector3.new(0, math.clamp(spinSpeed + 16, HELICOPTER_IDLE_SPIN_SPEED, 28), 0) }
+                )
+                fastSpinTween:Play()
+                task.wait(0.9)
+
+                pcall(function()
+                    sendChatMessage("TAKEOFF IN 3")
+                end)
+                task.wait(1)
+                pcall(function()
+                    sendChatMessage("2")
+                end)
+                task.wait(1)
+                pcall(function()
+                    sendChatMessage("1")
+                end)
+                task.wait(1)
+
+                local startPos = marker.Position
+                local riseTween = TweenService:Create(
+                    marker,
+                    TweenInfo.new(movementDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { CFrame = CFrame.new(startPos + Vector3.new(0, riseHeight, 0)) }
+                )
+                local settleTween = TweenService:Create(
+                    marker,
+                    TweenInfo.new(settleDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                    { CFrame = CFrame.new(startPos) }
+                )
+
+                riseTween:Play()
+                task.wait(movementDuration)
+                settleTween:Play()
+
+                local slowSpinTween = TweenService:Create(
+                    heliBody,
+                    TweenInfo.new(0.8, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+                    { AngularVelocity = Vector3.new(0, HELICOPTER_IDLE_SPIN_SPEED, 0) }
+                )
+                slowSpinTween:Play()
+                task.wait(0.8)
+
+                pcall(function()
+                    Players:Chat("/e wave")
+                end)
             end)
 
             if not ok then
