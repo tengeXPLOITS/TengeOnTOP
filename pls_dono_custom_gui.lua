@@ -1177,8 +1177,25 @@ local function getCurrentRaisedAmount()
     return raised
 end
 
+local function getRobloxAvatarThumbnailUrl(userId, size)
+    if type(userId) ~= "number" or userId <= 0 then
+        return nil
+    end
 
--- avatar thumbnail lookup removed; webhook will not include avatar thumbnails
+    local ok, thumbnailUrl = pcall(function()
+        if Players.GetUserThumbnailAsync then
+            local thumbType = Enum.ThumbnailType.AvatarBust
+            local thumbSize = Enum.ThumbnailSize[size] or Enum.ThumbnailSize.Size256x256
+            local url, isReady = Players:GetUserThumbnailAsync(userId, thumbType, thumbSize)
+            if type(url) == "string" and url ~= "" then
+                return url
+            end
+        end
+        return nil
+    end)
+
+    return ok and thumbnailUrl or nil
+end
 
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
@@ -1202,16 +1219,19 @@ local function sendDonationWebhook(amount, donorInfo)
     else
         donorLabel = donorDisplay
     end
+
+    local recipientDisplay = trimText(LocalPlayer.DisplayName) ~= "" and tostring(LocalPlayer.DisplayName) or tostring(LocalPlayer.Name or "Unknown")
+    local donorUserId = tonumber(donorInfo and donorInfo.userId) or 0
+    local donorAvatar = donorUserId > 0 and getRobloxAvatarThumbnailUrl(donorUserId, "Size256x256") or nil
+
     postWebhookJson(url, {
         username = "webhook by K_0YG...",
         embeds = {{
-            color = 0xFFAA00,
-            title = "New Donation Received! ✅",
-            fields = {
-                {name = "Donor 👤", value = donorLabel, inline = false},
-                {name = "How much recepient received 💵", value = string.format("%d", received), inline = true},
-                {name = "Tax applied ):", value = string.format("%d", taxed), inline = true},
-            },
+            color = 0x1B5E20,
+            title = ("@%s just got donated! 🤑"):format(recipientDisplay),
+            description = ("**%d R$** by **%s**\n• A/T: %d R$\n• UR raised amount: %d R$"):format(received, donorLabel, taxed, math.max(0, tonumber(getCurrentRaisedAmount()) or 0)),
+            thumbnail = donorAvatar and {url = donorAvatar} or nil,
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
     })
 end
@@ -2397,48 +2417,20 @@ local function triggerLandingExplosion(humanoid)
 end
 
 local currentIdleTask = nil
-local HELICOPTER_IDLE_SPIN_SPEED = 2.7
-local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
-local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
-local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
-local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
+local HELICOPTER_IDLE_SPIN_SPEED = 2.4
+local HELICOPTER_SPIN_SPEED_PER_RUBUX = 0.025
+local HELICOPTER_MAX_SPIN_SPEED = 8
 local SPIN_DONATION_BASE_SPEED = 0.25
-local HELICOPTER_PLAZA_ROUTE = {
-    Vector3.new(166.584, 0, 371.398),
-    Vector3.new(228.765, 0, 332.55),
-    Vector3.new(225.878, 0, 274.96),
-    Vector3.new(169.654, 0, 232.826),
-    Vector3.new(102.625, 0, 274.941),
-    Vector3.new(109.353, 0, 351.28),
-    Vector3.new(166.584, 0, 371.399),
-}
 
 local function getHelicopterFlightDuration(amount)
     local donation = math.max(1, tonumber(amount) or 1)
-    if donation >= 100 then
-        local clamped = math.min(10000, donation)
-        local normalized = math.clamp((math.log10(clamped) - 2) / 2, 0, 1)
-        return 52 + (28 * normalized)
-    end
-
-    local normalized = math.clamp((donation - 1) / 99, 0, 1)
-    return 16 + (36 * (normalized ^ 0.72))
+    return math.clamp(0.55 + (math.sqrt(donation) * 0.06), 0.7, 1.9)
 end
 
 local function getHelicopterRiseHeight(amount, minRiseHeight)
     local donation = math.max(1, tonumber(amount) or 1)
     local minimum = math.max(0, tonumber(minRiseHeight) or 0)
-    local targetHeight = 22 + (math.sqrt(donation) * 8)
-    return math.clamp(math.max(minimum, targetHeight), 28, 105)
-end
-
-local function getHelicopterSpinSpeedForAmount(amount)
-    local donation = math.max(1, tonumber(amount) or 1)
-    return math.min(55, 25 + (math.sqrt(donation) * 1.6))
-end
-
-local function getHelicopterIdleAngularVelocity()
-    return HELICOPTER_IDLE_SPIN_SPEED
+    return math.clamp(math.max(minimum, 8 + (math.sqrt(donation) * 2.4)), 8, 28)
 end
 
 local function stopHelicopterIdleTask()
@@ -2469,85 +2461,26 @@ local function startHelicopterIdleMode()
         heliBody.Parent = root
     end
 
-    local idleSpeed = getHelicopterIdleAngularVelocity()
     stopHelicopterIdleTask()
-
-    -- Ramp BodyAngularVelocity from 0 up to idleSpeed, then switch to a rapid
-    -- pulse pattern so the idle looks like a quick spin-pause-spin cycle.
-    heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+    heliBody.AngularVelocity = Vector3.new(0, HELICOPTER_IDLE_SPIN_SPEED, 0)
     currentIdleTask = task.spawn(function()
-        local rampDuration = 0.7
-        local rampStart = tick()
-        while tick() - rampStart < rampDuration and settings.helicopterEnabled and root.Parent do
-            local t = math.clamp((tick() - rampStart) / rampDuration, 0, 1)
-            local ramped = idleSpeed * (t * t) -- quad-in ramp
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, ramped, 0)
-            end
-            task.wait()
-        end
-        if heliBody and heliBody.Parent then
-            heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
-        end
-
-        local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
         while settings.helicopterEnabled and root.Parent do
-            if heliBody and heliBody.Parent then
-                -- Keep spinning at pulse speed continuously (no pause)
-                heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
-            end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end)
-            task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
+            task.wait(0.05)
         end
-    end)
-
-    pcall(function()
-        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     end)
 end
 
-local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, burstConfig)
+local function performHelicopterBurst(raisedAmount)
     pendingHelicopterRaisedAmount += math.max(1, tonumber(raisedAmount) or 1)
     if currentHelicopterSpinTask then
         return
     end
 
     currentHelicopterSpinTask = task.spawn(function()
-        local burstIndex = 0
-        local config = type(burstConfig) == "table" and burstConfig or {}
-
-        local function restoreIdleMode()
-            if settings.helicopterEnabled and not currentHelicopterSpinTask then
-                task.spawn(function()
-                    task.wait(0.08)
-                    local started = false
-                    for _ = 1, 15 do
-                        if not settings.helicopterEnabled or currentHelicopterSpinTask then
-                            return
-                        end
-
-                        local currentChar = LocalPlayer.Character
-                        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
-                        local currentRoot = currentHum and currentHum.RootPart
-                        if currentRoot and currentRoot.Parent then
-                            startHelicopterIdleMode()
-                            started = true
-                            break
-                        end
-                        task.wait(0.2)
-                    end
-
-                    if not started and settings.helicopterEnabled and not currentHelicopterSpinTask then
-                        startHelicopterIdleMode()
-                    end
-                end)
-            end
-        end
-
         while pendingHelicopterRaisedAmount > 0 do
-            burstIndex += 1
             local amount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
             pendingHelicopterRaisedAmount = 0
 
@@ -2560,25 +2493,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 
             local ok, err = pcall(function()
                 loadAstronautIdle()
-
-                local animateScript = char:FindFirstChild("Animate")
-                local animatePrevEnabled = nil
-                if animateScript and animateScript:IsA("LocalScript") then
-                    animatePrevEnabled = animateScript.Enabled
-                    animateScript.Enabled = false
-                end
-
-                local baseIdleSpeed = getHelicopterIdleAngularVelocity()
-                local targetSpinSpeed = math.max(getHelicopterSpinSpeedForAmount(amount), tonumber(spinSpeed) or 25)
-                local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
-                local riseHeight = getHelicopterRiseHeight(amount, minRiseHeight)
-                local registerDelay = math.max(0.35, tonumber(config.registerDelay) or 1.8)
-                local prepDuration = math.max(0.3, tonumber(config.prepDuration) or 0.75)
-                local groundedSpinDuration = math.max(1.2, tonumber(config.groundedSpinDuration) or math.max(2.5, tonumber(spinDuration) or 2.5))
-                local ascentDuration = math.max(3, tonumber(config.ascentDuration) or 6.5)
-                local landingDuration = math.max(3.5, tonumber(config.landingDuration) or 5.5)
-                local flightDuration = getHelicopterFlightDuration(amount)
-
                 stopHelicopterIdleTask()
 
                 local heliBody = root:FindFirstChild("HL1__HELI")
@@ -2586,214 +2500,31 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     heliBody = Instance.new("BodyAngularVelocity")
                     heliBody.Name = "HL1__HELI"
                     heliBody.MaxTorque = Vector3.new(0, math.huge, 0)
-                    heliBody.AngularVelocity = Vector3.new(0, baseIdleSpeed, 0)
                     heliBody.Parent = root
                 end
 
-                local holdCF = root.CFrame
-                local holdStart = tick()
-                while tick() - holdStart < registerDelay and char.Parent and root.Parent do
+                local riseHeight = getHelicopterRiseHeight(amount, 8)
+                local duration = getHelicopterFlightDuration(amount)
+                local startPos = root.Position
+                local startCF = root.CFrame
+                local _, yaw, _ = startCF:ToOrientation()
+                local spinSpeed = math.clamp(HELICOPTER_IDLE_SPIN_SPEED + (amount * HELICOPTER_SPIN_SPEED_PER_RUBUX), HELICOPTER_IDLE_SPIN_SPEED, HELICOPTER_MAX_SPIN_SPEED)
+                heliBody.AngularVelocity = Vector3.new(0, spinSpeed, 0)
+
+                local startTime = tick()
+                while tick() - startTime < duration and root.Parent and char.Parent do
+                    local t = math.clamp((tick() - startTime) / duration, 0, 1)
+                    local eased = 0.5 - (0.5 * math.cos(t * math.pi))
+                    local targetPos = Vector3.new(startPos.X, startPos.Y + (riseHeight * eased), startPos.Z)
+                    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, yaw, 0)
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end)
-                    root.CFrame = holdCF
-                    task.wait()
-                end
-
-                local prepTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or holdCF
-                if prepTargetCF then
-                    local flatLook = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
-                    if flatLook.Magnitude < 0.001 then
-                        flatLook = Vector3.new(0, 0, -1)
-                    end
-                    flatLook = flatLook.Unit
-                    local groundedPrepPos = Vector3.new(prepTargetCF.Position.X, holdCF.Position.Y, prepTargetCF.Position.Z)
-                    prepTargetCF = CFrame.new(groundedPrepPos, groundedPrepPos + flatLook)
-                end
-                if burstIndex == 1 then
-                    sendChatMessage("Preparing for takeoff...")
-                else
-                    sendChatMessage("Adjusting for departure...")
-                end
-
-                local prepStart = tick()
-                while tick() - prepStart < prepDuration and char.Parent and root.Parent do
-                    local t = math.clamp((tick() - prepStart) / prepDuration, 0, 1)
-                    local easedT = 1 - ((1 - t) * (1 - t))
-                    root.CFrame = holdCF:Lerp(prepTargetCF, easedT)
-                    if heliBody and heliBody.Parent then
-                        local prepSpin = baseIdleSpeed + (1.25 * easedT)
-                        heliBody.AngularVelocity = Vector3.new(0, prepSpin, 0)
-                    end
-                    pcall(function()
-                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                     end)
                     task.wait()
                 end
-                root.CFrame = prepTargetCF
 
-                local startPos = prepTargetCF.Position
-                local startRot = prepTargetCF - prepTargetCF.Position
-                local yaw = 0
-                local lastSpinTick = tick()
-
-                sendChatMessage("Spooling up...")
-                local spoolStart = tick()
-                local spoolFromSpeed = math.max(0.35, baseIdleSpeed * 0.7)
-                while tick() - spoolStart < groundedSpinDuration and char.Parent and root.Parent do
-                    local now = tick()
-                    local dt = now - lastSpinTick
-                    lastSpinTick = now
-                    local t = math.clamp((now - spoolStart) / groundedSpinDuration, 0, 1)
-                    local spoolCurve = t * t * t
-                    local currentSpinSpeed = spoolFromSpeed + ((targetSpinSpeed - spoolFromSpeed) * spoolCurve)
-                    yaw += currentSpinSpeed * dt
-                    if heliBody and heliBody.Parent then
-                        heliBody.AngularVelocity = Vector3.new(0, currentSpinSpeed, 0)
-                    end
-                    pcall(function()
-                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end)
-                    root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
-                    task.wait()
-                end
-
-                local existingHeli = root:FindFirstChild("HL1__HELI")
-                if existingHeli and existingHeli:IsA("BodyAngularVelocity") then
-                    existingHeli:Destroy()
-                end
-
-                local nearestRouteIndex = 1
-                local nearestRouteDistance = math.huge
-                for index, routePoint in ipairs(HELICOPTER_PLAZA_ROUTE) do
-                    local delta = Vector3.new(routePoint.X - startPos.X, 0, routePoint.Z - startPos.Z)
-                    local distance = delta.Magnitude
-                    if distance < nearestRouteDistance then
-                        nearestRouteDistance = distance
-                        nearestRouteIndex = index
-                    end
-                end
-
-                local routeStartBase = HELICOPTER_PLAZA_ROUTE[nearestRouteIndex]
-                local routeStartPos = Vector3.new(routeStartBase.X, routeStartBase.Y + riseHeight, routeStartBase.Z)
-                local ascentStart = tick()
-                local lastFrameTick = ascentStart
-                local finalTargetPos = startPos
-
-                while tick() - ascentStart < ascentDuration and char.Parent and root.Parent do
-                    local now = tick()
-                    local dt = now - lastFrameTick
-                    lastFrameTick = now
-                    local p = math.clamp((now - ascentStart) / ascentDuration, 0, 1)
-                    local easedUp = p * p
-                    local sideDrift = math.sin(p * math.pi) * math.min(8, 2 + (amount * 0.08))
-                    local travelPos = startPos:Lerp(routeStartPos, easedUp)
-                    finalTargetPos = travelPos + Vector3.new(sideDrift, 0, 0)
-                    local facingDir = Vector3.new(routeStartPos.X - startPos.X, 0, routeStartPos.Z - startPos.Z)
-                    if facingDir.Magnitude < 0.001 then
-                        facingDir = Vector3.new(0, 0, -1)
-                    else
-                        facingDir = facingDir.Unit
-                    end
-                    local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * easedUp)
-                    yaw += spinSpeedAtFrame * dt
-                    pcall(function()
-                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end)
-                    root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + facingDir) * CFrame.Angles(0, yaw, 0)
-                    task.wait()
-                end
-
-                local routeIndex = nearestRouteIndex
-                local routePosition = finalTargetPos
-                local routeFlightStart = tick()
-                lastFrameTick = routeFlightStart
-                sendChatMessage("Cruising the plaza...")
-                while tick() - routeFlightStart < flightDuration and char.Parent and root.Parent do
-                    if pendingHelicopterRaisedAmount > 0 then
-                        local bonusAmount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
-                        pendingHelicopterRaisedAmount = 0
-                        flightDuration = math.min(130, flightDuration + math.max(8, getHelicopterFlightDuration(bonusAmount) * 0.25))
-                        targetSpinSpeed = math.max(targetSpinSpeed, getHelicopterSpinSpeedForAmount(bonusAmount))
-                        riseHeight = math.max(riseHeight, getHelicopterRiseHeight(bonusAmount, minRiseHeight))
-                    end
-
-                    local nextIndex = (routeIndex % #HELICOPTER_PLAZA_ROUTE) + 1
-                    local nextBase = HELICOPTER_PLAZA_ROUTE[nextIndex]
-                    local nextPos = Vector3.new(nextBase.X, nextBase.Y + riseHeight, nextBase.Z)
-                    local segmentDistance = (nextPos - routePosition).Magnitude
-                    local segmentDuration = math.clamp(segmentDistance / 18, 3, 6)
-                    local segmentStart = tick()
-                    local segmentOrigin = routePosition
-
-                    while tick() - segmentStart < segmentDuration and char.Parent and root.Parent and (tick() - routeFlightStart) < flightDuration do
-                        if pendingHelicopterRaisedAmount > 0 then
-                            break
-                        end
-
-                        local now = tick()
-                        local dt = now - lastFrameTick
-                        lastFrameTick = now
-                        local p = math.clamp((now - segmentStart) / segmentDuration, 0, 1)
-                        local smoothP = p * p * (3 - (2 * p))
-                        local segmentPos = segmentOrigin:Lerp(nextPos, smoothP)
-                        local bob = math.sin((tick() - routeFlightStart) * 1.4) * 1.2
-                        finalTargetPos = Vector3.new(segmentPos.X, segmentPos.Y + bob, segmentPos.Z)
-                        local travelDir = Vector3.new(nextPos.X - segmentOrigin.X, 0, nextPos.Z - segmentOrigin.Z)
-                        if travelDir.Magnitude < 0.001 then
-                            travelDir = Vector3.new(0, 0, -1)
-                        else
-                            travelDir = travelDir.Unit
-                        end
-                        yaw += targetSpinSpeed * dt
-                        pcall(function()
-                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                        end)
-                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
-                        task.wait()
-                    end
-
-                    routePosition = nextPos
-                    routeIndex = nextIndex
-                end
-
-                local landingTargetCF = claimedBoothSlot and getBoothTargetCFrameForStand(claimedBoothSlot, "Front") or prepTargetCF
-                if landingTargetCF then
-                    local landingPos = landingTargetCF.Position
-                    local landingStart = tick()
-                    local descentOrigin = finalTargetPos
-                    while tick() - landingStart < landingDuration and char.Parent and root.Parent do
-                        local now = tick()
-                        local dt = now - lastFrameTick
-                        lastFrameTick = now
-                        local p = math.clamp((now - landingStart) / landingDuration, 0, 1)
-                        local smoothP = p * p * (3 - (2 * p))
-                        finalTargetPos = descentOrigin:Lerp(landingPos, smoothP)
-                        local travelDir = Vector3.new(landingTargetCF.LookVector.X, 0, landingTargetCF.LookVector.Z)
-                        if travelDir.Magnitude < 0.001 then
-                            travelDir = Vector3.new(0, 0, -1)
-                        else
-                            travelDir = travelDir.Unit
-                        end
-                        local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (1 - smoothP))
-                        yaw += spinSpeedAtFrame * dt
-                        pcall(function()
-                            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                            root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                        end)
-                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
-                        task.wait()
-                    end
-                    root.CFrame = landingTargetCF
-                end
-
-                if animateScript and animateScript:IsA("LocalScript") and animatePrevEnabled ~= nil then
-                    animateScript.Enabled = animatePrevEnabled
+                if root.Parent then
+                    root.CFrame = CFrame.new(startPos) * CFrame.Angles(0, yaw, 0)
                 end
             end)
 
@@ -2805,24 +2536,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
         end
 
         currentHelicopterSpinTask = nil
-
-        local currentChar = LocalPlayer.Character
-        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
-        if currentHum and currentHum.Parent then
-            restoreIdleMode()
+        if LocalPlayer.Character and settings.helicopterEnabled then
+            startHelicopterIdleMode()
         end
     end)
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
-    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
-        registerDelay = math.random(14, 20) / 10,
-        prepDuration = 0.8,
-        groundedSpinDuration = 2.8,
-        minRiseHeight = 28,
-        ascentDuration = 6.5,
-        landingDuration = 5.5
-    })
+    performHelicopterBurst(raisedAmount)
 end
 
 local function getCharacterHumanoidRoot()
