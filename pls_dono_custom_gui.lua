@@ -1717,45 +1717,33 @@ local function tryActivateClaimPrompt(boothPart)
         return false, "no-prompt"
     end
 
-    local activationAttempts = {}
-    if type(prompt.InputHoldBegin) == "function" then
-        table.insert(activationAttempts, function()
-            prompt:InputHoldBegin()
-            return true
-        end)
-    end
-    if type(prompt.InputHoldEnd) == "function" then
-        table.insert(activationAttempts, function()
-            prompt:InputHoldBegin()
-            task.wait(0.05)
-            prompt:InputHoldEnd()
-            return true
-        end)
-    end
-    if type(prompt.Trigger) == "function" then
-        table.insert(activationAttempts, function()
-            prompt:Trigger(LocalPlayer)
-            return true
-        end)
-    end
-    if type(prompt.Fire) == "function" then
-        table.insert(activationAttempts, function()
-            prompt:Fire(LocalPlayer)
-            return true
-        end)
-    end
-
-    for _, attempt in ipairs(activationAttempts) do
-        local ok, result = pcall(attempt)
-        if ok and result ~= false then
-            return true, "prompt"
+    local ok, _ = pcall(function()
+        if type(prompt.Enabled) == "boolean" then
+            prompt.Enabled = true
         end
+    end)
+    if not ok then
+        return false, "prompt-unavailable"
     end
 
+    local holdStarted = false
+    local holdEnded = false
     pcall(function()
-        prompt.Enabled = false
-        prompt.Enabled = true
+        if type(prompt.InputHoldBegin) == "function" then
+            prompt:InputHoldBegin()
+            holdStarted = true
+            task.wait(0.05)
+            if type(prompt.InputHoldEnd) == "function" then
+                prompt:InputHoldEnd()
+                holdEnded = true
+            end
+        end
     end)
+
+    if holdStarted and holdEnded then
+        return true, "prompt"
+    end
+
     return false, "prompt-unavailable"
 end
 
@@ -1887,10 +1875,14 @@ local function claimBoothNow()
                 pcall(function()
                     moveToClaimedBooth(slot)
                 end)
-                task.wait(0.25)
+                task.wait(0.2)
 
-                local promptTriggered, promptReason = tryActivateClaimPrompt(boothPart)
+                local promptTriggered = false
+                pcall(function()
+                    promptTriggered = tryActivateClaimPrompt(boothPart)
+                end)
                 if not promptTriggered then
+                    task.wait(0.2)
                     for _, remoteModule in ipairs(RemoteModules or {}) do
                         pcall(function()
                             remoteModule.Event("ClaimBooth"):InvokeServer(slot)
