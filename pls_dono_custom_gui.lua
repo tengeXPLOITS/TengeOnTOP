@@ -24,15 +24,17 @@ end
 
 local ALLOWED_PLACE_IDS = {
     [137150797605098] = true, -- keeps getting deleted, so we have to allowlist the ID instead of the community
-    [8737602449] = true,  -- DEFAULT_PLS_DONATE_PLACE_ID
-    [8943844393] = true,  -- VC_PLS_DONATE_PLACE_ID
-    [14212732626] = true, -- PLS WAIT (unreleased as of 2024-06)
+    [8737602449] = true,      -- DEFAULT_PLS_DONATE_PLACE_ID
+    [8943844393] = true,      -- VC_PLS_DONATE_PLACE_ID
+    [14212732626] = true,     -- PLS WAIT (unreleased as of 2024-06)
+    [99181114119221] = true, -- requested place ID for persistent server hopping
 }
 
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
+local REQUESTED_PERSISTED_PLACE_ID = 99181114119221
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -589,8 +591,16 @@ local function disableAntiAfk()
     pcall(function() notify("Anti-AFK","Disabled.",3,"anti-afk",1) end)
 end
 
-local SETTINGS_FILE = "plsdono_custom_settings.json"
-local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
+local function getSettingsFileNames()
+    local placeId = tonumber(game.PlaceId) or 0
+    local suffix = ""
+    if placeId > 0 then
+        suffix = "_" .. tostring(placeId)
+    end
+    return "plsdono_custom_settings" .. suffix .. ".json", "plsdono_custom_settings" .. suffix .. "_backup.json"
+end
+
+local SETTINGS_FILE, SETTINGS_BACKUP_FILE = getSettingsFileNames()
 
 local defaults = {
     standingPosition = "Front",
@@ -705,44 +715,35 @@ local function loadSettings()
         return
     end
 
-    if not isfile(SETTINGS_FILE) then
-        saveSettings()
-        return
+    local candidateFiles = {}
+    if type(SETTINGS_FILE) == "string" and SETTINGS_FILE ~= "" then
+        table.insert(candidateFiles, SETTINGS_FILE)
     end
-
-    local readOk, content = pcall(function()
-        return readfile(SETTINGS_FILE)
-    end)
-
-    if not readOk or type(content) ~= "string" or content == "" then
-        saveSettings()
-        return
+    if type(SETTINGS_BACKUP_FILE) == "string" and SETTINGS_BACKUP_FILE ~= "" then
+        table.insert(candidateFiles, SETTINGS_BACKUP_FILE)
     end
+    table.insert(candidateFiles, "plsdono_custom_settings.json")
+    table.insert(candidateFiles, "plsdono_custom_settings_backup.json")
 
-    local decodeOk, data = pcall(function()
-        return HttpService:JSONDecode(content)
-    end)
-
-    if decodeOk and type(data) == "table" then
-        settings = migrateLegacySettings(data)
-        mergeDefaults(settings, defaults)
-        saveSettings()
-        return
-    end
-
-    if isfile(SETTINGS_BACKUP_FILE) then
-        local backupOk, backupContent = pcall(function()
-            return readfile(SETTINGS_BACKUP_FILE)
-        end)
-        if backupOk and type(backupContent) == "string" and backupContent ~= "" then
-            local backupDecodeOk, backupData = pcall(function()
-                return HttpService:JSONDecode(backupContent)
+    local seen = {}
+    for _, fileName in ipairs(candidateFiles) do
+        if type(fileName) == "string" and fileName ~= "" and not seen[fileName] then
+            seen[fileName] = true
+            local readOk, content = pcall(function()
+                return readfile(fileName)
             end)
-            if backupDecodeOk and type(backupData) == "table" then
-                settings = migrateLegacySettings(backupData)
-                mergeDefaults(settings, defaults)
-                saveSettings()
-                return
+
+            if readOk and type(content) == "string" and content ~= "" then
+                local decodeOk, data = pcall(function()
+                    return HttpService:JSONDecode(content)
+                end)
+
+                if decodeOk and type(data) == "table" then
+                    settings = migrateLegacySettings(data)
+                    mergeDefaults(settings, defaults)
+                    saveSettings()
+                    return
+                end
             end
         end
     end
@@ -1433,9 +1434,12 @@ local function choosePlaceId()
     if settings.vcServerHopToggle then
         return VC_PLS_DONATE_PLACE_ID
     end
-    -- If user enabled VC server hop, use VC place
-    -- Otherwise, if current place is in allowed list, use it; else pick a random allowed place
+
     local cur = tonumber(game.PlaceId) or 0
+    if cur == REQUESTED_PERSISTED_PLACE_ID then
+        return cur
+    end
+    -- If current place is in allowed list, use it; else pick a random allowed place
     if ALLOWED_PLACE_IDS[cur] then
         return cur
     end
