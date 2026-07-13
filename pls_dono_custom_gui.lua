@@ -1601,9 +1601,30 @@ findOwnedBoothSlot = function(boothUiFolder)
     return nil
 end
 
+local function findBoothInteractionsFolder()
+    local candidates = {"BoothInteractions", "Booth Interactions"}
+    for _, candidate in ipairs(candidates) do
+        local existing = Workspace:FindFirstChild(candidate)
+        if existing then
+            return existing
+        end
+        local ok, child = pcall(function()
+            return Workspace:WaitForChild(candidate, 2)
+        end)
+        if ok and child then
+            return child
+        end
+    end
+    return nil
+end
+
 local function collectUnclaimedBooths(boothUiFolder, interactionsFolder)
     local unclaimed = {}
     local anchor2D = Vector3.new(boothScanAnchor.X, 0, boothScanAnchor.Z)
+
+    if not boothUiFolder or not interactionsFolder then
+        return unclaimed
+    end
 
     for _, uiFrame in ipairs(boothUiFolder:GetChildren()) do
         local details = uiFrame:FindFirstChild("Details")
@@ -1612,11 +1633,17 @@ local function collectUnclaimedBooths(boothUiFolder, interactionsFolder)
             local boothNum = tonumber(uiFrame.Name:match("%d+"))
             if boothNum then
                 for _, interact in ipairs(interactionsFolder:GetChildren()) do
-                    if interact:GetAttribute("BoothSlot") == boothNum then
-                        local pos2D = Vector3.new(interact.Position.X, 0, interact.Position.Z)
-                        if (pos2D - anchor2D).Magnitude < 92 then
-                            table.insert(unclaimed, boothNum)
-                            break
+                    local slotValue = interact and interact:GetAttribute("BoothSlot")
+                    if tonumber(slotValue) == boothNum then
+                        local ok, pos = pcall(function()
+                            return interact.Position
+                        end)
+                        if ok and pos then
+                            local pos2D = Vector3.new(pos.X, 0, pos.Z)
+                            if (pos2D - anchor2D).Magnitude < 92 then
+                                table.insert(unclaimed, boothNum)
+                                break
+                            end
                         end
                     end
                 end
@@ -1628,18 +1655,108 @@ local function collectUnclaimedBooths(boothUiFolder, interactionsFolder)
 end
 
 local function findBoothPartBySlot(slot)
-    local interactions = Workspace:FindFirstChild("BoothInteractions")
+    local interactions = findBoothInteractionsFolder()
     if not interactions then
         return nil
     end
 
+    local targetSlot = tonumber(slot) or 0
     for _, part in ipairs(interactions:GetChildren()) do
-        if part:GetAttribute("BoothSlot") == slot then
+        local slotValue = part and part:GetAttribute("BoothSlot")
+        if tonumber(slotValue) == targetSlot then
+            return part
+        end
+    end
+
+    for _, part in ipairs(interactions:GetDescendants()) do
+        local slotValue = part and part:GetAttribute("BoothSlot")
+        if part ~= interactions and tonumber(slotValue) == targetSlot then
             return part
         end
     end
 
     return nil
+end
+
+local function findClaimPromptForBoothPart(boothPart)
+    if not boothPart then
+        return nil
+    end
+
+    local descendants = {}
+    local ok, result = pcall(function()
+        return boothPart:GetDescendants()
+    end)
+    if ok and type(result) == "table" then
+        descendants = result
+    end
+
+    for _, child in ipairs(descendants) do
+        if child and child:IsA("ProximityPrompt") then
+            return child
+        end
+    end
+
+    local directPrompt = boothPart:FindFirstChildOfClass("ProximityPrompt")
+    if directPrompt then
+        return directPrompt
+    end
+
+    for _, child in ipairs(boothPart:GetChildren()) do
+        if child and child:IsA("ProximityPrompt") then
+            return child
+        end
+    end
+
+    return nil
+end
+
+local function tryActivateClaimPrompt(boothPart)
+    local prompt = findClaimPromptForBoothPart(boothPart)
+    if not prompt then
+        return false, "no-prompt"
+    end
+
+    local activationAttempts = {}
+    if type(prompt.InputHoldBegin) == "function" then
+        table.insert(activationAttempts, function()
+            prompt:InputHoldBegin()
+            return true
+        end)
+    end
+    if type(prompt.InputHoldEnd) == "function" then
+        table.insert(activationAttempts, function()
+            prompt:InputHoldBegin()
+            task.wait(0.05)
+            prompt:InputHoldEnd()
+            return true
+        end)
+    end
+    if type(prompt.Trigger) == "function" then
+        table.insert(activationAttempts, function()
+            prompt:Trigger(LocalPlayer)
+            return true
+        end)
+    end
+    if type(prompt.Fire) == "function" then
+        table.insert(activationAttempts, function()
+            prompt:Fire(LocalPlayer)
+            return true
+        end)
+    end
+
+    for _, attempt in ipairs(activationAttempts) do
+        local ok, result = pcall(attempt)
+        if ok and result ~= false then
+            return true, "prompt"
+        end
+    end
+
+    pcall(function()
+        prompt.Enabled = false
+        prompt.Enabled = true
+    end)
+    return false, "prompt-unavailable"
 end
 
 local function getBoothTargetCFrameForStand(slot, standOverride)
@@ -1737,17 +1854,13 @@ local function claimBoothNow()
     claimAttemptRunning = true
 
     local success, result, extra = pcall(function()
-        if not RemoteModules or #RemoteModules == 0 then
-            return false, "missing-remotes"
-        end
-
         local boothLocation = getBoothLocation()
         if not boothLocation then
             return false, "missing-mapui"
         end
 
         local boothUiFolder = boothLocation:FindFirstChild("BoothUI") or boothLocation:WaitForChild("BoothUI", 5)
-        local interactionsFolder = Workspace:FindFirstChild("BoothInteractions") or Workspace:WaitForChild("BoothInteractions", 5)
+        local interactionsFolder = findBoothInteractionsFolder()
         if not boothUiFolder or not interactionsFolder then
             return false, "missing-booth-data"
         end
@@ -1769,10 +1882,27 @@ local function claimBoothNow()
         end
 
         for _, slot in ipairs(candidates) do
-            for _, remoteModule in ipairs(RemoteModules) do
+            local boothPart = findBoothPartBySlot(slot)
+            if boothPart then
                 pcall(function()
-                    remoteModule.Event("ClaimBooth"):InvokeServer(slot)
+                    moveToClaimedBooth(slot)
                 end)
+                task.wait(0.25)
+
+                local promptTriggered, promptReason = tryActivateClaimPrompt(boothPart)
+                if not promptTriggered then
+                    for _, remoteModule in ipairs(RemoteModules or {}) do
+                        pcall(function()
+                            remoteModule.Event("ClaimBooth"):InvokeServer(slot)
+                        end)
+                    end
+                end
+            else
+                for _, remoteModule in ipairs(RemoteModules or {}) do
+                    pcall(function()
+                        remoteModule.Event("ClaimBooth"):InvokeServer(slot)
+                    end)
+                end
             end
 
             local claimedFrame = boothUiFolder:FindFirstChild("BoothUI" .. slot)
