@@ -3,8 +3,21 @@
 
 repeat task.wait() until game:IsLoaded()
 
+-- Core services (ensure HttpService and httprequest available for community checks)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+
 -- Run only for games associated with this community (X-Stud-os)
 local COMMUNITY_ID = 32815300
+local PLACE_ID = tonumber(game.PlaceId) or 0
 
 local function IsInCommunity()
     if game.CreatorId == COMMUNITY_ID and game.CreatorType == Enum.CreatorType.Group then
@@ -35,24 +48,11 @@ if not IsInCommunity() then
     return
 end
 
--- Basic service bindings and defaults
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterGui = game:GetService("StarterGui")
-local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-
 SETTINGS = SETTINGS or {}
 -- Webhook / donation helpers
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
-SETTINGS.followPlayerOnDonation = SETTINGS.followPlayerOnDonation or false
-SETTINGS.followDonorOverrideId = SETTINGS.followDonorOverrideId or nil
-SETTINGS.followDonorOverrideName = SETTINGS.followDonorOverrideName or nil
 -- legacy periodic jump and spin features removed
 SETTINGS.periodicJump = false
 SETTINGS.spinOnDonation = false
@@ -477,23 +477,23 @@ local function tryHookPlayerStat(player)
                         end
                         return best
                     end
-                    local donor, donorName, donorId = resolveDonationDonor(nil, nil)
-                    if not donor then
-                        donor = LocalPlayer
-                        donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
-                        donorId = (LocalPlayer and LocalPlayer.UserId) or nil
-                    end
-                    local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
-                    postWebhookEvent("donation", {
-                        donorName = donorName,
-                        from = donorName,
-                        userId = donorId,
-                        amount = delta,
-                        total = newv,
-                        followAttempted = SETTINGS.followPlayerOnDonation,
-                        followStatus = followStatus,
-                        followSuccessful = followOk,
-                    })
+                                    local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                                    if not donor then
+                                        donor = LocalPlayer
+                                        donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
+                                        donorId = (LocalPlayer and LocalPlayer.UserId) or nil
+                                    end
+                                    -- follow-on-donation removed: always report webhook without follow metadata
+                                    postWebhookEvent("donation", {
+                                        donorName = donorName,
+                                        from = donorName,
+                                        userId = donorId,
+                                        amount = delta,
+                                        total = newv,
+                                        followAttempted = false,
+                                        followStatus = "disabled",
+                                        followSuccessful = false,
+                                    })
 
                     -- spin-on-donation feature removed
                 end
@@ -531,14 +531,16 @@ local function getUserIdFromUsername(username)
 end
 
 local function resolveDonationDonor(donorOverrideId, donorOverrideName)
-    local overrideId = tonumber(donorOverrideId or SETTINGS.followDonorOverrideId)
+    -- Prefer explicit overrides passed to the function; otherwise return nearest player to local player
+    local overrideId = tonumber(donorOverrideId)
     if overrideId and overrideId > 0 then
         local player = Players:GetPlayerByUserId(overrideId)
         if player then
             return player, player.Name, player.UserId
         end
+        return nil, nil, overrideId
     end
-    local overrideName = tostring(donorOverrideName or SETTINGS.followDonorOverrideName or "")
+    local overrideName = tostring(donorOverrideName or "")
     if overrideName ~= "" then
         for _, pl in ipairs(Players:GetPlayers()) do
             if pl and pl.Name == overrideName then
@@ -574,113 +576,7 @@ local function resolveDonationDonor(donorOverrideId, donorOverrideName)
     return nil, nil, nil
 end
 
-local function tryFollowDonor(userId)
-    if not SETTINGS.followPlayerOnDonation then return false end
-    local donorId = tonumber(userId)
-    if not donorId or donorId <= 0 or donorId == (LocalPlayer and LocalPlayer.UserId or 0) then return false end
-
-    local csrfToken = nil
-    local csrfError = nil
-    local okCsrf, responseCsrf = pcall(function()
-        return HttpService:RequestAsync({
-            Url = "https://auth.roblox.com/v2/logout",
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["User-Agent"] = "Mozilla/5.0",
-            },
-            Body = HttpService:JSONEncode({}),
-        })
-    end)
-    if okCsrf and responseCsrf then
-        if responseCsrf.Headers then
-            csrfToken = responseCsrf.Headers["x-csrf-token"] or responseCsrf.Headers["X-CSRF-Token"]
-        end
-        if not csrfToken then
-            csrfError = responseCsrf.StatusCode or responseCsrf.StatusMessage or "no csrf header"
-        end
-    else
-        csrfError = "request failed"
-    end
-
-    if not csrfToken then
-        warn(("Follow failed: unable to obtain X-CSRF-TOKEN (%s)"):format(tostring(csrfError or "unknown")))
-        return false
-    end
-
-    local followUrl = "https://friends.roblox.com/v1/users/" .. tostring(donorId) .. "/follow"
-    local ok, response = pcall(function()
-        return HttpService:RequestAsync({
-            Url = followUrl,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["X-CSRF-TOKEN"] = csrfToken,
-            },
-            Body = HttpService:JSONEncode({}),
-        })
-    end)
-
-    if not ok then
-        warn("Follow request error")
-        return false
-    end
-
-    if type(response) == "table" then
-        if response.Success ~= nil then
-            if response.Success then
-                return true
-            end
-            if response.Body then
-                local okBody, body = pcall(function() return HttpService:JSONDecode(response.Body) end)
-                if okBody and type(body) == "table" then
-                    warn((body.message or "Follow failed"))
-                end
-            end
-            return false
-        end
-        if response.StatusCode then
-            if tonumber(response.StatusCode) >= 200 and tonumber(response.StatusCode) < 400 then
-                return true
-            end
-            if response.Body then
-                local okBody, body = pcall(function() return HttpService:JSONDecode(response.Body) end)
-                if okBody and type(body) == "table" then
-                    warn((body.message or "Follow failed"))
-                end
-            end
-            return false
-        end
-    end
-    return true
-end
-
-local function handleDonationFollow(donor, donorName, donorId)
-    local donorLabel = tostring(donorName or donor and donor.Name or "Unknown")
-    if not SETTINGS.followPlayerOnDonation then
-        return false, "disabled"
-    end
-    local resolvedDonor, resolvedName, resolvedId = resolveDonationDonor(donorId, donorName)
-    if resolvedDonor then
-        donor = resolvedDonor
-        donorName = resolvedName
-        donorId = resolvedId
-    end
-    if not donor or not donorId or tonumber(donorId) <= 0 then
-        notify("Donation", "Follow skipped: donor not set", 3)
-        return false, "no-donor"
-    end
-    if tonumber(donorId) == (LocalPlayer and LocalPlayer.UserId or 0) then
-        notify("Donation", "Follow skipped: donor is you", 3)
-        return false, "self"
-    end
-
-    notify("Donation", ("Follow attempt for %s"):format(tostring(donorName or donorLabel)), 3)
-    local okFollow, success = pcall(function() return tryFollowDonor(donorId) end)
-    local status = (okFollow and success) and "followed" or "failed"
-    notify("Donation", ((okFollow and success) and ("Follow sent to %s"):format(tostring(donorName or donorLabel)) or ("Follow failed for %s"):format(tostring(donorName or donorLabel))), 3)
-    return (okFollow and success), status
-end
+-- Follow-on-donation feature removed per user request
 
 -- performHttpRequest helper (syn/request or common aliases)
 local function performHttpRequest(options)
@@ -1320,7 +1216,7 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
-                followPlayerOnDonation = SETTINGS.followPlayerOnDonation and true or false,
+                -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
@@ -1358,7 +1254,7 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
-            if decoded.followPlayerOnDonation ~= nil then SETTINGS.followPlayerOnDonation = decoded.followPlayerOnDonation end
+            -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
@@ -1373,7 +1269,7 @@ do
                 SETTINGS.touchPreventAFK = cfg.touchPreventAFK or SETTINGS.touchPreventAFK
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
-                if cfg.followPlayerOnDonation ~= nil then SETTINGS.followPlayerOnDonation = cfg.followPlayerOnDonation end
+                -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
@@ -1726,28 +1622,9 @@ do
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
-                local donor = nil
-                local donorName = SETTINGS.followDonorOverrideName or ""
-                local donorId = tonumber(SETTINGS.followDonorOverrideId) or 0
-                if donorId and donorId > 0 then
-                    donor = Players:GetPlayerByUserId(donorId)
-                end
-                if not donor and donorName and donorName ~= "" then
-                    for _, pl in ipairs(Players:GetPlayers()) do
-                        if pl and pl.Name == donorName then
-                            donor = pl
-                            break
-                        end
-                    end
-                end
-                if not donor then
-                    donor, donorName, donorId = resolveDonationDonor(nil, nil)
-                end
-                if not donor then
-                    donorName = "TestDonor"
-                    donorId = 0
-                end
-                local followOk, followStatus = handleDonationFollow(donor, donorName, donorId)
+                -- Test donation: post webhook-only event, no follow behavior
+                local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
                 pcall(function()
                     postWebhookEvent("donation", {
                         donorName = donorName,
@@ -1756,12 +1633,12 @@ do
                         amount = 1,
                         total = 1,
                         test = true,
-                        followAttempted = SETTINGS.followPlayerOnDonation,
-                        followStatus = followStatus,
-                        followSuccessful = followOk,
+                        followAttempted = false,
+                        followStatus = "disabled",
+                        followSuccessful = false,
                     })
                 end)
-                notify("Donation Test", (SETTINGS.followPlayerOnDonation and (followOk and ("Follow sent to %s"):format(donorName) or ("Follow status: %s"):format(followStatus)) or "Test donation event sent."), 4)
+                notify("Donation Test", "Test donation event sent.", 4)
             end)
 
             -- Emote selector / play (Main)
@@ -2144,26 +2021,7 @@ do
                 pcall(SaveSettings)
             end)
 
-            local followLabel = Instance.new("TextLabel")
-            followLabel.Size = UDim2.new(0,180,0,20)
-            followLabel.Position = UDim2.new(0,10,0,40)
-            followLabel.Text = "Follow player on donation"
-            followLabel.BackgroundTransparency = 1
-            followLabel.TextColor3 = Color3.new(1,1,1)
-            followLabel.Parent = frame
-
-            local followToggle = Instance.new("TextButton")
-            followToggle.Size = UDim2.new(0,60,0,20)
-            followToggle.Position = UDim2.new(0,140,0,40)
-            followToggle.Text = SETTINGS.followPlayerOnDonation and "ON" or "OFF"
-            followToggle.Parent = frame
-            followToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
-            styleButton(followToggle)
-            followToggle.MouseButton1Click:Connect(function()
-                SETTINGS.followPlayerOnDonation = not SETTINGS.followPlayerOnDonation
-                followToggle.Text = SETTINGS.followPlayerOnDonation and "ON" or "OFF"
-                pcall(SaveSettings)
-            end)
+            -- follow-on-donation UI removed
 
             local urlBox = Instance.new("TextBox")
             urlBox.Size = UDim2.new(1, -20, 0, 24)
