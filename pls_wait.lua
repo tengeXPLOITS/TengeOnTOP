@@ -806,12 +806,16 @@ local function findSlotFromStand(stand)
     -- try extract number from name
     local n = tostring(stand.Name or ""):match("(%d+)")
     if n then return tonumber(n) end
+    -- try more explicit name patterns like "Stand 1", "Slot 5"
+    local p = tostring(stand.Name or "")
+    local n2 = p:match("Stand%s*(%d+)") or p:match("Slot%s*(%d+)") or p:match("(%d+)")
+    if n2 then return tonumber(n2) end
     -- try attributes (some maps store StandId as an Attribute)
     if stand.GetAttribute then
         local aid = stand:GetAttribute("StandId") or stand:GetAttribute("standId") or stand:GetAttribute("Slot") or stand:GetAttribute("slot")
         if aid and tonumber(aid) then return tonumber(aid) end
     end
-    -- try common IntValue children
+    -- try common IntValue/StringValue children
     local candidates = {"Slot","StandId","Index","Id","BoothSlot","Number"}
     for _, cname in ipairs(candidates) do
         local child = stand:FindFirstChild(cname)
@@ -821,6 +825,16 @@ local function findSlotFromStand(stand)
         if child and child:IsA("StringValue") then
             local v = tostring(child.Value or ""):match("(%d+)")
             if v then return tonumber(v) end
+        end
+    end
+    -- fallback: use position in parent list if it's inside the Stands folder
+    local parent = stand.Parent
+    if parent and parent:IsA("Folder") or parent and parent:IsA("Model") then
+        local children = parent:GetChildren()
+        for idx, child in ipairs(children) do
+            if child == stand then
+                return idx
+            end
         end
     end
     return nil
