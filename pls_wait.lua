@@ -829,7 +829,7 @@ local function findSlotFromStand(stand)
     end
     -- fallback: use position in parent list if it's inside the Stands folder
     local parent = stand.Parent
-    if parent and parent:IsA("Folder") or parent and parent:IsA("Model") then
+    if parent and (parent:IsA("Folder") or parent:IsA("Model")) then
         local children = parent:GetChildren()
         for idx, child in ipairs(children) do
             if child == stand then
@@ -838,6 +838,79 @@ local function findSlotFromStand(stand)
         end
     end
     return nil
+end
+
+local function findClaimPromptForStand(stand)
+    if not stand then return nil end
+    local standButtons = Workspace:FindFirstChild("StandButtons") or Workspace:FindFirstChild("standbuttons")
+    if not standButtons then return nil end
+
+    local entries = {}
+    for _, child in ipairs(standButtons:GetChildren()) do
+        if child and (tostring(child.Name or ""):lower() == "buttonprompt") then
+            local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt")
+            if prompt and prompt:IsA("ProximityPrompt") then
+                entries[#entries + 1] = { object = child, prompt = prompt }
+            end
+        end
+    end
+
+    if #entries == 0 then
+        for _, child in ipairs(standButtons:GetDescendants()) do
+            if child and child:IsA("ProximityPrompt") then
+                local parent = child.Parent
+                if parent and tostring(parent.Name or ""):lower() == "buttonprompt" then
+                    entries[#entries + 1] = { object = parent, prompt = child }
+                end
+            end
+        end
+    end
+
+    if #entries == 0 then return nil end
+
+    local targetSlot = findSlotFromStand(stand)
+    if targetSlot then
+        for _, entry in ipairs(entries) do
+            local slot = findSlotFromStand(entry.object) or findSlotFromStand(entry.prompt)
+            if slot and slot == targetSlot then
+                return entry.prompt
+            end
+        end
+    end
+
+    local standsFolder = Workspace:FindFirstChild("Stands")
+    local standIndex = nil
+    if standsFolder then
+        for idx, child in ipairs(standsFolder:GetChildren()) do
+            if child == stand then
+                standIndex = idx
+                break
+            end
+        end
+    end
+    if standIndex and entries[standIndex] then
+        return entries[standIndex].prompt
+    end
+
+    return entries[1] and entries[1].prompt or nil
+end
+
+local function tryFireClaimPrompt(stand)
+    local prompt = findClaimPromptForStand(stand)
+    if not prompt then return false end
+    local ok = pcall(function()
+        if prompt.Enabled ~= nil then
+            prompt.Enabled = true
+        end
+        if prompt.InputHoldBegin then
+            prompt:InputHoldBegin()
+            task.wait(0.05)
+            prompt:InputHoldEnd()
+            return true
+        end
+        return false
+    end)
+    return ok and true or false
 end
 
 local function moveCharacterToPosition(pos, mode, lookDir)
@@ -1095,12 +1168,19 @@ local function claimEmptyStands()
     moveCharacterToPosition(safePos, "teleport", dir)
     task.wait(0.25)
 
-    -- resolve slot id and invoke ClaimStand with the exact args/unpack pattern
+    -- resolve slot id and try the button prompt first so the booth can be claimed immediately
     local slot = findSlotFromStand(target.stand)
     if not slot then
         notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(target.stand.Name or "?")), 4)
         return false
     end
+
+    pcall(function()
+        local promptTriggered = tryFireClaimPrompt(target.stand)
+        if promptTriggered then
+            notify("Booth Claim", ("Triggered Claim prompt for slot %d"):format(slot), 3)
+        end
+    end)
 
     local args = { slot }
     local ok, res = pcall(function()
