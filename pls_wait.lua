@@ -3,9 +3,35 @@
 
 repeat task.wait() until game:IsLoaded()
 
-local PLACE_ID = 14212732626
-if tonumber(game.PlaceId) ~= tonumber(PLACE_ID) then
-    warn("This script is intended for place id: "..tostring(PLACE_ID).." — aborting.")
+-- Run only for games associated with this community (X-Stud-os)
+local COMMUNITY_ID = 32815300
+
+local function IsInCommunity()
+    if game.CreatorId == COMMUNITY_ID and game.CreatorType == Enum.CreatorType.Group then
+        return true
+    end
+    local ok, res = pcall(function()
+        local url = "https://games.roblox.com/v1/games/multiget-place-details?placeIds=" .. tostring(game.PlaceId)
+        local body = nil
+        if httprequest then
+            local r = httprequest({Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" }})
+            body = r and (r.Body or r.body or r.responseBody or r.text)
+        else
+            body = HttpService:GetAsync(url)
+        end
+        if body then
+            local decoded = HttpService:JSONDecode(body)
+            if decoded and decoded[1] and decoded[1].universeId then
+                return game.CreatorId == COMMUNITY_ID
+            end
+        end
+        return false
+    end)
+    return ok and res
+end
+
+if not IsInCommunity() then
+    warn("❌ This script is restricted to the specified community games only. Aborting.")
     return
 end
 
@@ -95,7 +121,101 @@ local function notify(title, text, duration)
     end)
 end
 
-    
+-- Community place lookup and basic server-hop helper
+local function getCommunityPlaceIds()
+    local placeIds = {}
+    local seen = {}
+    local function addId(id)
+        local n = tonumber(id)
+        if n and n > 0 and not seen[n] then
+            seen[n] = true
+            table.insert(placeIds, n)
+        end
+    end
+
+    addId(game.PlaceId)
+    local ok, res = pcall(function()
+        local url = ("https://games.roblox.com/v1/groups/%s/games?accessFilter=Public&limit=100"):format(tostring(COMMUNITY_ID))
+        if httprequest then
+            local r = httprequest({Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" }})
+            return r and (r.Body or r.body or r.responseBody or r.text)
+        else
+            return HttpService:GetAsync(url)
+        end
+    end)
+
+    if ok and res then
+        pcall(function()
+            local decoded = HttpService:JSONDecode(res)
+            if decoded and decoded.data then
+                for _, v in ipairs(decoded.data) do
+                    addId(v.id or v.placeId or v.place_id)
+                end
+            end
+        end)
+    end
+
+    return placeIds
+end
+
+local function fetchServerList(placeId)
+    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
+    local ok, res = pcall(function()
+        if httprequest then
+            local r = httprequest({Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" }})
+            return r and (r.Body or r.body or r.responseBody or r.text)
+        elseif type(HttpService.GetAsync) == "function" then
+            return HttpService:GetAsync(url)
+        else
+            return game:HttpGet(url)
+        end
+    end)
+    if ok and res then
+        local decoded = nil
+        pcall(function() decoded = HttpService:JSONDecode(res) end)
+        return decoded
+    end
+    return nil
+end
+
+local function serverHopNow(minPlayers, maxPlayers)
+    minPlayers = tonumber(minPlayers) or 0
+    maxPlayers = tonumber(maxPlayers) or 0
+
+    local placeIds = getCommunityPlaceIds()
+    if not placeIds or #placeIds == 0 then
+        notify("No community place IDs found for hop.")
+        return false
+    end
+
+    for _, placeId in ipairs(placeIds) do
+        local list = fetchServerList(placeId)
+        if list and type(list.data) == "table" then
+            local candidates = {}
+            for _, s in ipairs(list.data) do
+                local playing = tonumber(s.playing or 0) or 0
+                if tostring(s.id) ~= tostring(game.JobId) then
+                    if (minPlayers <= 0 or playing >= minPlayers) and (maxPlayers <= 0 or playing <= maxPlayers) then
+                        table.insert(candidates, s)
+                    end
+                end
+            end
+            if #candidates > 0 then
+                local target = candidates[math.random(1, #candidates)]
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, target.id, LocalPlayer)
+                end)
+                return true
+            end
+        end
+        task.wait(0.2)
+    end
+
+    notify("No matching servers found for community hop.")
+    return false
+end
+
+
 local function stopClaimMonitor()
     lastClaimMonitorStop = true
     lastClaimPosition = nil
