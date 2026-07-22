@@ -801,12 +801,33 @@ local function tryGetPivotPosition(obj)
     return nil
 end
 
+local function getAttributeValue(obj, names)
+    if not obj or not obj.GetAttribute then return nil end
+    for _, name in ipairs(names or {}) do
+        local val = obj:GetAttribute(name)
+        if val ~= nil then
+            return val
+        end
+    end
+    if obj.GetAttributes then
+        local attrs = obj:GetAttributes()
+        local lowered = {}
+        for _, name in ipairs(names or {}) do
+            lowered[string.lower(name)] = true
+        end
+        for attrName, attrVal in pairs(attrs) do
+            if lowered[string.lower(tostring(attrName))] then
+                return attrVal
+            end
+        end
+    end
+    return nil
+end
+
 local function getStandId(stand)
     if not stand then return nil end
-    if stand.GetAttribute then
-        local id = stand:GetAttribute("StandId") or stand:GetAttribute("standId")
-        if id and tonumber(id) then return tonumber(id) end
-    end
+    local id = getAttributeValue(stand, {"StandId", "standId", "standid", "Slot", "slot"})
+    if id and tonumber(id) then return tonumber(id) end
     local n = tostring(stand.Name or ""):match("(%d+)")
     if n then return tonumber(n) end
     return nil
@@ -847,10 +868,7 @@ local function findClaimPromptForStand(stand)
     local targetId = getStandId(stand)
     for _, child in ipairs(standButtons:GetChildren()) do
         if child and tostring(child.Name or ""):lower() == "buttonprompt" then
-            local childId = nil
-            if child.GetAttribute then
-                childId = child:GetAttribute("StandId") or child:GetAttribute("standId")
-            end
+            local childId = getAttributeValue(child, {"StandId", "standId", "standid", "Slot", "slot"})
             if childId and tonumber(childId) and tonumber(childId) == targetId then
                 local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt")
                 if prompt and prompt:IsA("ProximityPrompt") then
@@ -864,10 +882,7 @@ local function findClaimPromptForStand(stand)
         if child and child:IsA("ProximityPrompt") then
             local parent = child.Parent
             if parent and tostring(parent.Name or ""):lower() == "buttonprompt" then
-                local parentId = nil
-                if parent.GetAttribute then
-                    parentId = parent:GetAttribute("StandId") or parent:GetAttribute("standId")
-                end
+                local parentId = getAttributeValue(parent, {"StandId", "standId", "standid", "Slot", "slot"})
                 if parentId and tonumber(parentId) and tonumber(parentId) == targetId then
                     return child
                 end
@@ -1143,6 +1158,7 @@ local function claimEmptyStands()
     local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
     local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
+    notify("Booth Claim", ("Claiming booth %d now"):format(slot), 3)
     moveCharacterToPosition(safePos, "teleport", dir)
     task.wait(0.25)
 
@@ -1155,7 +1171,9 @@ local function claimEmptyStands()
     pcall(function()
         local promptTriggered = tryFireClaimPrompt(target.stand)
         if promptTriggered then
-            notify("Booth Claim", ("Triggered Claim prompt for stand id %d"):format(slot), 3)
+            notify("Booth Claim", ("Moved to booth %d and triggered its Claim prompt"):format(slot), 3)
+        else
+            notify("Booth Claim", ("Moved to booth %d; prompt not found, using fallback claim"):format(slot), 3)
         end
     end)
 
@@ -2097,7 +2115,7 @@ do
             local urlBox = Instance.new("TextBox")
             urlBox.Size = UDim2.new(1, -20, 0, 24)
             urlBox.Position = UDim2.new(0,10,0,72)
-            urlBox.Text = SETTINGS.webhookUrl
+            urlBox.Text = tostring(SETTINGS.webhookUrl or "")
             urlBox.PlaceholderText = "https://discord.com/api/webhooks..."
             urlBox.TextXAlignment = Enum.TextXAlignment.Left
             urlBox.ClearTextOnFocus = false
