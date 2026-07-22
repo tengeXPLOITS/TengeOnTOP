@@ -801,40 +801,39 @@ local function tryGetPivotPosition(obj)
     return nil
 end
 
-local function findSlotFromStand(stand)
+local function getStandId(stand)
     if not stand then return nil end
-    -- try extract number from name
+    if stand.GetAttribute then
+        local id = stand:GetAttribute("StandId") or stand:GetAttribute("standId")
+        if id and tonumber(id) then return tonumber(id) end
+    end
     local n = tostring(stand.Name or ""):match("(%d+)")
     if n then return tonumber(n) end
-    -- try more explicit name patterns like "Stand 1", "Slot 5"
-    local p = tostring(stand.Name or "")
-    local n2 = p:match("Stand%s*(%d+)") or p:match("Slot%s*(%d+)") or p:match("(%d+)")
-    if n2 then return tonumber(n2) end
-    -- try attributes (some maps store StandId as an Attribute)
-    if stand.GetAttribute then
-        local aid = stand:GetAttribute("StandId") or stand:GetAttribute("standId") or stand:GetAttribute("Slot") or stand:GetAttribute("slot")
-        if aid and tonumber(aid) then return tonumber(aid) end
+    return nil
+end
+
+local function isStandClaimed(stand)
+    if not stand then return true end
+    local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+    if not ownerObj then return false end
+    if ownerObj:IsA("ObjectValue") then
+        return ownerObj.Value ~= nil
     end
-    -- try common IntValue/StringValue children
-    local candidates = {"Slot","StandId","Index","Id","BoothSlot","Number"}
-    for _, cname in ipairs(candidates) do
-        local child = stand:FindFirstChild(cname)
-        if child and (child:IsA("IntValue") or child:IsA("NumberValue")) then
-            return tonumber(child.Value) or nil
-        end
-        if child and child:IsA("StringValue") then
-            local v = tostring(child.Value or ""):match("(%d+)")
-            if v then return tonumber(v) end
-        end
+    if ownerObj:IsA("StringValue") then
+        return tostring(ownerObj.Value or "") ~= ""
     end
-    -- fallback: use position in parent list if it's inside the Stands folder
-    local parent = stand.Parent
-    if parent and (parent:IsA("Folder") or parent:IsA("Model")) then
-        local children = parent:GetChildren()
-        for idx, child in ipairs(children) do
-            if child == stand then
-                return idx
-            end
+    if ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue") then
+        return tonumber(ownerObj.Value) ~= nil
+    end
+    return true
+end
+
+local function findStandById(standId)
+    local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:FindFirstChild("stands")
+    if not standsFolder then return nil end
+    for _, stand in ipairs(standsFolder:GetChildren()) do
+        if stand and getStandId(stand) == standId then
+            return stand
         end
     end
     return nil
@@ -845,54 +844,38 @@ local function findClaimPromptForStand(stand)
     local standButtons = Workspace:FindFirstChild("StandButtons") or Workspace:FindFirstChild("standbuttons")
     if not standButtons then return nil end
 
-    local entries = {}
+    local targetId = getStandId(stand)
     for _, child in ipairs(standButtons:GetChildren()) do
-        if child and (tostring(child.Name or ""):lower() == "buttonprompt") then
-            local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt")
-            if prompt and prompt:IsA("ProximityPrompt") then
-                entries[#entries + 1] = { object = child, prompt = prompt }
+        if child and tostring(child.Name or ""):lower() == "buttonprompt" then
+            local childId = nil
+            if child.GetAttribute then
+                childId = child:GetAttribute("StandId") or child:GetAttribute("standId")
             end
-        end
-    end
-
-    if #entries == 0 then
-        for _, child in ipairs(standButtons:GetDescendants()) do
-            if child and child:IsA("ProximityPrompt") then
-                local parent = child.Parent
-                if parent and tostring(parent.Name or ""):lower() == "buttonprompt" then
-                    entries[#entries + 1] = { object = parent, prompt = child }
+            if childId and tonumber(childId) and tonumber(childId) == targetId then
+                local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt")
+                if prompt and prompt:IsA("ProximityPrompt") then
+                    return prompt
                 end
             end
         end
     end
 
-    if #entries == 0 then return nil end
-
-    local targetSlot = findSlotFromStand(stand)
-    if targetSlot then
-        for _, entry in ipairs(entries) do
-            local slot = findSlotFromStand(entry.object) or findSlotFromStand(entry.prompt)
-            if slot and slot == targetSlot then
-                return entry.prompt
+    for _, child in ipairs(standButtons:GetDescendants()) do
+        if child and child:IsA("ProximityPrompt") then
+            local parent = child.Parent
+            if parent and tostring(parent.Name or ""):lower() == "buttonprompt" then
+                local parentId = nil
+                if parent.GetAttribute then
+                    parentId = parent:GetAttribute("StandId") or parent:GetAttribute("standId")
+                end
+                if parentId and tonumber(parentId) and tonumber(parentId) == targetId then
+                    return child
+                end
             end
         end
     end
 
-    local standsFolder = Workspace:FindFirstChild("Stands")
-    local standIndex = nil
-    if standsFolder then
-        for idx, child in ipairs(standsFolder:GetChildren()) do
-            if child == stand then
-                standIndex = idx
-                break
-            end
-        end
-    end
-    if standIndex and entries[standIndex] then
-        return entries[standIndex].prompt
-    end
-
-    return entries[1] and entries[1].prompt or nil
+    return nil
 end
 
 local function tryFireClaimPrompt(stand)
@@ -906,6 +889,10 @@ local function tryFireClaimPrompt(stand)
             prompt:InputHoldBegin()
             task.wait(0.05)
             prompt:InputHoldEnd()
+            return true
+        end
+        if prompt.Trigger then
+            prompt:Trigger(LocalPlayer)
             return true
         end
         return false
@@ -1117,26 +1104,20 @@ local function claimEmptyStands()
     end
 
     local standsList = standsFolder:GetChildren()
-    local standButtons = Workspace:FindFirstChild("StandButtons")
-    local buttonList = standButtons and standButtons:GetChildren() or {}
 
-    -- Find nearest empty stand to player and attempt a single claim (do NOT rely on ClientNotification)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local playerPos = hrp and hrp.Position
 
     local candidates = {}
     for _, stand in ipairs(standsList) do
-        if stand and stand.Parent and not stand:FindFirstChild("ButtonPrompt") then
-            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
-            local ownerEmpty = true
-            if ownerObj and ownerObj:IsA("ObjectValue") then
-                ownerEmpty = (ownerObj.Value == nil)
-            end
-            if ownerEmpty then
+        if stand and stand.Parent then
+            local slot = getStandId(stand)
+            local ownerEmpty = not isStandClaimed(stand)
+            if slot and ownerEmpty then
                 local pivot = tryGetPivotPosition(stand)
                 if pivot then
-                    candidates[#candidates+1] = { stand = stand, pivot = pivot }
+                    candidates[#candidates+1] = { stand = stand, pivot = pivot, slot = slot }
                 end
             end
         end
@@ -1147,7 +1128,6 @@ local function claimEmptyStands()
         return false
     end
 
-    -- choose nearest to player (or first if player position unknown)
     table.sort(candidates, function(a,b)
         if not playerPos then return true end
         return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
@@ -1159,17 +1139,14 @@ local function claimEmptyStands()
         return false
     end
 
-    -- teleport/move a few studs directly in front of the chosen stand pivot (use stand orientation when available)
-    local distanceAway = 4.5 -- studs away from pivot (increase to avoid being too near)
+    local distanceAway = 4.5
     local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
     local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
-    -- move directly in front of the booth (no teleport)
     moveCharacterToPosition(safePos, "teleport", dir)
     task.wait(0.25)
 
-    -- resolve slot id and try the button prompt first so the booth can be claimed immediately
-    local slot = findSlotFromStand(target.stand)
+    local slot = target.slot
     if not slot then
         notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(target.stand.Name or "?")), 4)
         return false
@@ -1178,7 +1155,7 @@ local function claimEmptyStands()
     pcall(function()
         local promptTriggered = tryFireClaimPrompt(target.stand)
         if promptTriggered then
-            notify("Booth Claim", ("Triggered Claim prompt for slot %d"):format(slot), 3)
+            notify("Booth Claim", ("Triggered Claim prompt for stand id %d"):format(slot), 3)
         end
     end)
 
