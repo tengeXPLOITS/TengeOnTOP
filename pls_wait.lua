@@ -1244,15 +1244,8 @@ local function claimEmptyStands()
     return false
 end
 
--- Ensure we only complete a single successful claim per script load to avoid duplicates
-local _CLAIM_HAS_RUN = _CLAIM_HAS_RUN or false
 local function claimBooth()
-    if _CLAIM_HAS_RUN then return false end
     local ok, res = pcall(claimEmptyStands)
-    -- if the claim executed successfully (returned true), mark as run
-    if ok and res then
-        _CLAIM_HAS_RUN = true
-    end
     return ok, res
 end
 
@@ -2160,13 +2153,22 @@ do
                 pcall(function() ensureQueuedScript(qcode) end)
             end
         end)
-        -- Ensure claim runs after teleports/character spawn
+        -- Ensure claim runs immediately on UI/script execution and again after respawn
         pcall(function()
-            if LocalPlayer and LocalPlayer.Character then
-                pcall(function() claimBooth() end)
-            end
+            task.spawn(function()
+                for attempt = 1, 8 do
+                    if LocalPlayer and LocalPlayer.Character then
+                        notify("Booth Claim", "Preparing to claim the next available booth...", 3)
+                        pcall(function() claimBooth() end)
+                        break
+                    end
+                    task.wait(0.5)
+                end
+            end)
+
             LocalPlayer.CharacterAdded:Connect(function()
                 task.wait(1)
+                notify("Booth Claim", "Character respawned; attempting booth claim...", 3)
                 pcall(function() claimBooth() end)
             end)
         end)
