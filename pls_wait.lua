@@ -866,11 +866,13 @@ local function findClaimPromptForStand(stand)
     if not standButtons then return nil end
 
     local targetId = getStandId(stand)
+    if not targetId then return nil end
+
     for _, child in ipairs(standButtons:GetChildren()) do
         if child and tostring(child.Name or ""):lower() == "buttonprompt" then
-            local childId = getAttributeValue(child, {"StandId", "standId", "standid", "Slot", "slot"})
+            local childId = getAttributeValue(child, {"StandId", "standId", "standid"})
             if childId and tonumber(childId) and tonumber(childId) == targetId then
-                local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt")
+                local prompt = child:FindFirstChild("Claim") or child:FindFirstChildWhichIsA("ProximityPrompt") or child:FindFirstChildOfClass("ProximityPrompt")
                 if prompt and prompt:IsA("ProximityPrompt") then
                     return prompt
                 end
@@ -882,7 +884,7 @@ local function findClaimPromptForStand(stand)
         if child and child:IsA("ProximityPrompt") then
             local parent = child.Parent
             if parent and tostring(parent.Name or ""):lower() == "buttonprompt" then
-                local parentId = getAttributeValue(parent, {"StandId", "standId", "standid", "Slot", "slot"})
+                local parentId = getAttributeValue(parent, {"StandId", "standId", "standid"})
                 if parentId and tonumber(parentId) and tonumber(parentId) == targetId then
                     return child
                 end
@@ -902,7 +904,7 @@ local function tryFireClaimPrompt(stand)
         end
         if prompt.InputHoldBegin then
             prompt:InputHoldBegin()
-            task.wait(0.05)
+            task.wait(0.08)
             prompt:InputHoldEnd()
             return true
         end
@@ -1154,6 +1156,7 @@ local function claimEmptyStands()
         return false
     end
 
+    local slot = target.slot or getStandId(target.stand)
     local distanceAway = 4.5
     local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
     local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
@@ -1162,7 +1165,6 @@ local function claimEmptyStands()
     moveCharacterToPosition(safePos, "teleport", dir)
     task.wait(0.25)
 
-    local slot = target.slot
     if not slot then
         notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(target.stand.Name or "?")), 4)
         return false
@@ -2156,7 +2158,7 @@ do
         -- Ensure claim runs immediately on UI/script execution and again after respawn
         pcall(function()
             task.spawn(function()
-                for attempt = 1, 8 do
+                for attempt = 1, 15 do
                     if LocalPlayer and LocalPlayer.Character then
                         notify("Booth Claim", "Preparing to claim the next available booth...", 3)
                         pcall(function() claimBooth() end)
