@@ -53,22 +53,11 @@ SETTINGS = SETTINGS or {}
 SETTINGS.antiAfk = SETTINGS.antiAfk or false
 SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
--- legacy periodic jump and spin features removed
-SETTINGS.periodicJump = false
-SETTINGS.spinOnDonation = false
-SETTINGS.spinDefaultSpeed = 1
-SETTINGS.spinSpeedMultiplier = 1
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
--- runtime spin state (xspin follows old.lua behavior)
--- spin helpers removed; no-op placeholders kept for compatibility
-local xspin = 1
-local function ensurePersistentSpin() end
-local function removePersistentSpin() end
 
--- Donation monitoring placeholders
 donationConns = donationConns or {}
 donationEnabled = donationEnabled or false
 donationTotals = donationTotals or {}
@@ -341,17 +330,10 @@ local function postWebhookEvent(kind, data)
     if kind == "donation" then
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
-        local donorLabel = donorName
-        local followAttempted = data and data.followAttempted or false
-        local followStatus = data and data.followStatus or "disabled"
-        local followSuccessful = data and data.followSuccessful or false
         local fields = {
-            { name = "Donor 👤", value = donorLabel, inline = false },
+            { name = "Donor 👤", value = donorName, inline = false },
             { name = "Amount 💵", value = tostring(amount), inline = true },
         }
-        if followAttempted then
-            table.insert(fields, { name = "Follow 🔗", value = tostring(followSuccessful and "Yes" or followStatus), inline = true })
-        end
         table.insert(embeds, {
             title = "New Donation Received! ✅",
             color = 0x00FF00,
@@ -483,16 +465,12 @@ local function tryHookPlayerStat(player)
                                         donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
                                         donorId = (LocalPlayer and LocalPlayer.UserId) or nil
                                     end
-                                    -- follow-on-donation removed: always report webhook without follow metadata
                                     postWebhookEvent("donation", {
                                         donorName = donorName,
                                         from = donorName,
                                         userId = donorId,
                                         amount = delta,
                                         total = newv,
-                                        followAttempted = false,
-                                        followStatus = "disabled",
-                                        followSuccessful = false,
                                     })
 
                     -- spin-on-donation feature removed
@@ -1363,8 +1341,6 @@ do
         end)
 
         pcall(LoadSettings)
-        -- spin feature removed; ensure placeholder value
-        xspin = 1
         -- (initialization guard will be checked after SharedEnv is defined)
         -- Provide a small UI helper used by buttons
         local function styleButton(btn)
@@ -1415,7 +1391,7 @@ do
         uiToggle.Size = UDim2.new(0, 40, 0, 40)
         uiToggle.Position = UDim2.new(0, 12, 1, -64)
         uiToggle.AnchorPoint = Vector2.new(0,0)
-        uiToggle.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        uiToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
         uiToggle.Image = ""
         uiToggle.Parent = screen
         local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
@@ -1432,7 +1408,7 @@ do
         -- position bottom-left, keep margin and ensure it's visible on mobile
         mainFrame.AnchorPoint = Vector2.new(0, 1)
         mainFrame.Position = UDim2.new(0, 12, 1, -12)
-        mainFrame.BackgroundColor3 = Color3.fromRGB(12,12,12)
+        mainFrame.BackgroundColor3 = Color3.fromRGB(24,24,24)
         mainFrame.BackgroundTransparency = 0
         mainFrame.Parent = screen
         mainFrame.Active = true
@@ -1451,7 +1427,7 @@ do
         titleBar.Name = "TitleBar"
         titleBar.Size = UDim2.new(1, 0, 0, 28)
         titleBar.Position = UDim2.new(0, 0, 0, 0)
-        titleBar.BackgroundColor3 = Color3.fromRGB(50,205,50)
+        titleBar.BackgroundColor3 = Color3.fromRGB(70,70,70)
         titleBar.BackgroundTransparency = 0
         titleBar.Parent = mainFrame
         titleBar.Active = true
@@ -1471,8 +1447,8 @@ do
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 32, 0, 20)
         closeBtn.Position = UDim2.new(1, -44, 0, 4)
-        closeBtn.Text = "💰"
-        closeBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        closeBtn.Text = "X"
+        closeBtn.BackgroundColor3 = Color3.fromRGB(70,70,70)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
         closeBtn.Font = Enum.Font.GothamBold
         closeBtn.TextSize = 16
@@ -1648,7 +1624,7 @@ do
             afkToggle.Size = UDim2.new(0,60,0,20)
             afkToggle.Position = UDim2.new(0,150,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
-            afkToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            afkToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
             local afkCorner = Instance.new("UICorner") afkCorner.Parent = afkToggle
             afkToggle.Parent = frame
@@ -1672,7 +1648,7 @@ do
             touchToggle.Size = UDim2.new(0,60,0,20)
             touchToggle.Position = UDim2.new(0,150,0,42)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
-            touchToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            touchToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
             local ttCorner = Instance.new("UICorner") ttCorner.Parent = touchToggle
             touchToggle.Parent = frame
@@ -1701,7 +1677,7 @@ do
             donationTestBtn.Size = UDim2.new(0,160,0,24)
             donationTestBtn.Position = UDim2.new(0,10,0,74)
             donationTestBtn.Text = "Test Donation"
-            donationTestBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
+            donationTestBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
             donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
@@ -1717,9 +1693,6 @@ do
                         amount = 1,
                         total = 1,
                         test = true,
-                        followAttempted = false,
-                        followStatus = "disabled",
-                        followSuccessful = false,
                     })
                 end)
                 notify("Donation Test", "Test donation event sent.", 4)
@@ -1755,7 +1728,7 @@ do
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
             emotePlayBtn.Position = UDim2.new(0,140,0,144)
             emotePlayBtn.Text = "Play"
-            emotePlayBtn.BackgroundColor3 = Color3.fromRGB(52,152,219)
+            emotePlayBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
             emotePlayBtn.Parent = frame
             styleButton(emotePlayBtn)
@@ -1764,7 +1737,7 @@ do
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
             emoteStopBtn.Position = UDim2.new(0,228,0,144)
             emoteStopBtn.Text = "Stop"
-            emoteStopBtn.BackgroundColor3 = Color3.fromRGB(192,57,43)
+            emoteStopBtn.BackgroundColor3 = Color3.fromRGB(100,40,40)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
             emoteStopBtn.Parent = frame
             styleButton(emoteStopBtn)
@@ -1895,7 +1868,7 @@ do
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
             autoEmoteToggle.Position = UDim2.new(0,140,0,180)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
-            autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
             autoEmoteToggle.Parent = frame
             local aec = Instance.new("UICorner") aec.Parent = autoEmoteToggle
@@ -2006,7 +1979,7 @@ do
             hopBtn.Size = UDim2.new(0,200,0,40)
             hopBtn.Position = UDim2.new(0,10,0,112)
             hopBtn.Text = "Server Hop Now"
-            hopBtn.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            hopBtn.BackgroundColor3 = Color3.fromRGB(90,90,90)
             hopBtn.TextColor3 = Color3.fromRGB(255,255,255)
             local hCorner = Instance.new("UICorner")
             hCorner.Parent = hopBtn
@@ -2051,7 +2024,7 @@ do
             autoToggle.Size = UDim2.new(0,60,0,20)
             autoToggle.Position = UDim2.new(0,140,0,160)
             autoToggle.Text = autoServerHopEnabled and "ON" or "OFF"
-            autoToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            autoToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             autoToggle.TextColor3 = Color3.fromRGB(255,255,255)
             local atCorner = Instance.new("UICorner")
             atCorner.Parent = autoToggle
@@ -2096,7 +2069,7 @@ do
             whToggle.Position = UDim2.new(0,140,0,10)
             whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
             whToggle.Parent = frame
-            whToggle.BackgroundColor3 = Color3.fromRGB(34,177,76)
+            whToggle.BackgroundColor3 = Color3.fromRGB(90,90,90)
             styleButton(whToggle)
             whToggle.MouseButton1Click:Connect(function()
                 SETTINGS.webhookToggle = not SETTINGS.webhookToggle
