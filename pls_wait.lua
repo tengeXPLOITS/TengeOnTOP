@@ -2343,13 +2343,22 @@ do
             donationTestBtn.MouseButton1Click:Connect(function()
                 local donor, donorName, donorId = resolveDonationDonor(nil, nil)
                 if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
+                local leaderstats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:WaitForChild("leaderstats", 3)
+                if leaderstats then
+                    local raised = leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("raised")
+                    if raised and typeof(raised.Value) == "number" then
+                        pcall(function()
+                            raised.Value = raised.Value + 1
+                        end)
+                    end
+                end
                 pcall(function()
                     postWebhookEvent("donation", {
                         donorName = donorName,
                         from = donorName,
                         userId = donorId,
                         amount = 1,
-                        total = 1,
+                        total = leaderstats and leaderstats:FindFirstChild("Raised") and tonumber(leaderstats:FindFirstChild("Raised").Value) or 1,
                         test = true,
                     })
                 end)
