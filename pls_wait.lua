@@ -399,14 +399,35 @@ local function getRandomThankYouMessage()
     return tostring(choice or "thanks!")
 end
 
+local function sendChatMessage(msg)
+    if not msg or msg == "" then return end
+    pcall(function()
+        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
+            LocalPlayer:Chat(msg)
+            return
+        end
+        local repStore = game:GetService("ReplicatedStorage")
+        local events = repStore:FindFirstChild("DefaultChatSystemChatEvents")
+        if events then
+            local sayMsg = events:FindFirstChild("SayMessageRequest") or events:FindFirstChild("SayMessageRequest")
+            if sayMsg and sayMsg.FireServer then
+                sayMsg:FireServer(msg, "All")
+                return
+            end
+        end
+        local chatService = game:GetService("TextChatService")
+        if chatService and type(chatService.SendSystemMessage) == "function" then
+            chatService:SendSystemMessage(msg, "All")
+        end
+    end)
+end
+
 local function sendThankYouMessage()
     if not SETTINGS.chatAutoThankYou then return end
     local msg = getRandomThankYouMessage()
     if msg == "" then return end
-    pcall(function()
-        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
-            LocalPlayer:Chat(msg)
-        end
+    task.delay(2, function()
+        sendChatMessage(msg)
     end)
 end
 
