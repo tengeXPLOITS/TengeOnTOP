@@ -57,6 +57,8 @@ local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
+local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
+SETTINGS.boothText = SETTINGS.boothText or DEFAULT_BOOTH_TEXT
 
 donationConns = donationConns or {}
 donationEnabled = donationEnabled or false
@@ -1293,6 +1295,7 @@ do
                 persistToggles = SETTINGS.persistToggles,
                 -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
+                boothText = SETTINGS.boothText,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
             }
@@ -1331,6 +1334,7 @@ do
             SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
             -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
+            SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
             SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
             autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
         end
@@ -1347,6 +1351,7 @@ do
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
+                SETTINGS.boothText = cfg.boothText or SETTINGS.boothText
                 autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
                 -- legacy spin settings ignored from queued config
                 _G.__PLS_WAIT_CONFIG = nil
@@ -1551,7 +1556,7 @@ do
         leftList.VerticalAlignment = Enum.VerticalAlignment.Top
         leftList.Parent = leftCol
 
-        local menu = { {key="Main", text="Main"}, {key="ServerHop", text="Server Hop"}, {key="Webhook", text="Webhook"} }
+        local menu = { {key="Booth", text="Booth"}, {key="Main", text="Main"}, {key="ServerHop", text="Server Hop"}, {key="Webhook", text="Webhook"} }
         local tabButtons = {}
         local tabFrames = {}
         for i, item in ipairs(menu) do
@@ -1610,6 +1615,97 @@ do
             btn.MouseButton1Click:Connect(function() selectTab(name) end)
         end
 
+        local function updateBoothText(text)
+            local newText = tostring(text or "")
+            if newText == "" then
+                notify("Booth Text", "Enter booth text before saving.", 4)
+                return false
+            end
+            local remote = ReplicatedStorage:FindFirstChild("UpdateStandText") or ReplicatedStorage:WaitForChild("UpdateStandText", 5)
+            if not remote then
+                notify("Booth Text", "UpdateStandText remote not found.", 4)
+                return false
+            end
+            local ok, res = pcall(function()
+                return remote:InvokeServer(newText)
+            end)
+            if not ok then
+                notify("Booth Text", "Save failed: " .. tostring(res), 5)
+                return false
+            end
+            notify("Booth Text", "Booth text saved.", 4)
+            return true
+        end
+
+        -- Booth tab
+        do
+            local boothFrame = tabFrames.Booth
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -20, 0, 28)
+            title.Position = UDim2.new(0, 10, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Text = "Booth"
+            title.TextColor3 = Color3.new(1,1,1)
+            title.Font = Enum.Font.GothamBold
+            title.TextSize = 16
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = boothFrame
+
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Size = UDim2.new(0, 120, 0, 20)
+            textLabel.Position = UDim2.new(0, 10, 0, 50)
+            textLabel.Text = "Booth Text"
+            textLabel.BackgroundTransparency = 1
+            textLabel.TextColor3 = Color3.new(1,1,1)
+            textLabel.Parent = boothFrame
+
+            local boothTextBox = Instance.new("TextBox")
+            boothTextBox.Size = UDim2.new(1, -20, 0, 90)
+            boothTextBox.Position = UDim2.new(0, 10, 0, 74)
+            boothTextBox.Text = tostring(SETTINGS.boothText or DEFAULT_BOOTH_TEXT)
+            boothTextBox.PlaceholderText = "Enter booth text here..."
+            boothTextBox.TextWrapped = true
+            boothTextBox.MultiLine = true
+            boothTextBox.ClearTextOnFocus = false
+            boothTextBox.TextXAlignment = Enum.TextXAlignment.Left
+            boothTextBox.TextYAlignment = Enum.TextYAlignment.Top
+            boothTextBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            boothTextBox.TextColor3 = Color3.fromRGB(255,255,255)
+            local btbCorner = Instance.new("UICorner") btbCorner.Parent = boothTextBox
+            boothTextBox.Parent = boothFrame
+
+            local saveBtn = Instance.new("TextButton")
+            saveBtn.Size = UDim2.new(0, 120, 0, 28)
+            saveBtn.Position = UDim2.new(0, 10, 0, 176)
+            saveBtn.Text = "Save Text"
+            saveBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            saveBtn.TextColor3 = Color3.new(1,1,1)
+            saveBtn.Font = Enum.Font.Gotham
+            saveBtn.TextSize = 14
+            saveBtn.Parent = boothFrame
+            styleButton(saveBtn)
+            saveBtn.MouseButton1Click:Connect(function()
+                local text = tostring(boothTextBox.Text or "")
+                SETTINGS.boothText = text
+                pcall(SaveSettings)
+                pcall(updateBoothText, text)
+            end)
+
+            local claimBtn = Instance.new("TextButton")
+            claimBtn.Size = UDim2.new(0, 180, 0, 32)
+            claimBtn.Position = UDim2.new(0, 150, 0, 176)
+            claimBtn.Text = "Claim Booth Now"
+            claimBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            claimBtn.TextColor3 = Color3.new(1,1,1)
+            claimBtn.Font = Enum.Font.Gotham
+            claimBtn.TextSize = 14
+            claimBtn.Parent = boothFrame
+            styleButton(claimBtn)
+            claimBtn.MouseButton1Click:Connect(function()
+                pcall(function() claimBooth() end)
+            end)
+        end
+
         -- Main tab
         do
             local rootFrame = tabFrames.Main
@@ -1650,7 +1746,7 @@ do
             styleButton(afkToggle)
 
             local touchLabel = Instance.new("TextLabel")
-            touchLabel.Size = UDim2.new(0,180,0,20)
+            touchLabel.Size = UDim2.new(0,120,0,20)
             touchLabel.Position = UDim2.new(0,10,0,42)
             touchLabel.Text = "Touch Prevent AFK"
             touchLabel.BackgroundTransparency = 1
@@ -1738,8 +1834,8 @@ do
             end)
 
             local emotePresetBtn = Instance.new("TextButton")
-            emotePresetBtn.Size = UDim2.new(0,90,0,24)
-            emotePresetBtn.Position = UDim2.new(0,308,0,112)
+            emotePresetBtn.Size = UDim2.new(0,70,0,24)
+            emotePresetBtn.Position = UDim2.new(0,306,0,112)
             emotePresetBtn.Text = "Presets"
             emotePresetBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
             emotePresetBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1748,7 +1844,7 @@ do
 
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,148)
+            emotePlayBtn.Position = UDim2.new(0,140,0,150)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1757,18 +1853,22 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,148)
+            emoteStopBtn.Position = UDim2.new(0,228,0,150)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(100,40,40)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
             emoteStopBtn.Parent = frame
             styleButton(emoteStopBtn)
 
-            local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,140,0,260)
+            local presetFrame = Instance.new("ScrollingFrame")
+            presetFrame.Position = UDim2.new(0,140,0,180)
+            presetFrame.Size = UDim2.new(0,160,0,110)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
             presetFrame.ZIndex = 3
+            presetFrame.CanvasSize = UDim2.new(0,0,0,0)
+            presetFrame.ScrollBarThickness = 6
+            presetFrame.ClipsDescendants = true
             presetFrame.Parent = frame
             local pfCorner = Instance.new("UICorner") pfCorner.Parent = presetFrame
 
@@ -1781,7 +1881,7 @@ do
                 { name = "Block Partier", id = "10713988674" },
                 { name = "Shy", id = "10714369325" },
             }
-            presetFrame.Size = UDim2.new(0,160,0, 28 * #presetEmotes)
+            presetFrame.CanvasSize = UDim2.new(0,0,0,28 * #presetEmotes)
             local function closePreset()
                 presetFrame.Visible = false
             end
