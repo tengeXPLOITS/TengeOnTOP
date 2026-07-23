@@ -401,7 +401,10 @@ local function tryHookPlayerStat(player)
         return 0
     end
     local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
-    if not ls then return false end
+    if not ls then
+        if player == LocalPlayer then pcall(function() notify("Donation Debug", "leaderstats not found for local player", 5) end) end
+        return false
+    end
     local stat = ls:FindFirstChild(donationStatName) or nil
     if not stat then
         for _, c in ipairs(ls:GetChildren()) do
@@ -414,11 +417,24 @@ local function tryHookPlayerStat(player)
             end
         end
     end
-    if not stat then return false end
+    if not stat then
+        if player == LocalPlayer then pcall(function() notify("Donation Debug", "no valid donation stat found", 5) end) end
+        return false
+    end
+    if player == LocalPlayer then
+        pcall(function()
+            notify("Donation Debug", ("hooked %s (%s) = %d"):format(tostring(stat.Name), tostring(stat.ClassName), parseAmount(stat.Value)), 5)
+        end)
+    end
     donationTotals[uid] = parseAmount(stat.Value)
     donationConns["stat_"..uid] = stat.Changed:Connect(function()
         local newv = parseAmount(stat.Value)
         local prev = donationTotals[uid] or 0
+        if player == LocalPlayer and newv ~= prev then
+            pcall(function()
+                notify("Donation Debug", ("stat changed %d -> %d (delta %d)"):format(prev, newv, newv - prev), 4)
+            end)
+        end
         if newv ~= prev then
             local delta = newv - prev
             donationTotals[uid] = newv
@@ -2065,6 +2081,9 @@ do
                             root:FindFirstChild("Spin"):Destroy()
                         end
                     end
+                    if not SETTINGS.webhookToggle then
+                        stopDonationMonitor()
+                    end
                 else
                     pcall(function()
                         local char = LocalPlayer.Character
@@ -2079,6 +2098,7 @@ do
                             end
                         end
                     end)
+                    startDonationMonitor()
                 end
             end)
 
@@ -2422,8 +2442,10 @@ do
 
         -- Fade-in removed: UI elements appear immediately (user requested no fade)
 
-        if SETTINGS.webhookToggle then
+        if SETTINGS.webhookToggle or SETTINGS.spinSet then
             startDonationMonitor()
+        end
+        if SETTINGS.webhookToggle then
             pcall(function()
                 pcall(function() sendPlainWebhook(("@%s serverhopped"):format(tostring(LocalPlayer and LocalPlayer.Name or "Unknown"))) end)
             end)
