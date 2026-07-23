@@ -60,6 +60,8 @@ SETTINGS.staffHop = SETTINGS.staffHop or false
 SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
 SETTINGS.spinSet = SETTINGS.spinSet or SETTINGS.spinOnDonation or false
 SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 1
+SETTINGS.chatAutoThankYou = SETTINGS.chatAutoThankYou or false
+SETTINGS.thankYouMessages = SETTINGS.thankYouMessages or {"thanks!", "thank you", "ty (:"}
 local currentDonationStat = nil
 local currentDonationUid = nil
 local function parseAmount(v)
@@ -388,6 +390,26 @@ local function applyDonationSpin(delta)
     end
 end
 
+local function getRandomThankYouMessage()
+    local msgs = SETTINGS.thankYouMessages
+    if type(msgs) ~= "table" or #msgs == 0 then
+        return "thanks!"
+    end
+    local choice = msgs[math.random(1, #msgs)]
+    return tostring(choice or "thanks!")
+end
+
+local function sendThankYouMessage()
+    if not SETTINGS.chatAutoThankYou then return end
+    local msg = getRandomThankYouMessage()
+    if msg == "" then return end
+    pcall(function()
+        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
+            LocalPlayer:Chat(msg)
+        end
+    end)
+end
+
 local function sendPlainWebhook(msg)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
     local url = tostring(SETTINGS.webhookUrl or "")
@@ -502,6 +524,7 @@ local function tryHookPlayerStat(player)
                                         pending = pending,
                                     })
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
+                                    sendThankYouMessage()
                                     applyDonationSpin(delta)
                 end
             end
@@ -804,6 +827,7 @@ local function startDonationMonitor()
                     pending = pending,
                 })
                 notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
+                sendThankYouMessage()
                 applyDonationSpin(delta)
             end
         end
@@ -1372,6 +1396,8 @@ do
                 boothText = SETTINGS.boothText,
                 staffHop = SETTINGS.staffHop,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
+                chatAutoThankYou = SETTINGS.chatAutoThankYou,
+                thankYouMessages = SETTINGS.thankYouMessages,
                 autoServerHop = autoServerHopEnabled,
             }
             SETTINGS.hopRange = hopRangeText
@@ -1415,6 +1441,8 @@ do
             SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
             if decoded.staffHop ~= nil then SETTINGS.staffHop = decoded.staffHop end
             if decoded.emotePlaying ~= nil then SETTINGS.emotePlaying = decoded.emotePlaying end
+            if decoded.chatAutoThankYou ~= nil then SETTINGS.chatAutoThankYou = decoded.chatAutoThankYou end
+            if decoded.thankYouMessages ~= nil and type(decoded.thankYouMessages) == "table" then SETTINGS.thankYouMessages = decoded.thankYouMessages end
             if decoded.autoServerHop ~= nil then autoServerHopEnabled = decoded.autoServerHop end
         end
 
@@ -1435,6 +1463,8 @@ do
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 SETTINGS.boothText = cfg.boothText or SETTINGS.boothText
                 if cfg.staffHop ~= nil then SETTINGS.staffHop = cfg.staffHop end
+                if cfg.chatAutoThankYou ~= nil then SETTINGS.chatAutoThankYou = cfg.chatAutoThankYou end
+                if cfg.thankYouMessages ~= nil and type(cfg.thankYouMessages) == "table" then SETTINGS.thankYouMessages = cfg.thankYouMessages end
                 if cfg.autoServerHop ~= nil then autoServerHopEnabled = cfg.autoServerHop end
                 -- legacy spin settings ignored from queued config
                 _G.__PLS_WAIT_CONFIG = nil
@@ -1683,7 +1713,7 @@ do
         leftList.VerticalAlignment = Enum.VerticalAlignment.Top
         leftList.Parent = leftCol
 
-        local menu = { {key="Booth", text="Booth"}, {key="Main", text="Main"}, {key="ServerHop", text="Server Hop"}, {key="Webhook", text="Webhook"} }
+        local menu = { {key="Booth", text="Booth"}, {key="Main", text="Main"}, {key="ServerHop", text="Server Hop"}, {key="Webhook", text="Webhook"}, {key="Chat", text="Chat"} }
         local tabButtons = {}
         local tabFrames = {}
         for i, item in ipairs(menu) do
@@ -2487,6 +2517,69 @@ do
             end)
 
             -- donation stat name textbox removed per user request
+        end
+
+        -- Chat tab
+        do
+            local frame = tabFrames.Chat
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(0,160,0,20)
+            label.Position = UDim2.new(0,10,0,10)
+            label.Text = "Auto Thank You"
+            label.BackgroundTransparency = 1
+            label.TextColor3 = Color3.new(1,1,1)
+            label.Font = Enum.Font.GothamBold
+            label.TextSize = 16
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.Parent = frame
+
+            local autoLabel = Instance.new("TextLabel")
+            autoLabel.Size = UDim2.new(0,120,0,20)
+            autoLabel.Position = UDim2.new(0,10,0,44)
+            autoLabel.Text = "Enabled"
+            autoLabel.BackgroundTransparency = 1
+            autoLabel.TextColor3 = Color3.new(1,1,1)
+            autoLabel.Parent = frame
+
+            local autoToggle = Instance.new("TextButton")
+            autoToggle.Size = UDim2.new(0,60,0,20)
+            autoToggle.Position = UDim2.new(0,140,0,44)
+            autoToggle.Text = SETTINGS.chatAutoThankYou and "ON" or "OFF"
+            autoToggle.BackgroundColor3 = Color3.fromRGB(90,90,90)
+            autoToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            autoToggle.Parent = frame
+            local autoCorner = Instance.new("UICorner") autoCorner.Parent = autoToggle
+            styleButton(autoToggle)
+            autoToggle.MouseButton1Click:Connect(function()
+                SETTINGS.chatAutoThankYou = not SETTINGS.chatAutoThankYou
+                autoToggle.Text = SETTINGS.chatAutoThankYou and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
+
+            local messageLabel = Instance.new("TextLabel")
+            messageLabel.Size = UDim2.new(0,160,0,20)
+            messageLabel.Position = UDim2.new(0,10,0,80)
+            messageLabel.Text = "Thank You Messages"
+            messageLabel.BackgroundTransparency = 1
+            messageLabel.TextColor3 = Color3.new(1,1,1)
+            messageLabel.Parent = frame
+
+            for i = 1, 3 do
+                local msgBox = Instance.new("TextBox")
+                msgBox.Size = UDim2.new(1, -20, 0, 24)
+                msgBox.Position = UDim2.new(0,10,0, 80 + i * 34)
+                msgBox.Text = tostring(SETTINGS.thankYouMessages[i] or "")
+                msgBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                msgBox.TextColor3 = Color3.fromRGB(255,255,255)
+                msgBox.ClearTextOnFocus = false
+                msgBox.TextXAlignment = Enum.TextXAlignment.Left
+                msgBox.Parent = frame
+                local msgCorner = Instance.new("UICorner") msgCorner.Parent = msgBox
+                msgBox.FocusLost:Connect(function()
+                    SETTINGS.thankYouMessages[i] = tostring(msgBox.Text or "")
+                    pcall(SaveSettings)
+                end)
+            end
         end
 
         -- Fade-in removed: UI elements appear immediately (user requested no fade)
