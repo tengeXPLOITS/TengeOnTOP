@@ -57,8 +57,9 @@ SETTINGS.persistToggles = SETTINGS.persistToggles or false
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 SETTINGS.staffHop = SETTINGS.staffHop or false
-SETTINGS.remainAtBooth = SETTINGS.remainAtBooth or false
 SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
+SETTINGS.spinSet = SETTINGS.spinSet or SETTINGS.spinOnDonation or false
+SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 1
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
@@ -269,99 +270,6 @@ local function serverHopNow(minPlayers, maxPlayers)
 end
 
 
-local function stopClaimMonitor()
-    lastClaimMonitorStop = true
-    lastClaimPosition = nil
-    lastClaimAwayDir = nil
-end
-local function startClaimMonitor(stand, pos, awayDir)
-    if not stand or not pos then return end
-    -- Safely extract a Vector3 position from various accepted pos types
-    local okPos, resolvedPos = pcall(function()
-        if typeof(pos) == "CFrame" then
-            return pos.Position
-        elseif typeof(pos) == "Vector3" then
-            return pos
-        elseif type(pos) == "table" and pos.Position then
-            return pos.Position
-        end
-        return nil
-    end)
-    if not okPos or not resolvedPos then return end
-    lastClaimPosition = resolvedPos
-    if typeof(awayDir) == "Vector3" then
-        lastClaimAwayDir = awayDir
-    end
-    lastClaimMonitorStop = false
-    task.spawn(function()
-        while not lastClaimMonitorStop do
-            task.wait(0.8)
-            if lastClaimMonitorStop then break end
-            -- ensure stand still exists
-            if not stand or not stand.Parent then stopClaimMonitor(); break end
-            -- check ownership: Owner (ObjectValue) or StringValue
-            local ownerObj = stand:FindFirstChild("Owner") or stand:FindFirstChild("Wner")
-            local owned = false
-            if ownerObj then
-                pcall(function()
-                    if ownerObj:IsA("ObjectValue") then
-                        if ownerObj.Value == LocalPlayer or tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
-                    elseif ownerObj:IsA("StringValue") then
-                        if tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
-                    else
-                        if tostring(ownerObj.Value) == LocalPlayer.Name then owned = true end
-                    end
-                end)
-            end
-            if not owned then
-                -- no longer our stand; stop monitoring
-                stopClaimMonitor()
-                break
-            end
-            local char = LocalPlayer.Character
-            if not char then break end
-            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if not hrp or not hum then break end
-            local d = (hrp.Position - lastClaimPosition).Magnitude
-            if d >= 14 then
-                pcall(function() notify("Claim Monitor", "Moving back to claimed booth...", 2) end)
-                local mode = "teleport"
-                if mode == "teleport" then
-                    -- strong teleport enforcement (repeated CFrame set + velocity clear)
-                    for attempt = 1, 8 do
-                        if lastClaimMonitorStop then break end
-                        pcall(function()
-                            local curChar = LocalPlayer.Character
-                            if curChar then
-                                local curHrp = curChar:FindFirstChild("HumanoidRootPart") or curChar:FindFirstChild("Torso")
-                                if curHrp then
-                                    local lookDir = lastClaimAwayDir or Vector3.new(0,0,1)
-                                    curHrp.CFrame = CFrame.new(lastClaimPosition + Vector3.new(0,2,0), lastClaimPosition + Vector3.new(0,2,0) + lookDir)
-                                    pcall(function() curHrp.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
-                                end
-                                local curHum = curChar:FindFirstChildOfClass("Humanoid")
-                                if curHum then pcall(function() curHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
-                            end
-                        end)
-                        task.wait(0.08)
-                        local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-                        if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
-                    end
-                else
-                    -- walk mode: MoveTo only
-                    for attempt = 1, 12 do
-                        if lastClaimMonitorStop then break end
-                        pcall(function() hum:MoveTo(lastClaimPosition) end)
-                        task.wait(0.18)
-                        local cur = (LocalPlayer.Character and (LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")))
-                        if cur and (cur.Position - lastClaimPosition).Magnitude <= 4 then break end
-                    end
-                end
-            end
-        end
-    end)
-end
 
 local antiAfkConn = nil
 local function enableAntiAfk()
@@ -549,8 +457,29 @@ local function tryHookPlayerStat(player)
                                         pending = pending,
                                     })
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                                    if SETTINGS.spinOnDonation then
-                                        pcall(function() performDonationSpin() end)
+                                    if SETTINGS.spinSet then
+                                        pcall(function()
+                                            local char = LocalPlayer.Character
+                                            if char then
+                                                local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                                                if root then
+                                                    local spinPart = root:FindFirstChild("Spin")
+                                                    if not spinPart then
+                                                        spinPart = Instance.new("BodyAngularVelocity")
+                                                        spinPart.Name = "Spin"
+                                                        spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
+                                                        spinPart.Parent = root
+                                                        spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                                                    end
+                                                    if spinPart and spinPart:IsA("BodyAngularVelocity") then
+                                                        local currentY = tonumber(spinPart.AngularVelocity.Y) or 0
+                                                        local deltaRaised = delta or 0
+                                                        local averageDelta = deltaRaised / 3
+                                                        spinPart.AngularVelocity = Vector3.new(0, currentY + averageDelta * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                                                    end
+                                                end
+                                            end
+                                        end)
                                     end
                 end
             end
@@ -1134,29 +1063,6 @@ local function localPlayerOwnsAnyStand()
     return false
 end
 
-local function findLocalClaimedStand()
-    local standsFolder = Workspace:FindFirstChild("Stands")
-    if not standsFolder then return nil end
-    for _, stand in ipairs(standsFolder:GetChildren()) do
-        if stand and stand.Parent then
-            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
-            if ownerObj then
-                local ok, val = pcall(function() return ownerObj.Value end)
-                if ok then
-                    if ownerObj:IsA("ObjectValue") then
-                        if val == LocalPlayer then return stand end
-                    elseif ownerObj:IsA("StringValue") then
-                        if tostring(val) == tostring(LocalPlayer.Name) then return stand end
-                    elseif ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue") then
-                        if tonumber(val) == tonumber(LocalPlayer.UserId) then return stand end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
 local function performDonationSpin()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -1208,8 +1114,6 @@ local function claimEmptyStands()
     if claimLock then return false end
     claimLock = true
     local function _run()
-    -- stop any prior monitor while attempting a new claim
-    pcall(function() stopClaimMonitor() end)
     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:WaitForChild("Stands", 5)
     if not standsFolder then
         notify("Booth Claim", "No Stands folder found.", 4)
@@ -1310,12 +1214,6 @@ local function claimEmptyStands()
                                         if basePos and awayDir then
                                             -- move using configured mode and orient to face away from the booth
                                             pcall(function() moveCharacterToPosition(basePos, "teleport", awayDir) end)
-                                            if SETTINGS.remainAtBooth then
-                                                pcall(function()
-                                                    notify("Claim Monitor", "Monitoring claimed booth position", 2)
-                                                    startClaimMonitor(target.stand, basePos, awayDir)
-                                                end)
-                                            end
                                         end
                             end
                         end
@@ -1404,12 +1302,13 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
-                spinOnDonation = SETTINGS.spinOnDonation,
+                spinOnDonation = SETTINGS.spinSet,
+                spinSet = SETTINGS.spinSet,
+                spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                 -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
                 boothText = SETTINGS.boothText,
                 staffHop = SETTINGS.staffHop,
-                remainAtBooth = SETTINGS.remainAtBooth,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
             }
@@ -1446,12 +1345,13 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             if decoded.persistToggles ~= nil then SETTINGS.persistToggles = decoded.persistToggles end
-            if decoded.spinOnDonation ~= nil then SETTINGS.spinOnDonation = decoded.spinOnDonation end
+            if decoded.spinSet ~= nil then SETTINGS.spinSet = decoded.spinSet end
+            if decoded.spinOnDonation ~= nil then SETTINGS.spinSet = decoded.spinOnDonation end
+            if decoded.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
             -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
             if decoded.staffHop ~= nil then SETTINGS.staffHop = decoded.staffHop end
-            if decoded.remainAtBooth ~= nil then SETTINGS.remainAtBooth = decoded.remainAtBooth end
             if decoded.emotePlaying ~= nil then SETTINGS.emotePlaying = decoded.emotePlaying end
             if decoded.autoServerHop ~= nil then autoServerHopEnabled = decoded.autoServerHop end
         end
@@ -1465,13 +1365,14 @@ do
                 if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 if cfg.persistToggles ~= nil then SETTINGS.persistToggles = cfg.persistToggles end
-                if cfg.spinOnDonation ~= nil then SETTINGS.spinOnDonation = cfg.spinOnDonation end
+                if cfg.spinSet ~= nil then SETTINGS.spinSet = cfg.spinSet end
+                if cfg.spinOnDonation ~= nil then SETTINGS.spinSet = cfg.spinOnDonation end
+                if cfg.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = cfg.spinSpeedMultiplier end
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 SETTINGS.boothText = cfg.boothText or SETTINGS.boothText
                 if cfg.staffHop ~= nil then SETTINGS.staffHop = cfg.staffHop end
-                if cfg.remainAtBooth ~= nil then SETTINGS.remainAtBooth = cfg.remainAtBooth end
                 if cfg.autoServerHop ~= nil then autoServerHopEnabled = cfg.autoServerHop end
                 -- legacy spin settings ignored from queued config
                 _G.__PLS_WAIT_CONFIG = nil
@@ -1822,43 +1723,6 @@ do
                 pcall(SaveSettings)
                 pcall(updateBoothText, text)
             end)
-
-            local remainLabel = Instance.new("TextLabel")
-            remainLabel.Size = UDim2.new(0, 120, 0, 20)
-            remainLabel.Position = UDim2.new(0, 10, 0, 214)
-            remainLabel.Text = "Remain At Booth"
-            remainLabel.BackgroundTransparency = 1
-            remainLabel.TextColor3 = Color3.new(1,1,1)
-            remainLabel.Parent = boothFrame
-
-            local remainToggle = Instance.new("TextButton")
-            remainToggle.Size = UDim2.new(0, 60, 0, 20)
-            remainToggle.Position = UDim2.new(0, 140, 0, 214)
-            remainToggle.Text = SETTINGS.remainAtBooth and "ON" or "OFF"
-            remainToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
-            remainToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            local rtCorner = Instance.new("UICorner")
-            rtCorner.Parent = remainToggle
-            remainToggle.Parent = boothFrame
-            styleButton(remainToggle)
-            remainToggle.MouseButton1Click:Connect(function()
-                SETTINGS.remainAtBooth = not SETTINGS.remainAtBooth
-                remainToggle.Text = SETTINGS.remainAtBooth and "ON" or "OFF"
-                pcall(SaveSettings)
-                if SETTINGS.remainAtBooth then
-                    pcall(function()
-                        local stand = findLocalClaimedStand()
-                        if stand then
-                            local char = LocalPlayer.Character
-                            local playerPos = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")) and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")).Position
-                            local pos = playerPos or lastClaimPosition
-                            startClaimMonitor(stand, pos, lastClaimAwayDir)
-                        end
-                    end)
-                else
-                    pcall(stopClaimMonitor)
-                end
-            end)
         end
 
         -- Main tab
@@ -2129,17 +1993,86 @@ do
             local spinToggle = Instance.new("TextButton")
             spinToggle.Size = UDim2.new(0,60,0,20)
             spinToggle.Position = UDim2.new(0,140,0,252)
-            spinToggle.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+            spinToggle.Text = SETTINGS.spinSet and "ON" or "OFF"
             spinToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             spinToggle.TextColor3 = Color3.fromRGB(255,255,255)
             spinToggle.Parent = frame
             local stCorner = Instance.new("UICorner") stCorner.Parent = spinToggle
             styleButton(spinToggle)
+
+            local speedLabel = Instance.new("TextLabel")
+            speedLabel.Size = UDim2.new(0,160,0,20)
+            speedLabel.Position = UDim2.new(0,10,0,282)
+            speedLabel.Text = "Spin Speed Multiplier"
+            speedLabel.BackgroundTransparency = 1
+            speedLabel.TextColor3 = Color3.new(1,1,1)
+            speedLabel.Parent = frame
+
+            local speedBox = Instance.new("TextBox")
+            speedBox.Size = UDim2.new(0,80,0,20)
+            speedBox.Position = UDim2.new(0,140,0,282)
+            speedBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 1)
+            speedBox.ClearTextOnFocus = false
+            speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            speedBox.TextColor3 = Color3.fromRGB(255,255,255)
+            speedBox.TextXAlignment = Enum.TextXAlignment.Left
+            speedBox.Parent = frame
+
+            local sCorner = Instance.new("UICorner") sCorner.Parent = speedBox
+            styleButton(speedBox)
+
             spinToggle.MouseButton1Click:Connect(function()
-                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
-                spinToggle.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                SETTINGS.spinSet = not SETTINGS.spinSet
+                spinToggle.Text = SETTINGS.spinSet and "ON" or "OFF"
                 pcall(SaveSettings)
+                if not SETTINGS.spinSet then
+                    local char = LocalPlayer.Character
+                    if char then
+                        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                        if root and root:FindFirstChild("Spin") then
+                            root:FindFirstChild("Spin"):Destroy()
+                        end
+                    end
+                else
+                    pcall(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                            if root and not root:FindFirstChild("Spin") then
+                                local spinPart = Instance.new("BodyAngularVelocity")
+                                spinPart.Name = "Spin"
+                                spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
+                                spinPart.Parent = root
+                                spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                            end
+                        end
+                    end)
+                end
             end)
+
+            speedBox.FocusLost:Connect(function(enter)
+                local value = tonumber(speedBox.Text)
+                if value and value > 0 then
+                    SETTINGS.spinSpeedMultiplier = value
+                    speedBox.Text = tostring(value)
+                    pcall(SaveSettings)
+                    if SETTINGS.spinSet then
+                        local char = LocalPlayer.Character
+                        if char then
+                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+                            if root then
+                                local spinPart = root:FindFirstChild("Spin")
+                                if spinPart and spinPart:IsA("BodyAngularVelocity") then
+                                    spinPart.AngularVelocity = Vector3.new(0, 0.25 * value, 0)
+                                end
+                            end
+                        end
+                    end
+                else
+                    speedBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 1)
+                end
+            end)
+
             autoEmoteToggle.MouseButton1Click:Connect(function()
                 SETTINGS.emotePlaying = not SETTINGS.emotePlaying
                 autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
@@ -2430,7 +2363,9 @@ do
                         antiAfk = SETTINGS.antiAfk,
                         serverStayTime = SETTINGS.serverStayTime,
                         persistToggles = SETTINGS.persistToggles,
-                        spinOnDonation = SETTINGS.spinOnDonation,
+                        spinOnDonation = SETTINGS.spinSet,
+                        spinSet = SETTINGS.spinSet,
+                        spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                         emoteId = SETTINGS.emoteId,
                         emotePlaying = SETTINGS.emotePlaying and true or false,
                         autoServerHop = autoServerHopEnabled,
