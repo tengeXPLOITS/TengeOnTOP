@@ -1427,23 +1427,37 @@ do
         -- Mini toggle button for open/close (persistent, outside mainFrame)
         local uiToggle = Instance.new("ImageButton")
         uiToggle.Name = "PlsWaitToggle"
-        uiToggle.Size = UDim2.new(0, 44, 0, 44)
-        uiToggle.Position = UDim2.new(0, 72, 0, 8)
+        uiToggle.Size = UDim2.new(0, 48, 0, 48)
+        uiToggle.Position = UDim2.new(0, 8, 0, 8)
         uiToggle.AnchorPoint = Vector2.new(0,0)
-        uiToggle.BackgroundColor3 = Color3.fromRGB(30, 115, 255)
+        uiToggle.BackgroundColor3 = Color3.fromRGB(20, 26, 38)
         uiToggle.BackgroundTransparency = 0
         uiToggle.BorderSizePixel = 0
         uiToggle.Image = ""
         uiToggle.Parent = screen
-        local togCorner = Instance.new("UICorner") togCorner.CornerRadius = UDim.new(0, 12); togCorner.Parent = uiToggle
-        local togStroke = Instance.new("UIStroke") togStroke.Color = Color3.fromRGB(18,18,18); togStroke.Thickness = 1; togStroke.Parent = uiToggle
+        local togCorner = Instance.new("UICorner")
+        togCorner.CornerRadius = UDim.new(0.5, 0)
+        togCorner.Parent = uiToggle
+        local togGradient = Instance.new("UIGradient")
+        togGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(23, 31, 45)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(36, 61, 119)),
+        }
+        togGradient.Rotation = 90
+        togGradient.Parent = uiToggle
+        local togStroke = Instance.new("UIStroke")
+        togStroke.Color = Color3.fromRGB(14, 17, 23)
+        togStroke.Thickness = 1
+        togStroke.Parent = uiToggle
         local togLabel = Instance.new("TextLabel")
-        togLabel.Text = "Hi lol."
-        togLabel.Size = UDim2.new(1,0,1,0)
+        togLabel.Text = "PLS WAIT"
+        togLabel.Size = UDim2.new(1, -8, 1, -8)
+        togLabel.Position = UDim2.new(0, 4, 0, 4)
         togLabel.BackgroundTransparency = 1
-        togLabel.TextColor3 = Color3.fromRGB(255,255,255)
+        togLabel.TextColor3 = Color3.fromRGB(242, 242, 242)
         togLabel.Font = Enum.Font.GothamBold
-        togLabel.TextSize = 24
+        togLabel.TextScaled = true
+        togLabel.TextWrapped = true
         togLabel.TextYAlignment = Enum.TextYAlignment.Center
         togLabel.TextXAlignment = Enum.TextXAlignment.Center
         togLabel.Parent = uiToggle
