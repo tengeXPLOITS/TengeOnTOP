@@ -1517,15 +1517,43 @@ do
             end)
         end
 
+        local function ensureSpinLock(root)
+            if not root or not root:IsA("BasePart") then return end
+            local lock = root:FindFirstChild("SpinLock")
+            if lock and lock:IsA("BodyPosition") then
+                lock.Position = root.Position
+                return
+            end
+            lock = Instance.new("BodyPosition")
+            lock.Name = "SpinLock"
+            lock.MaxForce = Vector3.new(math.huge, 0, math.huge)
+            lock.D = 1000
+            lock.P = 10000
+            lock.Position = root.Position
+            lock.Parent = root
+        end
+
+        local function removeSpinLock(root)
+            if not root or not root:IsA("BasePart") then return end
+            local lock = root:FindFirstChild("SpinLock")
+            if lock and lock:IsA("BodyPosition") then
+                lock:Destroy()
+            end
+        end
+
         local function ensureSpinPart()
             if not SETTINGS.spinSet then return end
             local char = LocalPlayer.Character
             if not char then return end
             local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
             if not root then return end
+            if root.AssemblyLinearVelocity then
+                root.AssemblyLinearVelocity = Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+            end
             local spinPart = root:FindFirstChild("Spin")
             if spinPart and spinPart:IsA("BodyAngularVelocity") then
                 spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                ensureSpinLock(root)
                 return
             end
             spinPart = Instance.new("BodyAngularVelocity")
@@ -1533,6 +1561,7 @@ do
             spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
             spinPart.Parent = root
             spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+            ensureSpinLock(root)
         end
 
         -- Prevent duplicate UIs across teleports / multiple runs: use a shared env flag
@@ -2174,8 +2203,11 @@ do
                     local char = LocalPlayer.Character
                     if char then
                         local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                        if root and root:FindFirstChild("Spin") then
-                            root:FindFirstChild("Spin"):Destroy()
+                        if root then
+                            if root:FindFirstChild("Spin") then
+                                root:FindFirstChild("Spin"):Destroy()
+                            end
+                            removeSpinLock(root)
                         end
                     end
                     if not SETTINGS.webhookToggle then
@@ -2192,6 +2224,7 @@ do
                                 spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
                                 spinPart.Parent = root
                                 spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                                ensureSpinLock(root)
                             end
                         end
                     end)
