@@ -2400,53 +2400,28 @@ do
         end)
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- spin feature removed
-        -- Touch-prevent AFK: simulate input every 120s when enabled; robust fallbacks
+        -- Touch-prevent AFK: camera wiggle every 3 minutes
         task.spawn(function()
+            local RunService = game:GetService("RunService")
+            local camera = workspace.CurrentCamera
+            local interval = 180
+            local lastTick = tick()
+            RunService.RenderStepped:Connect(function()
+                if not SETTINGS.touchPreventAFK then
+                    return
+                end
+                local now = tick()
+                if now - lastTick >= interval then
+                    lastTick = now
+                    local currentCFrame = camera.CFrame
+                    camera.CFrame = currentCFrame * CFrame.Angles(0, 0.001, 0)
+                    task.wait(0.05)
+                    camera.CFrame = currentCFrame
+                end
+            end)
             while true do
-                if SETTINGS.touchPreventAFK then
-                    local performed = false
-                    local ok, vu = pcall(function() return game:GetService("VirtualUser") end)
-                    if ok and vu then
-                        pcall(function()
-                            vu:CaptureController()
-                            if vu.Button1Down and vu.Button1Up then
-                                vu:Button1Down(Vector2.new(0,0))
-                                task.wait(0.06)
-                                vu:Button1Up(Vector2.new(0,0))
-                            elseif vu.ClickButton2 then
-                                vu:ClickButton2(Vector2.new(0,0))
-                            else
-                                -- fallback to ClickButton2 call via different name
-                                pcall(function() vu:ClickButton2(Vector2.new(0,0)) end)
-                            end
-                        end)
-                        performed = true
-                    end
-                    if not performed then
-                        -- fallback: nudge humanoid or make it jump to avoid AFK
-                        local okc, char = pcall(function() return LocalPlayer.Character end)
-                        if okc and char then
-                            local hum = char:FindFirstChildOfClass("Humanoid")
-                            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                            if hum then
-                                pcall(function()
-                                    hum.Jump = true
-                                end)
-                            elseif root then
-                                pcall(function()
-                                    local orig = root.CFrame
-                                    root.CFrame = orig * CFrame.new(0,0.1,0)
-                                    task.wait(0.05)
-                                    root.CFrame = orig
-                                end)
-                            end
-                        end
-                    end
-                    for i=1,120 do
-                        task.wait(1)
-                        if not SETTINGS.touchPreventAFK then break end
-                    end
-                else
+                task.wait(1)
+                if not SETTINGS.touchPreventAFK then
                     task.wait(1)
                 end
             end
