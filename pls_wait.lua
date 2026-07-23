@@ -351,6 +351,30 @@ local function postWebhookEvent(kind, data)
     end)
 end
 
+local function applyDonationSpin(delta)
+    if not SETTINGS.spinSet or type(delta) ~= "number" or delta <= 0 then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    if not root then return end
+    local spinPart = root:FindFirstChild("Spin")
+    if not spinPart or not spinPart:IsA("BodyAngularVelocity") then
+        spinPart = Instance.new("BodyAngularVelocity")
+        spinPart.Name = "Spin"
+        spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
+        spinPart.Parent = root
+        spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+    end
+    if spinPart and spinPart:IsA("BodyAngularVelocity") then
+        local currentY = tonumber(spinPart.AngularVelocity.Y) or 0
+        local averageDelta = delta / 3
+        spinPart.AngularVelocity = Vector3.new(0, currentY + averageDelta * (SETTINGS.spinSpeedMultiplier or 1), 0)
+        pcall(function()
+            notify("Donation Debug", ("spin updated +%d -> %0.2f"):format(delta, spinPart.AngularVelocity.Y), 4)
+        end)
+    end
+end
+
 local function sendPlainWebhook(msg)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
     local url = tostring(SETTINGS.webhookUrl or "")
@@ -457,7 +481,10 @@ local function tryHookPlayerStat(player)
                         end
                         return best
                     end
-                                    local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                                    local donor, donorName, donorId = nil, nil, nil
+                                    if type(resolveDonationDonor) == "function" then
+                                        donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                                    end
                                     if not donor then
                                         donor = LocalPlayer
                                         donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
@@ -473,30 +500,7 @@ local function tryHookPlayerStat(player)
                                         pending = pending,
                                     })
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                                    if SETTINGS.spinSet then
-                                        pcall(function()
-                                            local char = LocalPlayer.Character
-                                            if char then
-                                                local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                                                if root then
-                                                    local spinPart = root:FindFirstChild("Spin")
-                                                    if not spinPart then
-                                                        spinPart = Instance.new("BodyAngularVelocity")
-                                                        spinPart.Name = "Spin"
-                                                        spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
-                                                        spinPart.Parent = root
-                                                        spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
-                                                    end
-                                                    if spinPart and spinPart:IsA("BodyAngularVelocity") then
-                                                        local currentY = tonumber(spinPart.AngularVelocity.Y) or 0
-                                                        local deltaRaised = delta or 0
-                                                        local averageDelta = deltaRaised / 3
-                                                        spinPart.AngularVelocity = Vector3.new(0, currentY + averageDelta * (SETTINGS.spinSpeedMultiplier or 1), 0)
-                                                    end
-                                                end
-                                            end
-                                        end)
-                                    end
+                                    applyDonationSpin(delta)
                 end
             end
         end
@@ -2379,7 +2383,10 @@ do
             donationTestBtn.Parent = frame
             styleButton(donationTestBtn)
             donationTestBtn.MouseButton1Click:Connect(function()
-                local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                local donor, donorName, donorId = nil, nil, nil
+                if type(resolveDonationDonor) == "function" then
+                    donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                end
                 if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
                 local function parseDonationValue(v)
                     if type(v) == "number" then return math.floor(v) end
@@ -2406,7 +2413,7 @@ do
                     local raised = leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("raised")
                     if raised then
                         local current = parseDonationValue(raised.Value)
-                        local nextValue = current + 1
+                        local nextValue = current + 6
                         totalValue = nextValue
                         if raised:IsA("StringValue") then
                             local raw = tostring(raised.Value or "")
@@ -2429,7 +2436,7 @@ do
                         donorName = donorName,
                         from = donorName,
                         userId = donorId,
-                        amount = 1,
+                        amount = 6,
                         total = totalValue,
                         test = true,
                     })
