@@ -60,6 +60,19 @@ SETTINGS.staffHop = SETTINGS.staffHop or false
 SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
 SETTINGS.spinSet = SETTINGS.spinSet or SETTINGS.spinOnDonation or false
 SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 1
+local currentDonationStat = nil
+local currentDonationUid = nil
+local function parseAmount(v)
+    if type(v) == "number" then return math.floor(v) end
+    local s = tostring(v or "")
+    local cleaned = s:gsub("[^%d%-]", "")
+    if cleaned == "" then return 0 end
+    local ok, num = pcall(function() return tonumber(cleaned) end)
+    if ok and type(num) == "number" then return math.floor(num) end
+    local m = s:match("%-?%d+")
+    if m then return tonumber(m) or 0 end
+    return 0
+end
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
@@ -411,19 +424,6 @@ local function tryHookPlayerStat(player)
         donationConns["ls_remove_"..uid] = nil
     end
     -- helper to parse numeric amount from various formats
-    local function parseAmount(v)
-        if type(v) == "number" then return math.floor(v) end
-        local s = tostring(v or "")
-        -- Remove any non-digit or non-minus characters (handles emojis, symbols, commas, parentheses)
-        local cleaned = s:gsub("[^%d%-]", "")
-        if cleaned == "" then return 0 end
-        -- If cleaned contains multiple minus signs or is malformed, fall back to extracting first sequence of digits
-        local ok, num = pcall(function() return tonumber(cleaned) end)
-        if ok and type(num) == "number" then return math.floor(num) end
-        local m = s:match("%-?%d+")
-        if m then return tonumber(m) or 0 end
-        return 0
-    end
     local ls = player:FindFirstChild("leaderstats") or player:WaitForChild("leaderstats", 1)
     if not ls then
         if player == LocalPlayer then pcall(function() notify("Donation Debug", "leaderstats not found for local player", 5) end) end
@@ -450,6 +450,8 @@ local function tryHookPlayerStat(player)
             notify("Donation Debug", ("hooked %s (%s) = %d"):format(tostring(stat.Name), tostring(stat.ClassName), parseAmount(stat.Value)), 5)
         end)
     end
+    currentDonationStat = stat
+    currentDonationUid = uid
     donationTotals[uid] = parseAmount(stat.Value)
     donationConns["stat_"..uid] = stat.Changed:Connect(function()
         local newv = parseAmount(stat.Value)
@@ -769,6 +771,44 @@ local function startDonationMonitor()
             tryHookPlayerStat(LocalPlayer)
         end
     end)
+    donationConns["poll"] = game:GetService("RunService").Heartbeat:Connect(function()
+        if not donationEnabled or not currentDonationStat or not currentDonationUid then return end
+        local uid = currentDonationUid
+        local newv = parseAmount(currentDonationStat.Value)
+        local prev = donationTotals[uid] or 0
+        if newv ~= prev then
+            local delta = newv - prev
+            donationTotals[uid] = newv
+            if delta > 0 then
+                if LocalPlayer == LocalPlayer then
+                    pcall(function()
+                        notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
+                    end)
+                end
+                local donor, donorName, donorId = nil, nil, nil
+                if type(resolveDonationDonor) == "function" then
+                    donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                end
+                if not donor then
+                    donor = LocalPlayer
+                    donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
+                    donorId = (LocalPlayer and LocalPlayer.UserId) or nil
+                end
+                local pending = math.floor(delta * 0.6)
+                postWebhookEvent("donation", {
+                    donorName = donorName,
+                    from = donorName,
+                    userId = donorId,
+                    amount = delta,
+                    total = newv,
+                    pending = pending,
+                })
+                notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
+                applyDonationSpin(delta)
+            end
+        end
+    end)
+    pcall(function() notify("Donation Debug", "donation monitor started", 4) end)
 end
 
 local function stopDonationMonitor()
@@ -778,6 +818,8 @@ local function stopDonationMonitor()
         donationConns[k] = nil
     end
     donationTotals = {}
+    currentDonationStat = nil
+    currentDonationUid = nil
 end
 
 -- (previously had a helper to show kick modal on teleport failure; removed as unused)
