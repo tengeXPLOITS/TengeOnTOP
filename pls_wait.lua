@@ -330,12 +330,14 @@ local function postWebhookEvent(kind, data)
     if kind == "donation" then
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
+        local pending = math.floor(amount * 0.6)
         local fields = {
-            { name = "Donor 👤", value = donorName, inline = false },
-            { name = "Amount 💵", value = tostring(amount), inline = true },
+            { name = "Donor", value = donorName, inline = false },
+            { name = "Amount", value = tostring(amount), inline = true },
+            { name = "Pending (60%)", value = tostring(pending), inline = true },
         }
         table.insert(embeds, {
-            title = "New Donation Received! ✅",
+            title = "Donation Received",
             color = 0x00FF00,
             fields = fields,
         })
@@ -363,10 +365,14 @@ local function postWebhookEvent(kind, data)
     local payload = { username = "PlsWait", embeds = embeds }
     local body = HttpService:JSONEncode(payload)
     pcall(function()
-        if syn and syn.request then
+        if performHttpRequest then
+            performHttpRequest({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        elseif syn and syn.request then
             syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         elseif request then
             request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+        elseif http_request then
+            http_request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         else
             HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
         end
@@ -378,10 +384,14 @@ local function sendPlainWebhook(msg)
     local url = tostring(SETTINGS.webhookUrl or "")
     local payload = HttpService:JSONEncode({ content = tostring(msg or "") })
     pcall(function()
-        if syn and syn.request then
+        if performHttpRequest then
+            performHttpRequest({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+        elseif syn and syn.request then
             syn.request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
         elseif request then
             request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
+        elseif http_request then
+            http_request({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
         else
             HttpService:PostAsync(url, payload, Enum.HttpContentType.ApplicationJson)
         end
@@ -465,13 +475,16 @@ local function tryHookPlayerStat(player)
                                         donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
                                         donorId = (LocalPlayer and LocalPlayer.UserId) or nil
                                     end
+                                    local pending = math.floor(delta * 0.6)
                                     postWebhookEvent("donation", {
                                         donorName = donorName,
                                         from = donorName,
                                         userId = donorId,
                                         amount = delta,
                                         total = newv,
+                                        pending = pending,
                                     })
+                                    notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
 
                     -- spin-on-donation feature removed
                 end
@@ -1538,14 +1551,14 @@ do
         leftList.VerticalAlignment = Enum.VerticalAlignment.Top
         leftList.Parent = leftCol
 
-        local menu = { {key="Main", icon="📋", text="Main"}, {key="ServerHop", icon="🔀", text="Server Hop"}, {key="Webhook", icon="🔔", text="Webhook"} }
+        local menu = { {key="Main", text="Main"}, {key="ServerHop", text="Server Hop"}, {key="Webhook", text="Webhook"} }
         local tabButtons = {}
         local tabFrames = {}
         for i, item in ipairs(menu) do
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, -12, 0, 40)
             btn.LayoutOrder = i
-            btn.Text = (item.icon .. "  " .. item.text)
+            btn.Text = item.text
             btn.Font = Enum.Font.Gotham
             btn.TextSize = 16
             btn.TextColor3 = Color3.fromRGB(220,220,220)
@@ -1724,9 +1737,18 @@ do
                 end
             end)
 
+            local emotePresetBtn = Instance.new("TextButton")
+            emotePresetBtn.Size = UDim2.new(0,90,0,24)
+            emotePresetBtn.Position = UDim2.new(0,308,0,112)
+            emotePresetBtn.Text = "Presets"
+            emotePresetBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            emotePresetBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            emotePresetBtn.Parent = frame
+            styleButton(emotePresetBtn)
+
             local emotePlayBtn = Instance.new("TextButton")
             emotePlayBtn.Size = UDim2.new(0,80,0,24)
-            emotePlayBtn.Position = UDim2.new(0,140,0,144)
+            emotePlayBtn.Position = UDim2.new(0,140,0,148)
             emotePlayBtn.Text = "Play"
             emotePlayBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
             emotePlayBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1735,26 +1757,18 @@ do
 
             local emoteStopBtn = Instance.new("TextButton")
             emoteStopBtn.Size = UDim2.new(0,80,0,24)
-            emoteStopBtn.Position = UDim2.new(0,228,0,144)
+            emoteStopBtn.Position = UDim2.new(0,228,0,148)
             emoteStopBtn.Text = "Stop"
             emoteStopBtn.BackgroundColor3 = Color3.fromRGB(100,40,40)
             emoteStopBtn.TextColor3 = Color3.fromRGB(255,255,255)
             emoteStopBtn.Parent = frame
             styleButton(emoteStopBtn)
 
-            local presetToggle = Instance.new("TextButton")
-            presetToggle.Size = UDim2.new(0,24,0,24)
-            presetToggle.Position = UDim2.new(0,312,0,112)
-            presetToggle.Text = "▾"
-            presetToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
-            presetToggle.TextColor3 = Color3.fromRGB(255,255,255)
-            presetToggle.Parent = frame
-            styleButton(presetToggle)
-
             local presetFrame = Instance.new("Frame")
-            presetFrame.Position = UDim2.new(0,10,0,176)
+            presetFrame.Position = UDim2.new(0,140,0,260)
             presetFrame.BackgroundTransparency = 0.15
             presetFrame.Visible = false
+            presetFrame.ZIndex = 3
             presetFrame.Parent = frame
             local pfCorner = Instance.new("UICorner") pfCorner.Parent = presetFrame
 
@@ -1771,7 +1785,7 @@ do
             local function closePreset()
                 presetFrame.Visible = false
             end
-            presetToggle.MouseButton1Click:Connect(function()
+            emotePresetBtn.MouseButton1Click:Connect(function()
                 presetFrame.Visible = not presetFrame.Visible
             end)
 
@@ -1858,7 +1872,7 @@ do
             -- Auto-play emote toggle
             local autoEmoteLabel = Instance.new("TextLabel")
             autoEmoteLabel.Size = UDim2.new(0,120,0,20)
-            autoEmoteLabel.Position = UDim2.new(0,10,0,180)
+            autoEmoteLabel.Position = UDim2.new(0,10,0,220)
             autoEmoteLabel.Text = "Auto-Play Emote"
             autoEmoteLabel.BackgroundTransparency = 1
             autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
@@ -1866,7 +1880,7 @@ do
 
             local autoEmoteToggle = Instance.new("TextButton")
             autoEmoteToggle.Size = UDim2.new(0,60,0,20)
-            autoEmoteToggle.Position = UDim2.new(0,140,0,180)
+            autoEmoteToggle.Position = UDim2.new(0,140,0,220)
             autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
             autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             autoEmoteToggle.TextColor3 = Color3.fromRGB(255,255,255)
