@@ -13,6 +13,7 @@ local HttpService = game:GetService("HttpService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
+local GroupService = game:GetService("GroupService")
 local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 
 -- Run only for games associated with this community (X-Stud-os)
@@ -55,6 +56,8 @@ SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
 SETTINGS.persistToggles = SETTINGS.persistToggles or false
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
+SETTINGS.staffHop = SETTINGS.staffHop or false
+SETTINGS.remainAtBooth = SETTINGS.remainAtBooth or false
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
@@ -64,6 +67,64 @@ donationConns = donationConns or {}
 donationEnabled = donationEnabled or false
 donationTotals = donationTotals or {}
 donationStatName = donationStatName or "Raised"
+
+local STAFF_ROLES = { Developer = true, Moderator = true }
+
+local function getPlayerRole(player)
+    if not player or not player:IsA("Player") then return nil end
+    local ok, role = pcall(function()
+        return player:GetRoleInGroup(COMMUNITY_ID)
+    end)
+    if ok and type(role) == "string" and role ~= "" then
+        return role
+    end
+    return nil
+end
+
+local function isStaffRole(role)
+    return type(role) == "string" and STAFF_ROLES[role]
+end
+
+local function checkServerForStaff()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local role = getPlayerRole(player)
+            if isStaffRole(role) then
+                return player, role
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function hopIfStaffPresent()
+    if not SETTINGS.staffHop then
+        return
+    end
+    local staffPlayer, staffRole = checkServerForStaff()
+    if staffPlayer and staffRole then
+        notify("Staff Detected", ("Detected %s (%s) in server; hopping immediately."):format(staffPlayer.Name, staffRole), 5)
+        task.spawn(function()
+            pcall(function() serverHopNow(nil, nil, true) end)
+        end)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    task.wait(1)
+    if not SETTINGS.staffHop then
+        return
+    end
+    local role = getPlayerRole(player)
+    if isStaffRole(role) then
+        hopIfStaffPresent()
+    end
+end)
+
+task.spawn(function()
+    task.wait(2)
+    hopIfStaffPresent()
+end)
 
 local function notify(title, text, duration)
     local ok, playerGui = pcall(function() return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
@@ -262,7 +323,7 @@ local function startClaimMonitor(stand, pos, awayDir)
             local hum = char:FindFirstChildOfClass("Humanoid")
             if not hrp or not hum then break end
             local d = (hrp.Position - lastClaimPosition).Magnitude
-            if d >= 12 then
+            if d >= 14 then
                 pcall(function() notify("Claim Monitor", "Moving back to claimed booth...", 2) end)
                 local mode = "teleport"
                 if mode == "teleport" then
@@ -1201,10 +1262,12 @@ local function claimEmptyStands()
                                         if basePos and awayDir then
                                             -- move using configured mode and orient to face away from the booth
                                             pcall(function() moveCharacterToPosition(basePos, "teleport", awayDir) end)
-                                            pcall(function()
-                                                notify("Claim Monitor", "Monitoring claimed booth position", 2)
-                                                startClaimMonitor(target.stand, basePos, awayDir)
-                                            end)
+                                            if SETTINGS.remainAtBooth then
+                                                pcall(function()
+                                                    notify("Claim Monitor", "Monitoring claimed booth position", 2)
+                                                    startClaimMonitor(target.stand, basePos, awayDir)
+                                                end)
+                                            end
                                         end
                             end
                         end
@@ -1296,6 +1359,8 @@ do
                 -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
                 boothText = SETTINGS.boothText,
+                staffHop = SETTINGS.staffHop,
+                remainAtBooth = SETTINGS.remainAtBooth,
                 emotePlaying = SETTINGS.emotePlaying and true or false,
                 autoServerHop = autoServerHopEnabled,
             }
@@ -1323,36 +1388,40 @@ do
             if not content or content == "" then return end
             local ok, decoded = pcall(function() return Http:JSONDecode(content) end)
             if not ok or type(decoded) ~= "table" then return end
-            SETTINGS.webhookToggle = decoded.webhookToggle or SETTINGS.webhookToggle
+            if decoded.webhookToggle ~= nil then SETTINGS.webhookToggle = decoded.webhookToggle end
             SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
-            SETTINGS.antiAfk = decoded.antiAfk or SETTINGS.antiAfk
+            if decoded.antiAfk ~= nil then SETTINGS.antiAfk = decoded.antiAfk end
             -- legacy spin/periodic settings removed
-            SETTINGS.touchPreventAFK = decoded.touchPreventAFK or SETTINGS.touchPreventAFK
+            if decoded.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = decoded.touchPreventAFK end
             -- enforce mode option removed; always use teleport
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
-            SETTINGS.persistToggles = decoded.persistToggles or SETTINGS.persistToggles
+            if decoded.persistToggles ~= nil then SETTINGS.persistToggles = decoded.persistToggles end
             -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
-            SETTINGS.emotePlaying = decoded.emotePlaying or SETTINGS.emotePlaying
-            autoServerHopEnabled = decoded.autoServerHop or autoServerHopEnabled
+            if decoded.staffHop ~= nil then SETTINGS.staffHop = decoded.staffHop end
+            if decoded.remainAtBooth ~= nil then SETTINGS.remainAtBooth = decoded.remainAtBooth end
+            if decoded.emotePlaying ~= nil then SETTINGS.emotePlaying = decoded.emotePlaying end
+            if decoded.autoServerHop ~= nil then autoServerHopEnabled = decoded.autoServerHop end
         end
 
         pcall(function()
             if type(_G) == "table" and type(_G.__PLS_WAIT_CONFIG) == "table" then
                 local cfg = _G.__PLS_WAIT_CONFIG
-                SETTINGS.webhookToggle = cfg.webhookToggle or SETTINGS.webhookToggle
+                if cfg.webhookToggle ~= nil then SETTINGS.webhookToggle = cfg.webhookToggle end
                 SETTINGS.webhookUrl = cfg.webhookUrl or SETTINGS.webhookUrl
-                SETTINGS.antiAfk = cfg.antiAfk or SETTINGS.antiAfk
-                SETTINGS.touchPreventAFK = cfg.touchPreventAFK or SETTINGS.touchPreventAFK
+                if cfg.antiAfk ~= nil then SETTINGS.antiAfk = cfg.antiAfk end
+                if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
-                SETTINGS.persistToggles = cfg.persistToggles or SETTINGS.persistToggles
+                if cfg.persistToggles ~= nil then SETTINGS.persistToggles = cfg.persistToggles end
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 SETTINGS.boothText = cfg.boothText or SETTINGS.boothText
-                autoServerHopEnabled = cfg.autoServerHop or autoServerHopEnabled
+                if cfg.staffHop ~= nil then SETTINGS.staffHop = cfg.staffHop end
+                if cfg.remainAtBooth ~= nil then SETTINGS.remainAtBooth = cfg.remainAtBooth end
+                if cfg.autoServerHop ~= nil then autoServerHopEnabled = cfg.autoServerHop end
                 -- legacy spin settings ignored from queued config
                 _G.__PLS_WAIT_CONFIG = nil
             end
@@ -1406,14 +1475,24 @@ do
         -- Mini toggle button for open/close (persistent, outside mainFrame)
         local uiToggle = Instance.new("ImageButton")
         uiToggle.Name = "PlsWaitToggle"
-        uiToggle.Size = UDim2.new(0, 40, 0, 40)
-        uiToggle.Position = UDim2.new(0, 12, 1, -64)
+        uiToggle.Size = UDim2.new(0, 44, 0, 44)
+        uiToggle.Position = UDim2.new(0, 8, 0, 8)
         uiToggle.AnchorPoint = Vector2.new(0,0)
-        uiToggle.BackgroundColor3 = Color3.fromRGB(40,40,40)
+        uiToggle.BackgroundColor3 = Color3.fromRGB(255,255,255)
+        uiToggle.BackgroundTransparency = 0
+        uiToggle.BorderSizePixel = 0
         uiToggle.Image = ""
         uiToggle.Parent = screen
-        local togCorner = Instance.new("UICorner") togCorner.Parent = uiToggle
-        local togLabel = Instance.new("TextLabel") togLabel.Text = "💰"; togLabel.Size = UDim2.new(1,0,1,0); togLabel.BackgroundTransparency = 1; togLabel.TextColor3 = Color3.fromRGB(220,220,220); togLabel.Font = Enum.Font.GothamBold; togLabel.TextSize = 16; togLabel.Parent = uiToggle
+        local togCorner = Instance.new("UICorner") togCorner.CornerRadius = UDim.new(0, 12); togCorner.Parent = uiToggle
+        local togStroke = Instance.new("UIStroke") togStroke.Color = Color3.fromRGB(200,200,200); togStroke.Thickness = 1; togStroke.Parent = uiToggle
+        local togLabel = Instance.new("TextLabel")
+        togLabel.Text = "💰"
+        togLabel.Size = UDim2.new(1,0,1,0)
+        togLabel.BackgroundTransparency = 1
+        togLabel.TextColor3 = Color3.fromRGB(36,36,36)
+        togLabel.Font = Enum.Font.GothamBold
+        togLabel.TextSize = 20
+        togLabel.Parent = uiToggle
         uiToggle.Visible = true
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
@@ -1691,18 +1770,31 @@ do
                 pcall(updateBoothText, text)
             end)
 
-            local claimBtn = Instance.new("TextButton")
-            claimBtn.Size = UDim2.new(0, 180, 0, 32)
-            claimBtn.Position = UDim2.new(0, 150, 0, 176)
-            claimBtn.Text = "Claim Booth Now"
-            claimBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
-            claimBtn.TextColor3 = Color3.new(1,1,1)
-            claimBtn.Font = Enum.Font.Gotham
-            claimBtn.TextSize = 14
-            claimBtn.Parent = boothFrame
-            styleButton(claimBtn)
-            claimBtn.MouseButton1Click:Connect(function()
-                pcall(function() claimBooth() end)
+            local remainLabel = Instance.new("TextLabel")
+            remainLabel.Size = UDim2.new(0, 120, 0, 20)
+            remainLabel.Position = UDim2.new(0, 10, 0, 214)
+            remainLabel.Text = "Remain At Booth"
+            remainLabel.BackgroundTransparency = 1
+            remainLabel.TextColor3 = Color3.new(1,1,1)
+            remainLabel.Parent = boothFrame
+
+            local remainToggle = Instance.new("TextButton")
+            remainToggle.Size = UDim2.new(0, 60, 0, 20)
+            remainToggle.Position = UDim2.new(0, 140, 0, 214)
+            remainToggle.Text = SETTINGS.remainAtBooth and "ON" or "OFF"
+            remainToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            remainToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local rtCorner = Instance.new("UICorner")
+            rtCorner.Parent = remainToggle
+            remainToggle.Parent = boothFrame
+            styleButton(remainToggle)
+            remainToggle.MouseButton1Click:Connect(function()
+                SETTINGS.remainAtBooth = not SETTINGS.remainAtBooth
+                remainToggle.Text = SETTINGS.remainAtBooth and "ON" or "OFF"
+                pcall(SaveSettings)
+                if not SETTINGS.remainAtBooth then
+                    pcall(stopClaimMonitor)
+                end
             end)
         end
 
@@ -1781,31 +1873,6 @@ do
                 end
             end)
             styleButton(touchToggle)
-
-            local donationTestBtn = Instance.new("TextButton")
-            donationTestBtn.Size = UDim2.new(0,160,0,24)
-            donationTestBtn.Position = UDim2.new(0,10,0,74)
-            donationTestBtn.Text = "Test Donation"
-            donationTestBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
-            donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            donationTestBtn.Parent = frame
-            styleButton(donationTestBtn)
-            donationTestBtn.MouseButton1Click:Connect(function()
-                -- Test donation: post webhook-only event, no follow behavior
-                local donor, donorName, donorId = resolveDonationDonor(nil, nil)
-                if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
-                pcall(function()
-                    postWebhookEvent("donation", {
-                        donorName = donorName,
-                        from = donorName,
-                        userId = donorId,
-                        amount = 1,
-                        total = 1,
-                        test = true,
-                    })
-                end)
-                notify("Donation Test", "Test donation event sent.", 4)
-            end)
 
             -- Emote selector / play (Main)
             local emoteLabel = Instance.new("TextLabel")
@@ -2163,6 +2230,30 @@ do
                     end)
                 end
             end)
+
+            local staffLabel = Instance.new("TextLabel")
+            staffLabel.Size = UDim2.new(0,120,0,20)
+            staffLabel.Position = UDim2.new(0,10,0,194)
+            staffLabel.Text = "Staff Hop"
+            staffLabel.BackgroundTransparency = 1
+            staffLabel.TextColor3 = Color3.new(1,1,1)
+            staffLabel.Parent = frame
+
+            local staffToggle = Instance.new("TextButton")
+            staffToggle.Size = UDim2.new(0,60,0,20)
+            staffToggle.Position = UDim2.new(0,140,0,194)
+            staffToggle.Text = SETTINGS.staffHop and "ON" or "OFF"
+            staffToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            staffToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            local shCorner = Instance.new("UICorner")
+            shCorner.Parent = staffToggle
+            staffToggle.Parent = frame
+            styleButton(staffToggle)
+            staffToggle.MouseButton1Click:Connect(function()
+                SETTINGS.staffHop = not SETTINGS.staffHop
+                staffToggle.Text = SETTINGS.staffHop and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
         end
 
         -- Settings tab removed per user request
@@ -2206,6 +2297,30 @@ do
             urlBox.FocusLost:Connect(function()
                 SETTINGS.webhookUrl = tostring(urlBox.Text or "")
                 pcall(SaveSettings)
+            end)
+
+            local donationTestBtn = Instance.new("TextButton")
+            donationTestBtn.Size = UDim2.new(0,160,0,24)
+            donationTestBtn.Position = UDim2.new(0,10,0,108)
+            donationTestBtn.Text = "Test Donation"
+            donationTestBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            donationTestBtn.Parent = frame
+            styleButton(donationTestBtn)
+            donationTestBtn.MouseButton1Click:Connect(function()
+                local donor, donorName, donorId = resolveDonationDonor(nil, nil)
+                if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
+                pcall(function()
+                    postWebhookEvent("donation", {
+                        donorName = donorName,
+                        from = donorName,
+                        userId = donorId,
+                        amount = 1,
+                        total = 1,
+                        test = true,
+                    })
+                end)
+                notify("Donation Test", "Test donation event sent.", 4)
             end)
 
             -- donation stat name textbox removed per user request
