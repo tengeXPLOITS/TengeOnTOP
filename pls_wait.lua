@@ -58,6 +58,7 @@ local touchEnabled = UserInputService and UserInputService.TouchEnabled
 SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
 SETTINGS.staffHop = SETTINGS.staffHop or false
 SETTINGS.remainAtBooth = SETTINGS.remainAtBooth or false
+SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
 -- claimEnforceMode option removed; enforcement defaults to teleport
 SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
 local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
@@ -548,8 +549,9 @@ local function tryHookPlayerStat(player)
                                         pending = pending,
                                     })
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-
-                    -- spin-on-donation feature removed
+                                    if SETTINGS.spinOnDonation then
+                                        pcall(function() performDonationSpin() end)
+                                    end
                 end
             end
         end
@@ -1132,6 +1134,52 @@ local function localPlayerOwnsAnyStand()
     return false
 end
 
+local function findLocalClaimedStand()
+    local standsFolder = Workspace:FindFirstChild("Stands")
+    if not standsFolder then return nil end
+    for _, stand in ipairs(standsFolder:GetChildren()) do
+        if stand and stand.Parent then
+            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+            if ownerObj then
+                local ok, val = pcall(function() return ownerObj.Value end)
+                if ok then
+                    if ownerObj:IsA("ObjectValue") then
+                        if val == LocalPlayer then return stand end
+                    elseif ownerObj:IsA("StringValue") then
+                        if tostring(val) == tostring(LocalPlayer.Name) then return stand end
+                    elseif ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue") then
+                        if tonumber(val) == tonumber(LocalPlayer.UserId) then return stand end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function performDonationSpin()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    if not hrp then return false end
+    task.spawn(function()
+        local steps = 14
+        local origin = hrp.Position
+        for i = 1, steps do
+            local angle = (i / steps) * math.pi * 2
+            pcall(function()
+                local look = Vector3.new(math.cos(angle), 0, math.sin(angle))
+                hrp.CFrame = CFrame.new(origin, origin + look)
+                if hrp.AssemblyLinearVelocity then
+                    hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                end
+            end)
+            task.wait(0.06)
+        end
+    end)
+    return true
+end
+
 -- Global simple range parser used outside UI
 local function parseRangeGlobal(str)
     if not str or type(str) ~= "string" then return nil end
@@ -1356,6 +1404,7 @@ do
                 hopRange = hopRangeText,
                 serverStayTime = serverStayTime,
                 persistToggles = SETTINGS.persistToggles,
+                spinOnDonation = SETTINGS.spinOnDonation,
                 -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
                 boothText = SETTINGS.boothText,
@@ -1397,6 +1446,7 @@ do
             hopRangeText = decoded.hopRange or hopRangeText
             serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
             if decoded.persistToggles ~= nil then SETTINGS.persistToggles = decoded.persistToggles end
+            if decoded.spinOnDonation ~= nil then SETTINGS.spinOnDonation = decoded.spinOnDonation end
             -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
@@ -1415,6 +1465,7 @@ do
                 if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                 serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
                 if cfg.persistToggles ~= nil then SETTINGS.persistToggles = cfg.persistToggles end
+                if cfg.spinOnDonation ~= nil then SETTINGS.spinOnDonation = cfg.spinOnDonation end
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
@@ -1476,22 +1527,24 @@ do
         local uiToggle = Instance.new("ImageButton")
         uiToggle.Name = "PlsWaitToggle"
         uiToggle.Size = UDim2.new(0, 44, 0, 44)
-        uiToggle.Position = UDim2.new(0, 8, 0, 8)
+        uiToggle.Position = UDim2.new(0, 72, 0, 8)
         uiToggle.AnchorPoint = Vector2.new(0,0)
-        uiToggle.BackgroundColor3 = Color3.fromRGB(255,255,255)
+        uiToggle.BackgroundColor3 = Color3.fromRGB(30, 115, 255)
         uiToggle.BackgroundTransparency = 0
         uiToggle.BorderSizePixel = 0
         uiToggle.Image = ""
         uiToggle.Parent = screen
         local togCorner = Instance.new("UICorner") togCorner.CornerRadius = UDim.new(0, 12); togCorner.Parent = uiToggle
-        local togStroke = Instance.new("UIStroke") togStroke.Color = Color3.fromRGB(200,200,200); togStroke.Thickness = 1; togStroke.Parent = uiToggle
+        local togStroke = Instance.new("UIStroke") togStroke.Color = Color3.fromRGB(18,18,18); togStroke.Thickness = 1; togStroke.Parent = uiToggle
         local togLabel = Instance.new("TextLabel")
-        togLabel.Text = "💰"
+        togLabel.Text = "Hi lol."
         togLabel.Size = UDim2.new(1,0,1,0)
         togLabel.BackgroundTransparency = 1
-        togLabel.TextColor3 = Color3.fromRGB(36,36,36)
+        togLabel.TextColor3 = Color3.fromRGB(255,255,255)
         togLabel.Font = Enum.Font.GothamBold
-        togLabel.TextSize = 20
+        togLabel.TextSize = 24
+        togLabel.TextYAlignment = Enum.TextYAlignment.Center
+        togLabel.TextXAlignment = Enum.TextXAlignment.Center
         togLabel.Parent = uiToggle
         uiToggle.Visible = true
 
@@ -1792,7 +1845,17 @@ do
                 SETTINGS.remainAtBooth = not SETTINGS.remainAtBooth
                 remainToggle.Text = SETTINGS.remainAtBooth and "ON" or "OFF"
                 pcall(SaveSettings)
-                if not SETTINGS.remainAtBooth then
+                if SETTINGS.remainAtBooth then
+                    pcall(function()
+                        local stand = findLocalClaimedStand()
+                        if stand then
+                            local char = LocalPlayer.Character
+                            local playerPos = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")) and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")).Position
+                            local pos = playerPos or lastClaimPosition
+                            startClaimMonitor(stand, pos, lastClaimAwayDir)
+                        end
+                    end)
+                else
                     pcall(stopClaimMonitor)
                 end
             end)
@@ -2054,6 +2117,29 @@ do
             autoEmoteToggle.Parent = frame
             local aec = Instance.new("UICorner") aec.Parent = autoEmoteToggle
             styleButton(autoEmoteToggle)
+
+            local spinLabel = Instance.new("TextLabel")
+            spinLabel.Size = UDim2.new(0,120,0,20)
+            spinLabel.Position = UDim2.new(0,10,0,252)
+            spinLabel.Text = "Spin On Donation"
+            spinLabel.BackgroundTransparency = 1
+            spinLabel.TextColor3 = Color3.new(1,1,1)
+            spinLabel.Parent = frame
+
+            local spinToggle = Instance.new("TextButton")
+            spinToggle.Size = UDim2.new(0,60,0,20)
+            spinToggle.Position = UDim2.new(0,140,0,252)
+            spinToggle.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+            spinToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            spinToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            spinToggle.Parent = frame
+            local stCorner = Instance.new("UICorner") stCorner.Parent = spinToggle
+            styleButton(spinToggle)
+            spinToggle.MouseButton1Click:Connect(function()
+                SETTINGS.spinOnDonation = not SETTINGS.spinOnDonation
+                spinToggle.Text = SETTINGS.spinOnDonation and "ON" or "OFF"
+                pcall(SaveSettings)
+            end)
             autoEmoteToggle.MouseButton1Click:Connect(function()
                 SETTINGS.emotePlaying = not SETTINGS.emotePlaying
                 autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
@@ -2344,6 +2430,7 @@ do
                         antiAfk = SETTINGS.antiAfk,
                         serverStayTime = SETTINGS.serverStayTime,
                         persistToggles = SETTINGS.persistToggles,
+                        spinOnDonation = SETTINGS.spinOnDonation,
                         emoteId = SETTINGS.emoteId,
                         emotePlaying = SETTINGS.emotePlaying and true or false,
                         autoServerHop = autoServerHopEnabled,
