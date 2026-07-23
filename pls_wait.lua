@@ -1404,6 +1404,24 @@ do
             end)
         end
 
+        local function ensureSpinPart()
+            if not SETTINGS.spinSet then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+            if not root then return end
+            local spinPart = root:FindFirstChild("Spin")
+            if spinPart and spinPart:IsA("BodyAngularVelocity") then
+                spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+                return
+            end
+            spinPart = Instance.new("BodyAngularVelocity")
+            spinPart.Name = "Spin"
+            spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
+            spinPart.Parent = root
+            spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
+        end
+
         -- Prevent duplicate UIs across teleports / multiple runs: use a shared env flag
         local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
         -- If the script was already initialized elsewhere, allow re-init (some executors persist getgenv across teleports)
@@ -2343,13 +2361,47 @@ do
             donationTestBtn.MouseButton1Click:Connect(function()
                 local donor, donorName, donorId = resolveDonationDonor(nil, nil)
                 if not donor then donor = LocalPlayer; donorName = LocalPlayer and LocalPlayer.Name or "TestDonor"; donorId = LocalPlayer and LocalPlayer.UserId or 0 end
+                local function parseDonationValue(v)
+                    if type(v) == "number" then return math.floor(v) end
+                    local s = tostring(v or "")
+                    local cleaned = s:gsub("[^%d%-]", "")
+                    local num = tonumber(cleaned)
+                    if num then return math.floor(num) end
+                    local m = s:match("%-?%d+")
+                    return tonumber(m) or 0
+                end
+                local function formatDonationValue(n)
+                    local isNegative = n < 0
+                    local absVal = tostring(math.abs(n))
+                    local formatted = absVal:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+                    if formatted:sub(1,1) == "," then
+                        formatted = formatted:sub(2)
+                    end
+                    if isNegative then formatted = "-" .. formatted end
+                    return formatted
+                end
                 local leaderstats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:WaitForChild("leaderstats", 3)
+                local totalValue = 1
                 if leaderstats then
                     local raised = leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("raised")
-                    if raised and typeof(raised.Value) == "number" then
-                        pcall(function()
-                            raised.Value = raised.Value + 1
-                        end)
+                    if raised then
+                        local current = parseDonationValue(raised.Value)
+                        local nextValue = current + 1
+                        totalValue = nextValue
+                        if raised:IsA("StringValue") then
+                            local raw = tostring(raised.Value or "")
+                            local prefix = raw:match("^(%D*)") or ""
+                            local suffix = raw:match("(%D*)$") or ""
+                            raised.Value = prefix .. formatDonationValue(nextValue) .. suffix
+                        elseif raised:IsA("IntValue") or raised:IsA("NumberValue") then
+                            pcall(function()
+                                raised.Value = nextValue
+                            end)
+                        else
+                            pcall(function()
+                                raised.Value = tostring(nextValue)
+                            end)
+                        end
                     end
                 end
                 pcall(function()
@@ -2358,7 +2410,7 @@ do
                         from = donorName,
                         userId = donorId,
                         amount = 1,
-                        total = leaderstats and leaderstats:FindFirstChild("Raised") and tonumber(leaderstats:FindFirstChild("Raised").Value) or 1,
+                        total = totalValue,
                         test = true,
                     })
                 end)
@@ -2416,11 +2468,14 @@ do
             end)
 
             LocalPlayer.CharacterAdded:Connect(function()
+                task.wait(0.5)
+                pcall(function() ensureSpinPart() end)
                 task.wait(1)
                 notify("Booth Claim", "Character respawned; attempting booth claim...", 3)
                 pcall(function() claimBooth() end)
             end)
         end)
+        if SETTINGS.spinSet then pcall(ensureSpinPart) end
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- spin feature removed
         -- Touch-prevent AFK: camera wiggle every 3 minutes
