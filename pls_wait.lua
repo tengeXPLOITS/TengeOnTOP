@@ -458,12 +458,16 @@ local function sendChatMessage(msg)
     end)
 end
 
-local function sendThankYouMessage()
+local function sendThankYouMessage(delta)
     if not SETTINGS.chatAutoThankYou then return end
     local msg = getRandomThankYouMessage()
     if msg == "" then return end
+    if type(delta) ~= "number" then delta = 0 end
+    if delta <= 0 then return end
     task.delay(0.8, function()
-        sendChatMessage(msg)
+        pcall(function()
+            sendChatMessage(msg)
+        end)
     end)
 end
 
@@ -581,7 +585,7 @@ local function tryHookPlayerStat(player)
                                         pending = pending,
                                     })
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                                    sendThankYouMessage()
+                                    sendThankYouMessage(delta)
                                     applyDonationSpin(delta)
                 end
             end
@@ -884,7 +888,7 @@ local function startDonationMonitor()
                     pending = pending,
                 })
                 notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                sendThankYouMessage()
+                sendThankYouMessage(delta)
                 applyDonationSpin(delta)
             end
         end
