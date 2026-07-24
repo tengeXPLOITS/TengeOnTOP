@@ -1548,12 +1548,14 @@ do
 
         pcall(LoadSettings)
         -- (initialization guard will be checked after SharedEnv is defined)
+        local TweenService = game:GetService("TweenService")
         -- Provide a small UI helper used by buttons
-        local function styleButton(btn)
+        local function styleButton(btn, accentColor)
             if not btn then return end
             pcall(function()
                 btn.AutoButtonColor = false
                 local base = btn.BackgroundColor3
+                local accent = accentColor or Color3.fromRGB(92, 255, 172)
                 local corner = Instance.new("UICorner")
                 corner.CornerRadius = UDim.new(0,8)
                 corner.Parent = btn
@@ -1562,6 +1564,41 @@ do
                 stroke.Thickness = 1
                 stroke.Color = Color3.fromRGB(30,30,30)
                 stroke.Parent = btn
+                local tapOverlay = Instance.new("Frame")
+                tapOverlay.Name = "TapEffect"
+                tapOverlay.Size = UDim2.new(0, 8, 0, 8)
+                tapOverlay.Position = UDim2.new(0.5, 0, 0.5, 0)
+                tapOverlay.AnchorPoint = Vector2.new(0.5, 0.5)
+                tapOverlay.BackgroundColor3 = accent
+                tapOverlay.BackgroundTransparency = 0.65
+                tapOverlay.BorderSizePixel = 0
+                tapOverlay.ZIndex = 250
+                tapOverlay.Visible = false
+                tapOverlay.Parent = btn
+                local tapCorner = Instance.new("UICorner")
+                tapCorner.CornerRadius = UDim.new(0.5, 0)
+                tapCorner.Parent = tapOverlay
+                btn.MouseButton1Down:Connect(function()
+                    pcall(function()
+                        btn.BackgroundColor3 = base:Lerp(accent, 0.16)
+                    end)
+                    tapOverlay.Visible = true
+                    tapOverlay.Size = UDim2.new(0, 8, 0, 8)
+                    tapOverlay.BackgroundTransparency = 0.55
+                    local pulse = TweenService:Create(tapOverlay, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = UDim2.new(0, 76, 0, 76),
+                        BackgroundTransparency = 1,
+                    })
+                    pulse:Play()
+                    task.delay(0.2, function()
+                        if tapOverlay.Parent == btn then
+                            tapOverlay.Visible = false
+                        end
+                    end)
+                end)
+                btn.MouseButton1Up:Connect(function()
+                    pcall(function() btn.BackgroundColor3 = base end)
+                end)
                 btn.MouseEnter:Connect(function()
                     pcall(function() btn.BackgroundColor3 = base:Lerp(Color3.fromRGB(255,255,255), 0.04) end)
                 end)
@@ -1706,11 +1743,23 @@ do
         titleBar.Name = "TitleBar"
         titleBar.Size = UDim2.new(1, 0, 0, 28)
         titleBar.Position = UDim2.new(0, 0, 0, 0)
-        titleBar.BackgroundColor3 = Color3.fromRGB(70,70,70)
+        titleBar.BackgroundColor3 = Color3.fromRGB(36, 132, 78)
         titleBar.BackgroundTransparency = 0
         titleBar.Parent = mainFrame
         titleBar.Active = true
         titleBar.ZIndex = 50
+        local titleGradient = Instance.new("UIGradient")
+        titleGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 178, 105)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 112, 60)),
+        }
+        titleGradient.Rotation = 90
+        titleGradient.Parent = titleBar
+        local titleStroke = Instance.new("UIStroke")
+        titleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        titleStroke.Color = Color3.fromRGB(16, 78, 44)
+        titleStroke.Thickness = 1
+        titleStroke.Parent = titleBar
         local titleLblTop = Instance.new("TextLabel")
         titleLblTop.Size = UDim2.new(1, -48, 0, 28)
         titleLblTop.Position = UDim2.new(0, 12, 0, 0)
@@ -1727,7 +1776,7 @@ do
         closeBtn.Size = UDim2.new(0, 32, 0, 20)
         closeBtn.Position = UDim2.new(1, -44, 0, 4)
         closeBtn.Text = "X"
-        closeBtn.BackgroundColor3 = Color3.fromRGB(70,70,70)
+        closeBtn.BackgroundColor3 = Color3.fromRGB(46, 116, 72)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
         closeBtn.Font = Enum.Font.GothamBold
         closeBtn.TextSize = 16
@@ -1773,18 +1822,29 @@ do
             local function minimizeUI()
                 if minimized then return end
                 minimized = true
-                -- fly into toggle button
                 local targetPos = uiToggle.Position
-                local info = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-                pcall(function() TweenService:Create(mainFrame, info, { Position = targetPos, Size = UDim2.new(0,40,0,40) }):Play() end)
-                task.delay(0.45, function() mainFrame.Visible = false end)
+                local info = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.InOut)
+                pcall(function()
+                    TweenService:Create(mainFrame, info, {
+                        Position = targetPos,
+                        Size = UDim2.new(0, 48, 0, 48),
+                        BackgroundTransparency = 0.16,
+                    }):Play()
+                end)
+                task.delay(0.32, function() mainFrame.Visible = false end)
             end
             local function restoreUI()
                 if not minimized then return end
                 mainFrame.Visible = true
-                local info = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
-                pcall(function() TweenService:Create(mainFrame, info, { Position = originalMainPos, Size = UDim2.new(0, MAIN_W, 0, MAIN_H) }):Play() end)
-                task.delay(0.45, function() minimized = false end)
+                local info = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                pcall(function()
+                    TweenService:Create(mainFrame, info, {
+                        Position = originalMainPos,
+                        Size = UDim2.new(0, MAIN_W, 0, MAIN_H),
+                        BackgroundTransparency = 0,
+                    }):Play()
+                end)
+                task.delay(0.32, function() minimized = false end)
             end
             closeBtn.MouseButton1Click:Connect(function()
                 if minimized then restoreUI() else minimizeUI() end
@@ -1825,14 +1885,15 @@ do
             btn.Size = UDim2.new(1, -12, 0, 40)
             btn.LayoutOrder = i
             btn.Text = item.text
-            btn.Font = Enum.Font.Gotham
-            btn.TextSize = 16
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 15
             btn.TextColor3 = Color3.fromRGB(220,220,220)
             btn.TextXAlignment = Enum.TextXAlignment.Center
             btn.BackgroundColor3 = Color3.fromRGB(28,28,28)
             btn.AutoButtonColor = false
             local corner = Instance.new("UICorner") corner.Parent = btn
             btn.Parent = leftCol
+            styleButton(btn, Color3.fromRGB(78, 214, 120))
             tabButtons[item.key] = btn
 
             local frame = Instance.new("Frame")
@@ -1870,11 +1931,19 @@ do
 
         local function selectTab(name)
             for k,v in pairs(tabFrames) do v.Visible = false end
+            for k, btn in pairs(tabButtons) do
+                local isActive = (k == name)
+                btn.BackgroundColor3 = isActive and Color3.fromRGB(58, 132, 84) or Color3.fromRGB(28,28,28)
+                btn.TextColor3 = isActive and Color3.fromRGB(255,255,255) or Color3.fromRGB(220,220,220)
+                btn.Font = Enum.Font.GothamBold
+                btn.TextSize = 15
+            end
             tabFrames[name].Visible = true
         end
         for name, btn in pairs(tabButtons) do
             btn.MouseButton1Click:Connect(function() selectTab(name) end)
         end
+        pcall(function() selectTab("Main") end)
 
         local function updateBoothText(text)
             local newText = tostring(text or "")
