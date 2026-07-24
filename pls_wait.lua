@@ -294,7 +294,9 @@ local function enableAntiAfk()
     antiAfkConn = LocalPlayer.Idled:Connect(function()
         pcall(function()
             vu:CaptureController()
-            vu:ClickButton2(Vector2.new(0,0))
+            if type(vu.ClickButton2) == "function" then
+                vu:ClickButton2(Vector2.new(0,0))
+            end
         end)
     end)
     notify("Anti-AFK", "Enabled", 2)
@@ -305,6 +307,29 @@ local function disableAntiAfk()
         antiAfkConn = nil
     end
     notify("Anti-AFK", "Disabled", 2)
+end
+
+local function simulateTouchTapPulse()
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        if vu then
+            vu:CaptureController()
+            if type(vu.ClickButton1) == "function" then
+                vu:ClickButton1(Vector2.new(0.5, 0.5))
+            elseif type(vu.ClickButton2) == "function" then
+                vu:ClickButton2(Vector2.new(0.5, 0.5))
+            end
+        end
+    end)
+    pcall(function()
+        local camera = workspace.CurrentCamera
+        if camera then
+            local cframe = camera.CFrame
+            camera.CFrame = cframe * CFrame.new(0, 0, 0.0001)
+            task.wait(0.05)
+            camera.CFrame = cframe
+        end
+    end)
 end
 
 -- Webhook / donation helpers
@@ -395,29 +420,40 @@ local function getRandomThankYouMessage()
     if type(msgs) ~= "table" or #msgs == 0 then
         return "thanks!"
     end
-    local choice = msgs[math.random(1, #msgs)]
+    local valid = {}
+    for _, item in ipairs(msgs) do
+        local text = tostring(item or "")
+        if text ~= "" then
+            table.insert(valid, text)
+        end
+    end
+    if #valid == 0 then return "thanks!" end
+    local choice = valid[math.random(1, #valid)]
     return tostring(choice or "thanks!")
 end
 
 local function sendChatMessage(msg)
     if not msg or msg == "" then return end
     pcall(function()
-        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
-            LocalPlayer:Chat(msg)
+        local chatService = game:GetService("TextChatService")
+        if chatService and type(chatService.SendSystemMessage) == "function" then
+            chatService:SendSystemMessage(msg, "All")
             return
         end
+
         local repStore = game:GetService("ReplicatedStorage")
         local events = repStore:FindFirstChild("DefaultChatSystemChatEvents")
         if events then
-            local sayMsg = events:FindFirstChild("SayMessageRequest") or events:FindFirstChild("SayMessageRequest")
+            local sayMsg = events:FindFirstChild("SayMessageRequest")
             if sayMsg and sayMsg.FireServer then
                 sayMsg:FireServer(msg, "All")
                 return
             end
         end
-        local chatService = game:GetService("TextChatService")
-        if chatService and type(chatService.SendSystemMessage) == "function" then
-            chatService:SendSystemMessage(msg, "All")
+
+        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
+            LocalPlayer:Chat(msg)
+            return
         end
     end)
 end
@@ -426,7 +462,7 @@ local function sendThankYouMessage()
     if not SETTINGS.chatAutoThankYou then return end
     local msg = getRandomThankYouMessage()
     if msg == "" then return end
-    task.delay(2, function()
+    task.delay(0.8, function()
         sendChatMessage(msg)
     end)
 end
@@ -1147,24 +1183,35 @@ local function computeStandPlacement(stand, playerPos, distanceAway)
     return basePos, awayDir.Unit
 end
 
+local function standOwnedByLocalPlayer(stand)
+    if not stand or not stand.Parent then return false end
+    local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
+    if not ownerObj then return false end
+    if ownerObj:IsA("ObjectValue") then
+        local ownerValue = ownerObj.Value
+        if ownerValue == LocalPlayer then return true end
+        if ownerValue and typeof(ownerValue) == "Instance" then
+            return tostring(ownerValue.Name) == tostring(LocalPlayer.Name)
+        end
+        return false
+    end
+    if ownerObj:IsA("StringValue") then
+        local ownerName = tostring(ownerObj.Value or "")
+        return ownerName ~= "" and string.lower(ownerName) == string.lower(tostring(LocalPlayer.Name or ""))
+    end
+    if ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue") then
+        return tonumber(ownerObj.Value) == tonumber(LocalPlayer.UserId)
+    end
+    return false
+end
+
 -- Check whether the local player is registered as owner on any stand
 local function localPlayerOwnsAnyStand()
     local standsFolder = Workspace:FindFirstChild("Stands")
     if not standsFolder then return false end
     for _, stand in ipairs(standsFolder:GetChildren()) do
-        if stand and stand.Parent then
-            local ownerObj = stand:FindFirstChild("Wner") or stand:FindFirstChild("Owner")
-            if ownerObj then
-                if ownerObj:IsA("ObjectValue") and ownerObj.Value == LocalPlayer then
-                    return true
-                end
-                if ownerObj:IsA("StringValue") and tostring(ownerObj.Value) == tostring(LocalPlayer.Name) then
-                    return true
-                end
-                if (ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue")) and tonumber(ownerObj.Value) == tonumber(LocalPlayer.UserId) then
-                    return true
-                end
-            end
+        if standOwnedByLocalPlayer(stand) then
+            return true
         end
     end
     return false
@@ -1332,7 +1379,12 @@ local function claimEmptyStands()
             end)
             task.wait(0.35)
             local owned = false
-            pcall(function() owned = localPlayerOwnsAnyStand() end)
+            pcall(function()
+                owned = standOwnedByLocalPlayer(target.stand)
+                if not owned then
+                    owned = localPlayerOwnsAnyStand()
+                end
+            end)
             if not owned then
                 local hopRange = tostring(SETTINGS.hopRange or "19-22")
                 local mn, mx = parseRangeGlobal(hopRange)
@@ -1340,6 +1392,8 @@ local function claimEmptyStands()
                 if mn then
                     serverHopNow(mn, mx, true)
                 end
+            else
+                notify("Booth Claim", ("Stand ownership verified for %s on slot %d"):format(tostring(LocalPlayer.Name), slot), 3)
             end
             return true
         end
@@ -2696,30 +2750,14 @@ do
         if SETTINGS.spinSet then pcall(ensureSpinPart) end
         if SETTINGS.antiAfk then pcall(enableAntiAfk) end
         -- spin feature removed
-        -- Touch-prevent AFK: camera wiggle every 3 minutes
+        -- Touch-prevent AFK: send a small simulated tap pulse every 2 minutes
         task.spawn(function()
-            local RunService = game:GetService("RunService")
-            local camera = workspace.CurrentCamera
-            local interval = 180
-            local lastTick = tick()
-            RunService.RenderStepped:Connect(function()
-                if not SETTINGS.touchPreventAFK then
-                    return
-                end
-                local now = tick()
-                if now - lastTick >= interval then
-                    lastTick = now
-                    local currentCFrame = camera.CFrame
-                    camera.CFrame = currentCFrame * CFrame.Angles(0, 0.001, 0)
-                    task.wait(0.05)
-                    camera.CFrame = currentCFrame
-                end
-            end)
+            local interval = 120
             while true do
-                task.wait(1)
-                if not SETTINGS.touchPreventAFK then
-                    task.wait(1)
+                if SETTINGS.touchPreventAFK then
+                    simulateTouchTapPulse()
                 end
+                task.wait(interval)
             end
         end)
         -- Periodic jump feature removed
