@@ -5,8 +5,9 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
 local PLACE_ID = 81567840903186
-local TARGET_MIN = 1
 local TARGET_MAX = 37
+local DEFAULT_MIN_PLAYERS = 35
+local WEBHOOK_URL = ""
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -22,7 +23,7 @@ gui.Parent = playerGui
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(300, 260)
+main.Size = UDim2.fromOffset(300, 320)
 main.Position = UDim2.fromOffset(24, 80)
 main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 main.BorderSizePixel = 0
@@ -130,11 +131,37 @@ local boxCorner = Instance.new("UICorner")
 boxCorner.CornerRadius = UDim.new(0, 8)
 boxCorner.Parent = timerBox
 
+local minPlayersLabel = Instance.new("TextLabel")
+minPlayersLabel.Size = UDim2.new(1, 0, 0, 20)
+minPlayersLabel.Position = UDim2.new(0, 0, 0, 154)
+minPlayersLabel.BackgroundTransparency = 1
+minPlayersLabel.Text = "Min players before hop"
+minPlayersLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+minPlayersLabel.TextSize = 12
+minPlayersLabel.Font = Enum.Font.Gotham
+minPlayersLabel.Parent = body
+
+local minPlayersBox = Instance.new("TextBox")
+minPlayersBox.Size = UDim2.new(1, 0, 0, 32)
+minPlayersBox.Position = UDim2.new(0, 0, 0, 176)
+minPlayersBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+minPlayersBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+minPlayersBox.PlaceholderText = tostring(DEFAULT_MIN_PLAYERS)
+minPlayersBox.Text = tostring(DEFAULT_MIN_PLAYERS)
+minPlayersBox.Font = Enum.Font.Gotham
+minPlayersBox.TextSize = 14
+minPlayersBox.ClearTextOnFocus = false
+minPlayersBox.Parent = body
+
+local minPlayersCorner = Instance.new("UICorner")
+minPlayersCorner.CornerRadius = UDim.new(0, 8)
+minPlayersCorner.Parent = minPlayersBox
+
 local targetLabel = Instance.new("TextLabel")
 targetLabel.Size = UDim2.new(1, 0, 0, 20)
-targetLabel.Position = UDim2.new(0, 0, 0, 154)
+targetLabel.Position = UDim2.new(0, 0, 0, 214)
 targetLabel.BackgroundTransparency = 1
-targetLabel.Text = "Avoid servers above 37 players"
+targetLabel.Text = "Hop if server is below min or above 37"
 targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 targetLabel.TextSize = 12
 targetLabel.Font = Enum.Font.Gotham
@@ -142,7 +169,7 @@ targetLabel.Parent = body
 
 local infoLabel = Instance.new("TextLabel")
 infoLabel.Size = UDim2.new(1, 0, 0, 34)
-infoLabel.Position = UDim2.new(0, 0, 0, 180)
+infoLabel.Position = UDim2.new(0, 0, 0, 240)
 infoLabel.BackgroundTransparency = 1
 infoLabel.Text = "Walking starts automatically."
 infoLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
@@ -157,6 +184,8 @@ local state = {
     autoWalk = true,
     autoHop = true,
     hopTimer = 20,
+    minPlayers = DEFAULT_MIN_PLAYERS,
+    pendingHopNotification = false,
 }
 
 local function saveState()
@@ -176,6 +205,12 @@ local function loadState()
         if teleportData.hopTimer ~= nil then
             state.hopTimer = math.max(5, math.floor(teleportData.hopTimer))
         end
+        if teleportData.minPlayers ~= nil then
+            state.minPlayers = math.max(1, math.floor(teleportData.minPlayers))
+        end
+        if teleportData.pendingHopNotification ~= nil then
+            state.pendingHopNotification = teleportData.pendingHopNotification
+        end
         saveState()
         return
     end
@@ -193,6 +228,12 @@ local function loadState()
             if decoded.hopTimer ~= nil then
                 state.hopTimer = math.max(5, math.floor(decoded.hopTimer))
             end
+            if decoded.minPlayers ~= nil then
+                state.minPlayers = math.max(1, math.floor(decoded.minPlayers))
+            end
+            if decoded.pendingHopNotification ~= nil then
+                state.pendingHopNotification = decoded.pendingHopNotification
+            end
         end
     end
 end
@@ -205,6 +246,7 @@ local function applyStateToUI()
     autoHopButton.BackgroundColor3 = state.autoHop and Color3.fromRGB(50, 120, 80) or Color3.fromRGB(80, 50, 50)
 
     timerBox.Text = tostring(state.hopTimer)
+    minPlayersBox.Text = tostring(state.minPlayers)
 end
 
 local function getServerPlayerCount()
@@ -219,7 +261,7 @@ local function findOwnedStand()
     for i = 1, 50 do
         local stand = workspace:FindFirstChild("stand" .. i, true)
         if stand and stand:IsA("Model") then
-            local ownerValue = stand:FindFirstChild("Owner")
+            local ownerValue = stand:FindFirstChild("Owner", true)
             if ownerValue and ownerValue:IsA("StringValue") then
                 local ownerText = tostring(ownerValue.Value or "")
                 if ownerText ~= "" and (ownerText == tostring(player.Name) or ownerText == tostring(player.UserId)) then
@@ -265,35 +307,142 @@ local function walkToOwnedStand()
     statusLabel.Text = "Walking to " .. ownedStand.Name
 end
 
-local function queueHop()
-    if not state.autoHop then
-        statusLabel.Text = "Auto hop disabled."
+local function postWebhook(message)
+    if WEBHOOK_URL == "" then
         return
     end
 
+    local ok, err = pcall(function()
+        local payload = HttpService:JSONEncode({ content = message })
+        HttpService:PostAsync(WEBHOOK_URL, payload)
+    end)
+
+    if not ok then
+        warn("Donation webhook failed:", err)
+    end
+end
+
+local function getNearestDonor()
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        return nil
+    end
+
+    local nearestPlayer = nil
+    local nearestDistance = math.huge
+
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local otherCharacter = otherPlayer.Character
+            local otherRoot = otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart")
+            if otherRoot then
+                local distance = (otherRoot.Position - root.Position).Magnitude
+                if distance < nearestDistance then
+                    nearestDistance = distance
+                    nearestPlayer = otherPlayer
+                end
+            end
+        end
+    end
+
+    return nearestPlayer
+end
+
+local function notifyServerHop()
     local currentCount = getServerPlayerCount()
-    if currentCount >= TARGET_MIN and currentCount <= TARGET_MAX then
+    postWebhook(string.format("%s is server hopping to a server that has a player count of %d!", player.Name, currentCount))
+end
+
+local lastRaisedValue = nil
+local function setupRaisedWatcher()
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if leaderstats then
+        local raisedValue = leaderstats:FindFirstChild("Raised")
+        if raisedValue and raisedValue:IsA("IntValue") then
+            lastRaisedValue = raisedValue.Value
+            raisedValue.Changed:Connect(function(newValue)
+                if lastRaisedValue ~= nil and newValue > lastRaisedValue then
+                    local changedBy = newValue - lastRaisedValue
+                    local donor = getNearestDonor()
+                    local donorName = donor and (donor.DisplayName ~= "" and donor.DisplayName or donor.Name) or "No nearby donor"
+                    postWebhook(string.format("%s raised +%d! Donor: %s", player.Name, changedBy, donorName))
+                end
+                lastRaisedValue = newValue
+            end)
+            return
+        end
+    end
+
+    player.ChildAdded:Connect(function(child)
+        if child.Name == "leaderstats" then
+            local raisedValue = child:FindFirstChild("Raised")
+            if raisedValue and raisedValue:IsA("IntValue") then
+                lastRaisedValue = raisedValue.Value
+                raisedValue.Changed:Connect(function(newValue)
+                    if lastRaisedValue ~= nil and newValue > lastRaisedValue then
+                        local changedBy = newValue - lastRaisedValue
+                        local donor = getNearestDonor()
+                        local donorName = donor and (donor.DisplayName ~= "" and donor.DisplayName or donor.Name) or "No nearby donor"
+                        postWebhook(string.format("%s raised +%d! Donor: %s", player.Name, changedBy, donorName))
+                    end
+                    lastRaisedValue = newValue
+                end)
+            end
+        end
+    end)
+end
+
+local function queueHop()
+    if not state.autoHop then
+        statusLabel.Text = "Auto hop disabled."
+        return false
+    end
+
+    local currentCount = getServerPlayerCount()
+    if currentCount >= state.minPlayers and currentCount <= TARGET_MAX then
         statusLabel.Text = string.format("Server size okay: %d", currentCount)
-        return
+        return false
     end
 
     statusLabel.Text = string.format("Hopping server from %d players...", currentCount)
     saveState()
 
+    local teleportData = {
+        autoWalk = state.autoWalk,
+        autoHop = state.autoHop,
+        hopTimer = state.hopTimer,
+        minPlayers = state.minPlayers,
+        pendingHopNotification = true,
+    }
+
     local success, err = pcall(function()
         TeleportService:TeleportAsync(PLACE_ID, { player }, {
             ShouldReserveServer = true,
-            ReservedServerAccessCode = nil,
         })
     end)
 
-    if not success then
-        TeleportService:Teleport(PLACE_ID, player, {
-            autoWalk = state.autoWalk,
-            autoHop = state.autoHop,
-            hopTimer = state.hopTimer,
-        })
+    if success then
+        return true
     end
+
+    local message = tostring(err or "")
+    local lowerMessage = message:lower()
+    if lowerMessage:find("full") or lowerMessage:find("rate") or lowerMessage:find("limit") or lowerMessage:find("429") then
+        statusLabel.Text = "Hop skipped due to server fullness/rate limit."
+        return false
+    end
+
+    local fallbackSuccess = pcall(function()
+        TeleportService:Teleport(PLACE_ID, player, teleportData)
+    end)
+
+    if fallbackSuccess then
+        return true
+    end
+
+    statusLabel.Text = "Teleport failed; retrying later."
+    return false
 end
 
 local function startHopLoop()
@@ -302,7 +451,7 @@ local function startHopLoop()
             local currentCount = getServerPlayerCount()
             statusLabel.Text = string.format("Players: %d | Hop in %d sec", currentCount, state.hopTimer)
 
-            if currentCount < TARGET_MIN or currentCount > TARGET_MAX then
+            if currentCount < state.minPlayers or currentCount > TARGET_MAX then
                 for countdown = state.hopTimer, 1, -1 do
                     if not state.autoHop then
                         break
@@ -312,8 +461,10 @@ local function startHopLoop()
                 end
 
                 if state.autoHop then
-                    queueHop()
-                    return
+                    local hopAttempted = queueHop()
+                    if not hopAttempted then
+                        statusLabel.Text = "Hop attempt failed; retrying soon."
+                    end
                 end
             end
         else
@@ -370,8 +521,23 @@ timerBox.FocusLost:Connect(function(enterPressed)
     end
 end)
 
+minPlayersBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local newValue = tonumber(minPlayersBox.Text)
+        if newValue then
+            state.minPlayers = math.max(1, math.floor(newValue))
+        else
+            state.minPlayers = DEFAULT_MIN_PLAYERS
+        end
+
+        minPlayersBox.Text = tostring(state.minPlayers)
+        saveState()
+    end
+end)
+
 loadState()
 applyStateToUI()
+setupRaisedWatcher()
 
 local function autoExecuteScript()
     local ok, err = pcall(function()
@@ -391,6 +557,12 @@ end
 player.CharacterAdded:Connect(function()
     task.wait(0.2)
     walkToOwnedStand()
+
+    if state.pendingHopNotification then
+        notifyServerHop()
+        state.pendingHopNotification = false
+        saveState()
+    end
 end)
 
 task.spawn(function()
