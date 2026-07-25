@@ -5,7 +5,9 @@ local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 
 local PLACE_ID = 81567840903186
-local TARGET_MAX = 37
+local TARGET_MAX = 42
+local SEARCH_MIN = 39
+local SEARCH_MAX = 42
 local DEFAULT_MIN_PLAYERS = 35
 local WEBHOOK_URL = ""
 
@@ -105,6 +107,21 @@ local autoHopCorner = Instance.new("UICorner")
 autoHopCorner.CornerRadius = UDim.new(0, 8)
 autoHopCorner.Parent = autoHopButton
 
+local hopButton = Instance.new("TextButton")
+hopButton.Size = UDim2.new(1, 0, 0, 28)
+hopButton.Position = UDim2.new(0, 0, 0, 280)
+hopButton.AnchorPoint = Vector2.new(0, 0)
+hopButton.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
+hopButton.Text = "Hop Now"
+hopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+hopButton.TextSize = 14
+hopButton.Font = Enum.Font.GothamBold
+hopButton.Parent = body
+
+local hopCorner = Instance.new("UICorner")
+hopCorner.CornerRadius = UDim.new(0, 8)
+hopCorner.Parent = hopButton
+
 local timerLabel = Instance.new("TextLabel")
 timerLabel.Size = UDim2.new(1, 0, 0, 20)
 timerLabel.Position = UDim2.new(0, 0, 0, 94)
@@ -135,7 +152,7 @@ local minPlayersLabel = Instance.new("TextLabel")
 minPlayersLabel.Size = UDim2.new(1, 0, 0, 20)
 minPlayersLabel.Position = UDim2.new(0, 0, 0, 154)
 minPlayersLabel.BackgroundTransparency = 1
-minPlayersLabel.Text = "Min players before hop"
+minPlayersLabel.Text = "will server hop if there are below.."
 minPlayersLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 minPlayersLabel.TextSize = 12
 minPlayersLabel.Font = Enum.Font.Gotham
@@ -161,7 +178,7 @@ local targetLabel = Instance.new("TextLabel")
 targetLabel.Size = UDim2.new(1, 0, 0, 20)
 targetLabel.Position = UDim2.new(0, 0, 0, 214)
 targetLabel.BackgroundTransparency = 1
-targetLabel.Text = "Hop if server is below min or above 37"
+    targetLabel.Text = "Hop to higher-pop servers (39-42 default) when below min"
 targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 targetLabel.TextSize = 12
 targetLabel.Font = Enum.Font.Gotham
@@ -349,9 +366,52 @@ local function getNearestDonor()
     return nearestPlayer
 end
 
-local function notifyServerHop()
-    local currentCount = getServerPlayerCount()
-    postWebhook(string.format("%s is server hopping to a server that has a player count of %d!", player.Name, currentCount))
+local function notifyServerHop(targetCount)
+    local currentCount = targetCount or getServerPlayerCount()
+    postWebhook(string.format("@%s is server hopping to a server that has a player count of %d!", player.Name, currentCount))
+end
+
+local function findTargetServer()
+    -- Query Roblox servers list to find a server with SEARCH_MIN..SEARCH_MAX players, preferring high-pop servers
+    local baseUrl = string.format("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100", PLACE_ID)
+    local cursor = nil
+
+    for _ = 1, 10 do
+        local url = baseUrl
+        if cursor then
+            url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+        end
+
+        local ok, res = pcall(function()
+            return HttpService:GetAsync(url)
+        end)
+
+        if not ok then
+            break
+        end
+
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, res)
+        if not success or type(decoded) ~= "table" then
+            break
+        end
+
+        if type(decoded.data) == "table" then
+            for _, server in ipairs(decoded.data) do
+                local playing = server.playing or server.playing
+                local id = server.id or server.id
+                if playing and id and type(playing) == "number" then
+                    if playing >= SEARCH_MIN and playing <= SEARCH_MAX and tostring(id) ~= tostring(game.JobId) then
+                        return tostring(id), playing
+                    end
+                end
+            end
+        end
+
+        cursor = decoded.nextPageCursor
+        if not cursor then break end
+    end
+
+    return nil
 end
 
 local lastRaisedValue = nil
@@ -400,8 +460,9 @@ local function queueHop()
     end
 
     local currentCount = getServerPlayerCount()
-    if currentCount >= state.minPlayers and currentCount <= TARGET_MAX then
-        statusLabel.Text = string.format("Server size okay: %d", currentCount)
+    -- Only hop when current server is below the user-set minimum (low-pop hopper)
+    if currentCount >= state.minPlayers then
+        statusLabel.Text = string.format("Server has %d players (>= min); no hop needed", currentCount)
         return false
     end
 
@@ -416,29 +477,31 @@ local function queueHop()
         pendingHopNotification = true,
     }
 
-    local success, err = pcall(function()
-        TeleportService:TeleportAsync(PLACE_ID, { player }, {
-            ShouldReserveServer = true,
-        })
+    -- Try to find a target server in the desired range (SEARCH_MIN..SEARCH_MAX)
+    local targetId, targetCount = findTargetServer()
+    if targetId then
+        statusLabel.Text = string.format("Found target server (%s players) -> joining...", tostring(targetCount))
+        notifyServerHop(targetCount)
+        local ok, err = pcall(function()
+            TeleportService:TeleportToPlaceInstance(PLACE_ID, targetId, {player}, teleportData)
+        end)
+        if ok then return true end
+    end
+
+    -- Fallback: teleport without a specific instance (lets the backend pick)
+    local fallbackOk, fallbackErr = pcall(function()
+        TeleportService:Teleport(PLACE_ID, player, teleportData)
     end)
 
-    if success then
+    if fallbackOk then
         return true
     end
 
-    local message = tostring(err or "")
+    local message = tostring(fallbackErr or "")
     local lowerMessage = message:lower()
     if lowerMessage:find("full") or lowerMessage:find("rate") or lowerMessage:find("limit") or lowerMessage:find("429") then
         statusLabel.Text = "Hop skipped due to server fullness/rate limit."
         return false
-    end
-
-    local fallbackSuccess = pcall(function()
-        TeleportService:Teleport(PLACE_ID, player, teleportData)
-    end)
-
-    if fallbackSuccess then
-        return true
     end
 
     statusLabel.Text = "Teleport failed; retrying later."
@@ -451,7 +514,7 @@ local function startHopLoop()
             local currentCount = getServerPlayerCount()
             statusLabel.Text = string.format("Players: %d | Hop in %d sec", currentCount, state.hopTimer)
 
-            if currentCount < state.minPlayers or currentCount > TARGET_MAX then
+            if currentCount < state.minPlayers then
                 for countdown = state.hopTimer, 1, -1 do
                     if not state.autoHop then
                         break
@@ -505,6 +568,18 @@ autoHopButton.MouseButton1Click:Connect(function()
     state.autoHop = not state.autoHop
     applyStateToUI()
     saveState()
+end)
+
+hopButton.MouseButton1Click:Connect(function()
+    statusLabel.Text = "Manual hop requested..."
+    task.spawn(function()
+        local attempted = queueHop()
+        if attempted then
+            statusLabel.Text = "Hop initiated."
+        else
+            statusLabel.Text = "Hop attempt failed or skipped."
+        end
+    end)
 end)
 
 timerBox.FocusLost:Connect(function(enterPressed)
