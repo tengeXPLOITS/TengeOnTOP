@@ -630,7 +630,7 @@ local function autoExecuteScript()
 end
 
 player.CharacterAdded:Connect(function()
-    task.wait(0.2)
+    task.wait(5)
     walkToOwnedStand()
 
     if state.pendingHopNotification then
@@ -640,17 +640,23 @@ player.CharacterAdded:Connect(function()
     end
 end)
 
+-- Retry walking to owned stand every 5 seconds for up to 12 attempts (1 minute)
 task.spawn(function()
-    task.wait(0.1)
-    walkToOwnedStand()
-    task.wait(0.5)
-    walkToOwnedStand()
+    local attempts = 0
+    while attempts < 12 do
+        if not state.autoWalk then break end
+        walkToOwnedStand()
+        local owned = findOwnedStand()
+        if owned then break end
+        attempts = attempts + 1
+        task.wait(5)
+    end
 end)
 
+-- Auto-execute the external donation script shortly after UI loads (helps across hops)
 task.spawn(function()
-    if RunService:IsClient() then
-        autoExecuteScript()
-    end
+    task.wait(1)
+    autoExecuteScript()
 end)
 
 task.spawn(startHopLoop)
