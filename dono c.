@@ -1,1 +1,370 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
+local PLACE_ID = 81567840903186
+local TARGET_MIN = 39
+local TARGET_MAX = 42
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "DonationStandUI"
+gui.ResetOnSpawn = false
+gui.Parent = playerGui
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.fromOffset(300, 260)
+main.Position = UDim2.fromOffset(24, 80)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+main.BorderSizePixel = 0
+main.Parent = gui
+main.Active = true
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = main
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 42)
+topBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+topBar.BorderSizePixel = 0
+topBar.Parent = main
+
+local topCorner = Instance.new("UICorner")
+topCorner.CornerRadius = UDim.new(0, 12)
+topCorner.Parent = topBar
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 1, 0)
+title.Position = UDim2.new(0, 10, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Donation Central"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 16
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = topBar
+
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, -20, 1, -62)
+body.Position = UDim2.new(0, 10, 0, 52)
+body.BackgroundTransparency = 1
+body.Parent = main
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 42)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Starting..."
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.TextSize = 14
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextWrapped = true
+statusLabel.Parent = body
+
+local toggleRow = Instance.new("Frame")
+toggleRow.Size = UDim2.new(1, 0, 0, 44)
+toggleRow.Position = UDim2.new(0, 0, 0, 44)
+toggleRow.BackgroundTransparency = 1
+toggleRow.Parent = body
+
+local autoWalkButton = Instance.new("TextButton")
+autoWalkButton.Size = UDim2.new(0.48, 0, 0, 32)
+autoWalkButton.Position = UDim2.new(0, 0, 0, 0)
+autoWalkButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+autoWalkButton.Text = "Auto Walk: ON"
+autoWalkButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoWalkButton.TextSize = 13
+autoWalkButton.Font = Enum.Font.GothamBold
+autoWalkButton.Parent = toggleRow
+
+local autoWalkCorner = Instance.new("UICorner")
+autoWalkCorner.CornerRadius = UDim.new(0, 8)
+autoWalkCorner.Parent = autoWalkButton
+
+local autoHopButton = Instance.new("TextButton")
+autoHopButton.Size = UDim2.new(0.48, 0, 0, 32)
+autoHopButton.Position = UDim2.new(0.52, 0, 0, 0)
+autoHopButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+autoHopButton.Text = "Auto Hop: ON"
+autoHopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoHopButton.TextSize = 13
+autoHopButton.Font = Enum.Font.GothamBold
+autoHopButton.Parent = toggleRow
+
+local autoHopCorner = Instance.new("UICorner")
+autoHopCorner.CornerRadius = UDim.new(0, 8)
+autoHopCorner.Parent = autoHopButton
+
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Size = UDim2.new(1, 0, 0, 20)
+timerLabel.Position = UDim2.new(0, 0, 0, 94)
+timerLabel.BackgroundTransparency = 1
+timerLabel.Text = "Hop timer (seconds)"
+timerLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+timerLabel.TextSize = 12
+timerLabel.Font = Enum.Font.Gotham
+timerLabel.Parent = body
+
+local timerBox = Instance.new("TextBox")
+timerBox.Size = UDim2.new(1, 0, 0, 32)
+timerBox.Position = UDim2.new(0, 0, 0, 116)
+timerBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+timerBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+timerBox.PlaceholderText = "20"
+timerBox.Text = "20"
+timerBox.Font = Enum.Font.Gotham
+timerBox.TextSize = 14
+timerBox.ClearTextOnFocus = false
+timerBox.Parent = body
+
+local boxCorner = Instance.new("UICorner")
+boxCorner.CornerRadius = UDim.new(0, 8)
+boxCorner.Parent = timerBox
+
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.new(1, 0, 0, 20)
+targetLabel.Position = UDim2.new(0, 0, 0, 154)
+targetLabel.BackgroundTransparency = 1
+targetLabel.Text = "Target server size: 39-42 players"
+targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+targetLabel.TextSize = 12
+targetLabel.Font = Enum.Font.Gotham
+targetLabel.Parent = body
+
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(1, 0, 0, 34)
+infoLabel.Position = UDim2.new(0, 0, 0, 180)
+infoLabel.BackgroundTransparency = 1
+infoLabel.Text = "Walking starts automatically."
+infoLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
+infoLabel.TextSize = 12
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.Parent = body
+
+local dragging = false
+local dragOffset = Vector2.new(0, 0)
+
+local state = {
+    autoWalk = true,
+    autoHop = true,
+    hopTimer = 20,
+}
+
+local function saveState()
+    local encoded = HttpService:JSONEncode(state)
+    player:SetAttribute("DonationStandUIState", encoded)
+end
+
+local function loadState()
+    local teleportData = TeleportService:GetLocalPlayerTeleportData()
+    if type(teleportData) == "table" then
+        if teleportData.autoWalk ~= nil then
+            state.autoWalk = teleportData.autoWalk
+        end
+        if teleportData.autoHop ~= nil then
+            state.autoHop = teleportData.autoHop
+        end
+        if teleportData.hopTimer ~= nil then
+            state.hopTimer = math.max(5, math.floor(teleportData.hopTimer))
+        end
+        saveState()
+        return
+    end
+
+    local rawState = player:GetAttribute("DonationStandUIState")
+    if type(rawState) == "string" and rawState ~= "" then
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, rawState)
+        if success and type(decoded) == "table" then
+            if decoded.autoWalk ~= nil then
+                state.autoWalk = decoded.autoWalk
+            end
+            if decoded.autoHop ~= nil then
+                state.autoHop = decoded.autoHop
+            end
+            if decoded.hopTimer ~= nil then
+                state.hopTimer = math.max(5, math.floor(decoded.hopTimer))
+            end
+        end
+    end
+end
+
+local function applyStateToUI()
+    autoWalkButton.Text = state.autoWalk and "Auto Walk: ON" or "Auto Walk: OFF"
+    autoWalkButton.BackgroundColor3 = state.autoWalk and Color3.fromRGB(50, 120, 80) or Color3.fromRGB(80, 50, 50)
+
+    autoHopButton.Text = state.autoHop and "Auto Hop: ON" or "Auto Hop: OFF"
+    autoHopButton.BackgroundColor3 = state.autoHop and Color3.fromRGB(50, 120, 80) or Color3.fromRGB(80, 50, 50)
+
+    timerBox.Text = tostring(state.hopTimer)
+end
+
+local function getServerPlayerCount()
+    local count = 0
+    for _ in ipairs(Players:GetPlayers()) do
+        count += 1
+    end
+    return count
+end
+
+local function findOwnedStand()
+    for i = 1, 50 do
+        local stand = workspace:FindFirstChild("stand" .. i, true)
+        if stand and stand:IsA("Model") then
+            local ownerValue = stand:FindFirstChild("Owner")
+            if ownerValue and ownerValue:IsA("StringValue") then
+                local ownerText = tostring(ownerValue.Value or "")
+                if ownerText ~= "" and (ownerText == tostring(player.Name) or ownerText == tostring(player.UserId)) then
+                    return stand
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function walkToOwnedStand()
+    if not state.autoWalk then
+        return
+    end
+
+    local character = player.Character
+    if not character then
+        character = player.CharacterAdded:Wait()
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        statusLabel.Text = "No humanoid found."
+        return
+    end
+
+    local ownedStand = findOwnedStand()
+    if not ownedStand then
+        statusLabel.Text = "No owned stand found."
+        return
+    end
+
+    local targetPart = ownedStand.PrimaryPart or ownedStand:FindFirstChildWhichIsA("BasePart")
+    if not targetPart then
+        statusLabel.Text = "Owned stand has no usable part."
+        return
+    end
+
+    humanoid:MoveTo(targetPart.Position)
+    statusLabel.Text = "Walking to " .. ownedStand.Name
+end
+
+local function queueHop()
+    if not state.autoHop then
+        statusLabel.Text = "Auto hop disabled."
+        return
+    end
+
+    local currentCount = getServerPlayerCount()
+    if currentCount >= TARGET_MIN and currentCount <= TARGET_MAX then
+        statusLabel.Text = string.format("Server size okay: %d", currentCount)
+        return
+    end
+
+    statusLabel.Text = string.format("Hopping server from %d players...", currentCount)
+    saveState()
+    TeleportService:Teleport(PLACE_ID, player, {
+        autoWalk = state.autoWalk,
+        autoHop = state.autoHop,
+        hopTimer = state.hopTimer,
+    })
+end
+
+local function startHopLoop()
+    while true do
+        if state.autoHop then
+            local currentCount = getServerPlayerCount()
+            statusLabel.Text = string.format("Players: %d | Hop in %d sec", currentCount, state.hopTimer)
+
+            if currentCount < TARGET_MIN or currentCount > TARGET_MAX then
+                for countdown = state.hopTimer, 1, -1 do
+                    if not state.autoHop then
+                        break
+                    end
+                    statusLabel.Text = string.format("Hopping in %d sec", countdown)
+                    task.wait(1)
+                end
+
+                if state.autoHop then
+                    queueHop()
+                    return
+                end
+            end
+        else
+            statusLabel.Text = "Auto hop disabled."
+        end
+
+        task.wait(1)
+    end
+end
+
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragOffset = Vector2.new(input.Position.X, input.Position.Y) - Vector2.new(main.AbsolutePosition.X, main.AbsolutePosition.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local pos = UDim2.new(0, input.Position.X - dragOffset.X, 0, input.Position.Y - dragOffset.Y)
+        main.Position = pos
+    end
+end)
+
+autoWalkButton.MouseButton1Click:Connect(function()
+    state.autoWalk = not state.autoWalk
+    applyStateToUI()
+    saveState()
+end)
+
+autoHopButton.MouseButton1Click:Connect(function()
+    state.autoHop = not state.autoHop
+    applyStateToUI()
+    saveState()
+end)
+
+timerBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local newValue = tonumber(timerBox.Text)
+        if newValue then
+            state.hopTimer = math.max(5, math.floor(newValue))
+        else
+            state.hopTimer = 20
+        end
+
+        timerBox.Text = tostring(state.hopTimer)
+        saveState()
+    end
+end)
+
+loadState()
+applyStateToUI()
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.2)
+    walkToOwnedStand()
+end)
+
+task.spawn(function()
+    task.wait(0.2)
+    walkToOwnedStand()
+end)
+
+task.spawn(startHopLoop)
