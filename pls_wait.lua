@@ -299,15 +299,40 @@ local function postWebhookEvent(kind, data)
     local embeds = {}
     if kind == "donation" then
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
-        local donorName = tostring((data and data.donorName) or (data and data.from) or "Unknown")
         local pending = math.floor(amount * 0.6)
+        -- Determine donor by nearest player to the local player (best-effort)
+        local donorName = "Unknown"
+        local donorId = nil
+        pcall(function()
+            local ok, lchar = pcall(function() return LocalPlayer and LocalPlayer.Character end)
+            if ok and lchar then
+                local lroot = lchar:FindFirstChild("HumanoidRootPart") or lchar:FindFirstChild("Torso")
+                if lroot then
+                    local best, bestDist = nil, math.huge
+                    for _, pl in ipairs(Players:GetPlayers()) do
+                        if pl and pl ~= LocalPlayer and pl.Character then
+                            local pr = pl.Character:FindFirstChild("HumanoidRootPart") or pl.Character:FindFirstChild("Torso")
+                            if pr then
+                                local d = (pr.Position - lroot.Position).Magnitude
+                                if d < bestDist then bestDist = d; best = pl end
+                            end
+                        end
+                    end
+                    if best then donorName = tostring(best.Name or "Unknown"); donorId = best.UserId end
+                end
+            end
+        end)
+        -- fallback to provided data if nearest not found
+        if (not donorName or donorName == "Unknown") and data and (data.donorName or data.from) then
+            donorName = tostring(data.donorName or data.from)
+        end
         local fields = {
             { name = "Donor", value = donorName, inline = false },
-            { name = "Amount", value = tostring(amount), inline = true },
-            { name = "Pending (60%)", value = tostring(pending), inline = true },
+            { name = "Amount Given", value = tostring(amount), inline = true },
+            { name = "Pending R$ (60%)", value = tostring(pending), inline = true },
         }
         table.insert(embeds, {
-            title = "Donation Received",
+            title = "YOU RECEIVED A DONATION 💰",
             color = 0x00FF00,
             fields = fields,
         })
@@ -2445,10 +2470,28 @@ do
                 end)
             end)
 
-            -- Population Hop Now (single-button feature)
+            -- Population Hopper (background monitor)
+            local popLabel = Instance.new("TextLabel")
+            popLabel.Size = UDim2.new(0,140,0,20)
+            popLabel.Position = UDim2.new(0,10,0,228)
+            popLabel.Text = "Population Hopper"
+            popLabel.BackgroundTransparency = 1
+            popLabel.TextColor3 = Color3.new(1,1,1)
+            popLabel.Parent = frame
+
+            local popToggle = Instance.new("TextButton")
+            popToggle.Size = UDim2.new(0,60,0,20)
+            popToggle.Position = UDim2.new(0,140,0,228)
+            popToggle.Text = SETTINGS.populationHopper and "ON" or "OFF"
+            popToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            popToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            popToggle.Parent = frame
+            local popCorner = Instance.new("UICorner") popCorner.Parent = popToggle
+            styleButton(popToggle)
+
             local thresholdLabel = Instance.new("TextLabel")
             thresholdLabel.Size = UDim2.new(0,160,0,20)
-            thresholdLabel.Position = UDim2.new(0,10,0,228)
+            thresholdLabel.Position = UDim2.new(0,10,0,258)
             thresholdLabel.Text = "Hop When Below (players)"
             thresholdLabel.BackgroundTransparency = 1
             thresholdLabel.TextColor3 = Color3.new(1,1,1)
@@ -2456,7 +2499,7 @@ do
 
             local thresholdBox = Instance.new("TextBox")
             thresholdBox.Size = UDim2.new(0,80,0,20)
-            thresholdBox.Position = UDim2.new(0,180,0,228)
+            thresholdBox.Position = UDim2.new(0,180,0,258)
             thresholdBox.Text = tostring(SETTINGS.populationThreshold or 17)
             thresholdBox.ClearTextOnFocus = false
             thresholdBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -2464,43 +2507,49 @@ do
             thresholdBox.Parent = frame
             local thrCorner = Instance.new("UICorner") thrCorner.Parent = thresholdBox
 
-            local popNowBtn = Instance.new("TextButton")
-            popNowBtn.Size = UDim2.new(0,200,0,40)
-            popNowBtn.Position = UDim2.new(0,10,0,258)
-            popNowBtn.Text = "Population Hop Now"
-            popNowBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
-            popNowBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            local pnCorner = Instance.new("UICorner") pnCorner.Parent = popNowBtn
-            popNowBtn.Parent = frame
-            styleButton(popNowBtn)
+            local populationHopperEnabled = SETTINGS.populationHopper or false
+            local populationMonitorTask = nil
 
-            popNowBtn.MouseButton1Click:Connect(function()
-                local cnt = #Players:GetPlayers()
-                local thr = tonumber(thresholdBox.Text) or tonumber(SETTINGS.populationThreshold) or 17
-                if cnt >= thr then
-                    return
-                end
-                -- Use user's hop range preference (rangeBox / hopRangeText) when searching
-                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
-                local mn, mx = nil, nil
-                local lowered = (txt or ""):lower():gsub("%s+", "")
-                if lowered == "any" or lowered == "" then
-                    mn, mx = nil, nil
-                else
-                    mn, mx = parseRangeGlobal(txt)
-                    if not mn then
-                        -- fallback to any if user range invalid
-                        mn, mx = nil, nil
+            local function startPopulationMonitor()
+                if populationMonitorTask then return end
+                populationMonitorTask = task.spawn(function()
+                    local lastHop = 0
+                    while populationHopperEnabled do
+                        local cnt = #Players:GetPlayers()
+                        local thr = tonumber(SETTINGS.populationThreshold) or tonumber(thresholdBox.Text) or 17
+                        if cnt < thr then
+                            local now = os.time()
+                            if now - lastHop > 60 then
+                                lastHop = now
+                                -- Use user's hop range preference when searching
+                                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
+                                local mn, mx = parseRangeGlobal(txt)
+                                pcall(function()
+                                    serverSearchAttempt(mn, mx, false)
+                                end)
+                            end
+                        end
+                        task.wait(15)
                     end
-                end
-                popNowBtn.Active = false
-                local prevText = popNowBtn.Text
-                popNowBtn.Text = "Searching..."
-                task.spawn(function()
-                    pcall(function() serverSearchAttempt(mn, mx, true) end)
-                    popNowBtn.Active = true
-                    popNowBtn.Text = prevText
+                    populationMonitorTask = nil
                 end)
+            end
+
+            local function stopPopulationMonitor()
+                populationHopperEnabled = false
+            end
+
+            popToggle.MouseButton1Click:Connect(function()
+                populationHopperEnabled = not populationHopperEnabled
+                SETTINGS.populationHopper = populationHopperEnabled
+                popToggle.Text = populationHopperEnabled and "ON" or "OFF"
+                pcall(SaveSettings)
+                if populationHopperEnabled then
+                    if not SETTINGS.populationThreshold then SETTINGS.populationThreshold = tonumber(thresholdBox.Text) or 17 end
+                    startPopulationMonitor()
+                else
+                    stopPopulationMonitor()
+                end
             end)
 
             thresholdBox.FocusLost:Connect(function(enter)
@@ -2512,6 +2561,14 @@ do
                 end
                 pcall(SaveSettings)
             end)
+
+            -- Initialize monitor if setting persisted
+            if SETTINGS.populationHopper then
+                populationHopperEnabled = true
+                popToggle.Text = "ON"
+                if not SETTINGS.populationThreshold then SETTINGS.populationThreshold = tonumber(thresholdBox.Text) or 17 end
+                startPopulationMonitor()
+            end
 
             local autoLabel = Instance.new("TextLabel")
             autoLabel.Size = UDim2.new(0,120,0,20)
