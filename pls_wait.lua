@@ -144,50 +144,8 @@ task.spawn(function()
 end)
 
 local function notify(title, text, duration)
-    local ok, playerGui = pcall(function() return LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui") end)
-    duration = tonumber(duration) or 4
-    if ok and playerGui and playerGui:FindFirstChild("PlsWaitUI") then
-        local screen = playerGui:FindFirstChild("PlsWaitUI")
-        local notif = Instance.new("Frame")
-        notif.Size = UDim2.new(0, 320, 0, 64)
-        notif.Position = UDim2.new(1, -340, 1, -96)
-        notif.AnchorPoint = Vector2.new(0,0)
-        notif.BackgroundColor3 = Color3.fromRGB(18,18,18)
-        notif.Parent = screen
-        local corner = Instance.new("UICorner", notif)
-        corner.CornerRadius = UDim.new(0, 8)
-        local stroke = Instance.new("UIStroke", notif)
-        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        stroke.Thickness = 1
-        stroke.Color = Color3.fromRGB(36,36,36)
-        local titleLbl = Instance.new("TextLabel", notif)
-        titleLbl.Size = UDim2.new(1, -16, 0, 20)
-        titleLbl.Position = UDim2.new(0, 8, 0, 6)
-        titleLbl.BackgroundTransparency = 1
-        titleLbl.Text = tostring(title or "PLS WAIT")
-        titleLbl.TextColor3 = Color3.fromRGB(220,220,220)
-        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-        titleLbl.Font = Enum.Font.SourceSansBold
-        titleLbl.TextSize = 14
-        local body = Instance.new("TextLabel", notif)
-        body.Size = UDim2.new(1, -16, 0, 34)
-        body.Position = UDim2.new(0, 8, 0, 26)
-        body.BackgroundTransparency = 1
-        body.Text = tostring(text or "")
-        body.TextColor3 = Color3.fromRGB(180,180,180)
-        body.TextXAlignment = Enum.TextXAlignment.Left
-        body.TextWrapped = true
-        body.Font = Enum.Font.SourceSans
-        body.TextSize = 13
-        task.spawn(function()
-            task.wait(duration)
-            pcall(function() notif:Destroy() end)
-        end)
-        return
-    end
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = tostring(title or "PLS WAIT"), Text = tostring(text or ""), Duration = duration })
-    end)
+    -- Notifications suppressed per user request
+    return
 end
 
 -- Community place lookup and basic server-hop helper
@@ -759,6 +717,8 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     antiAfk = SETTINGS.antiAfk,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
+                        populationHopper = SETTINGS.populationHopper,
+                        populationThreshold = SETTINGS.populationThreshold,
                     emoteId = SETTINGS.emoteId,
                     emotePlaying = SETTINGS.emotePlaying and true or false,
                     autoServerHop = autoServerHopEnabled,
@@ -1470,6 +1430,8 @@ do
                 spinOnDonation = SETTINGS.spinSet,
                 spinSet = SETTINGS.spinSet,
                 spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                populationHopper = SETTINGS.populationHopper,
+                populationThreshold = SETTINGS.populationThreshold,
                 -- follow-on-donation removed
                 emoteId = SETTINGS.emoteId,
                 boothText = SETTINGS.boothText,
@@ -1515,6 +1477,8 @@ do
             if decoded.spinSet ~= nil then SETTINGS.spinSet = decoded.spinSet end
             if decoded.spinOnDonation ~= nil then SETTINGS.spinSet = decoded.spinOnDonation end
             if decoded.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
+            if decoded.populationHopper ~= nil then SETTINGS.populationHopper = decoded.populationHopper end
+            if decoded.populationThreshold ~= nil then SETTINGS.populationThreshold = decoded.populationThreshold end
             -- follow-on-donation setting removed
             SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
             SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
@@ -1537,6 +1501,8 @@ do
                 if cfg.spinSet ~= nil then SETTINGS.spinSet = cfg.spinSet end
                 if cfg.spinOnDonation ~= nil then SETTINGS.spinSet = cfg.spinOnDonation end
                 if cfg.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = cfg.spinSpeedMultiplier end
+                if cfg.populationHopper ~= nil then SETTINGS.populationHopper = cfg.populationHopper end
+                if cfg.populationThreshold ~= nil then SETTINGS.populationThreshold = cfg.populationThreshold end
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
@@ -1568,37 +1534,9 @@ do
                 stroke.Thickness = 1
                 stroke.Color = Color3.fromRGB(30,30,30)
                 stroke.Parent = btn
-                local tapOverlay = Instance.new("Frame")
-                tapOverlay.Name = "TapEffect"
-                tapOverlay.Size = UDim2.new(0, 8, 0, 8)
-                tapOverlay.Position = UDim2.new(0.5, 0, 0.5, 0)
-                tapOverlay.AnchorPoint = Vector2.new(0.5, 0.5)
-                tapOverlay.BackgroundColor3 = accent
-                tapOverlay.BackgroundTransparency = 0.65
-                tapOverlay.BorderSizePixel = 0
-                tapOverlay.ZIndex = 250
-                tapOverlay.Visible = false
-                tapOverlay.Parent = btn
-                local tapCorner = Instance.new("UICorner")
-                tapCorner.CornerRadius = UDim.new(0.5, 0)
-                tapCorner.Parent = tapOverlay
+                -- Simplified tap feedback: subtle tint without bright green overlay
                 btn.MouseButton1Down:Connect(function()
-                    pcall(function()
-                        btn.BackgroundColor3 = base:Lerp(accent, 0.16)
-                    end)
-                    tapOverlay.Visible = true
-                    tapOverlay.Size = UDim2.new(0, 8, 0, 8)
-                    tapOverlay.BackgroundTransparency = 0.55
-                    local pulse = TweenService:Create(tapOverlay, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                        Size = UDim2.new(0, 76, 0, 76),
-                        BackgroundTransparency = 1,
-                    })
-                    pulse:Play()
-                    task.delay(0.2, function()
-                        if tapOverlay.Parent == btn then
-                            tapOverlay.Visible = false
-                        end
-                    end)
+                    pcall(function() btn.BackgroundColor3 = base:Lerp(Color3.fromRGB(255,255,255), 0.04) end)
                 end)
                 btn.MouseButton1Up:Connect(function()
                     pcall(function() btn.BackgroundColor3 = base end)
@@ -1613,27 +1551,13 @@ do
         end
 
         local function ensureSpinLock(root)
-            if not root or not root:IsA("BasePart") then return end
-            local lock = root:FindFirstChild("SpinLock")
-            if lock and lock:IsA("BodyPosition") then
-                lock.Position = root.Position
-                return
-            end
-            lock = Instance.new("BodyPosition")
-            lock.Name = "SpinLock"
-            lock.MaxForce = Vector3.new(math.huge, 0, math.huge)
-            lock.D = 1000
-            lock.P = 10000
-            lock.Position = root.Position
-            lock.Parent = root
+            -- No-op: disable positional freezing when spin is enabled
+            return
         end
 
         local function removeSpinLock(root)
-            if not root or not root:IsA("BasePart") then return end
-            local lock = root:FindFirstChild("SpinLock")
-            if lock and lock:IsA("BodyPosition") then
-                lock:Destroy()
-            end
+            -- No-op: nothing to remove since ensureSpinLock is disabled
+            return
         end
 
         local function ensureSpinPart()
@@ -2521,6 +2445,74 @@ do
                 end)
             end)
 
+            -- Population Hop Now (single-button feature)
+            local thresholdLabel = Instance.new("TextLabel")
+            thresholdLabel.Size = UDim2.new(0,160,0,20)
+            thresholdLabel.Position = UDim2.new(0,10,0,228)
+            thresholdLabel.Text = "Hop When Below (players)"
+            thresholdLabel.BackgroundTransparency = 1
+            thresholdLabel.TextColor3 = Color3.new(1,1,1)
+            thresholdLabel.Parent = frame
+
+            local thresholdBox = Instance.new("TextBox")
+            thresholdBox.Size = UDim2.new(0,80,0,20)
+            thresholdBox.Position = UDim2.new(0,180,0,228)
+            thresholdBox.Text = tostring(SETTINGS.populationThreshold or 17)
+            thresholdBox.ClearTextOnFocus = false
+            thresholdBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            thresholdBox.TextColor3 = Color3.fromRGB(255,255,255)
+            thresholdBox.Parent = frame
+            local thrCorner = Instance.new("UICorner") thrCorner.Parent = thresholdBox
+
+            local popNowBtn = Instance.new("TextButton")
+            popNowBtn.Size = UDim2.new(0,200,0,40)
+            popNowBtn.Position = UDim2.new(0,10,0,258)
+            popNowBtn.Text = "Population Hop Now"
+            popNowBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            popNowBtn.TextColor3 = Color3.fromRGB(255,255,255)
+            local pnCorner = Instance.new("UICorner") pnCorner.Parent = popNowBtn
+            popNowBtn.Parent = frame
+            styleButton(popNowBtn)
+
+            popNowBtn.MouseButton1Click:Connect(function()
+                local cnt = #Players:GetPlayers()
+                local thr = tonumber(thresholdBox.Text) or tonumber(SETTINGS.populationThreshold) or 17
+                if cnt >= thr then
+                    return
+                end
+                -- Use user's hop range preference (rangeBox / hopRangeText) when searching
+                local txt = (rangeBox and tostring(rangeBox.Text) or hopRangeText) or ""
+                local mn, mx = nil, nil
+                local lowered = (txt or ""):lower():gsub("%s+", "")
+                if lowered == "any" or lowered == "" then
+                    mn, mx = nil, nil
+                else
+                    mn, mx = parseRangeGlobal(txt)
+                    if not mn then
+                        -- fallback to any if user range invalid
+                        mn, mx = nil, nil
+                    end
+                end
+                popNowBtn.Active = false
+                local prevText = popNowBtn.Text
+                popNowBtn.Text = "Searching..."
+                task.spawn(function()
+                    pcall(function() serverSearchAttempt(mn, mx, true) end)
+                    popNowBtn.Active = true
+                    popNowBtn.Text = prevText
+                end)
+            end)
+
+            thresholdBox.FocusLost:Connect(function(enter)
+                local v = tonumber(thresholdBox.Text)
+                if v and v >= 2 then
+                    SETTINGS.populationThreshold = math.floor(v)
+                else
+                    thresholdBox.Text = tostring(SETTINGS.populationThreshold or 17)
+                end
+                pcall(SaveSettings)
+            end)
+
             local autoLabel = Instance.new("TextLabel")
             autoLabel.Size = UDim2.new(0,120,0,20)
             autoLabel.Position = UDim2.new(0,10,0,160)
@@ -2786,6 +2778,8 @@ do
                         spinOnDonation = SETTINGS.spinSet,
                         spinSet = SETTINGS.spinSet,
                         spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                        populationHopper = SETTINGS.populationHopper,
+                        populationThreshold = SETTINGS.populationThreshold,
                         emoteId = SETTINGS.emoteId,
                         emotePlaying = SETTINGS.emotePlaying and true or false,
                         autoServerHop = autoServerHopEnabled,
