@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +23,21 @@ local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     return
 end
+
+pcall(function()
+    local benches = Workspace:FindFirstChild("Benches") or Workspace:WaitForChild("Benches", 5)
+    if benches then
+        benches:Destroy()
+    end
+end)
+
+local placeName = tostring(game.PlaceId)
+pcall(function()
+    local productInfo = MarketplaceService:GetProductInfo(game.PlaceId)
+    if productInfo and type(productInfo.Name) == "string" and productInfo.Name ~= "" then
+        placeName = productInfo.Name
+    end
+end)
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 
@@ -360,10 +376,6 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
-    antiBotServers = false,
-    antiBotThreshold = 17,
-    antiBotInterval = 8,
-    zeroDonatedBotThreshold = 16,
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
@@ -609,22 +621,7 @@ end
 
 local serverHopNow
 local requestServerHop
-local countZeroDonatedPlayers
 local updateBoothTextNow
-
-local flaggedBoothTexts = {
-    "helicopter",
-    "gifting",
-    "5x",
-    "multiply",
-    "multiplying",
-    "improving",
-    "raising",
-    "1R$=",
-    "1R",
-    "homeless bacon",
-    
-}
 
 local modUsernames = {
     ["haz3mn"] = true,
@@ -639,12 +636,6 @@ local modUsernames = {
     ["subsical"] = true,
 }
 
-local antiBotLastScanCount = 0
-local antiBotLastNotifyTick = 0
-local antiBotLastNotifiedCount = -1
-local antiBotPendingConfirmation = false
-local antiBotNotifyCooldown = 30
-local antiBotConfirmationDelay = 10
 local hopCooldownSeconds = 4
 local lastHopTick = 0
 local hopTimerResetTick = tick()
@@ -664,217 +655,6 @@ local function parseIdFromTemplate(tmpl)
     end
     local id = tostring(tmpl):match("(%d+)")
     return id and tonumber(id) or nil
-end
-
-local function isTextFlagged(txt)
-    if txt == nil then
-        return false
-    end
-
-    local norm = tostring(txt):lower()
-
-    for _, keyword in ipairs(flaggedBoothTexts) do
-        local plain = tostring(keyword):lower()
-        if plain ~= "" and norm:find(plain, 1, true) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local function hasNamedAncestor(desc, wantedName)
-    local current = desc and desc.Parent
-    local target = tostring(wantedName or ""):lower()
-    while current do
-        if tostring(current.Name or ""):lower() == target then
-            return true
-        end
-        current = current.Parent
-    end
-    return false
-end
-
-local function isLikelyBoothSignLabel(label)
-    if not label or not label:IsA("TextLabel") then
-        return false
-    end
-
-    if hasNamedAncestor(label, "Details") then
-        return false
-    end
-
-    local labelName = tostring(label.Name or ""):lower()
-    if labelName:find("owner", 1, true) or labelName:find("raised", 1, true) or labelName:find("goal", 1, true) or labelName:find("donat", 1, true) then
-        return false
-    end
-
-    return labelName:find("sign", 1, true) or labelName:find("text", 1, true) or labelName:find("message", 1, true)
-end
-
-local function getBoothSlotFromDescendant(desc)
-    local current = desc
-    for _ = 1, 12 do
-        if not current then
-            break
-        end
-        local slot = tonumber(tostring(current.Name):match("BoothUI(%d+)"))
-        if slot then
-            return slot
-        end
-        current = current.Parent
-    end
-    return nil
-end
-
-local function countBotLikeBooths()
-    local boothLocation = getBoothLocation()
-    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-    if not boothUiFolder then
-        return 0
-    end
-
-    local flaggedOwners = {}
-    local seenSlots = {}
-    for _, obj in ipairs(boothUiFolder:GetDescendants()) do
-        if isLikelyBoothSignLabel(obj) then
-            local slot = getBoothSlotFromDescendant(obj)
-            if slot and not seenSlots[slot] then
-                local ownerName = nil
-                local boothFrame = boothUiFolder:FindFirstChild("BoothUI" .. tostring(slot))
-                if boothFrame and boothFrame:FindFirstChild("Details") and boothFrame.Details:FindFirstChild("Owner") then
-                    ownerName = tostring(boothFrame.Details.Owner.Text or "")
-                end
-
-                local ownerLower = tostring(ownerName or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-                if ownerLower ~= "" and ownerLower ~= "unclaimed" then
-                    local textVal = tostring(obj.Text or "")
-                    if isTextFlagged(textVal) then
-                        seenSlots[slot] = true
-                        table.insert(flaggedOwners, {slot = slot, owner = ownerName})
-                    end
-                end
-            end
-        end
-    end
-
-    local uniqueSuspiciousSlots = {}
-    for _, data in ipairs(flaggedOwners) do
-        local ownerSuspicious = false
-        local ownerLower = tostring(data.owner or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-
-        if ownerLower == "" or ownerLower == "unclaimed" then
-            ownerSuspicious = true
-        else
-            local matchedPlayer = nil
-            for _, pl in ipairs(Players:GetPlayers()) do
-                local n = tostring(pl.Name or ""):lower()
-                local d = tostring(pl.DisplayName or ""):lower()
-                if n == ownerLower or d == ownerLower then
-                    matchedPlayer = pl
-                    break
-                end
-            end
-
-            if not matchedPlayer then
-                ownerSuspicious = true
-            else
-                local okAge, accAge = pcall(function()
-                    return matchedPlayer.AccountAge
-                end)
-                if okAge and type(accAge) == "number" and accAge < 3 then
-                    ownerSuspicious = true
-                end
-            end
-        end
-
-        if ownerSuspicious and data.slot then
-            uniqueSuspiciousSlots[data.slot] = true
-        end
-    end
-
-    local count = 0
-    for _ in pairs(uniqueSuspiciousSlots) do
-        count += 1
-    end
-    return count
-end
-
-local function runBotDetectionScan()
-    local boothCount = countBotLikeBooths()
-    local zeroCount = countZeroDonatedPlayers()
-    local totalCount = boothCount + zeroCount
-    antiBotLastScanCount = totalCount
-    return {
-        boothCount = boothCount,
-        zeroCount = zeroCount,
-        totalCount = totalCount,
-    }
-end
-
-local function notifyBotScanResult(scan, manual)
-    local count = type(scan) == "table" and tonumber(scan.totalCount) or tonumber(scan) or 0
-    local boothCount = type(scan) == "table" and tonumber(scan.boothCount) or count
-    local zeroCount = type(scan) == "table" and tonumber(scan.zeroCount) or 0
-    local threshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-    if manual then
-        if count > 0 then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 5, nil, nil)
-        else
-            notify("Bot Scan", "No suspicious booths found.", 4, nil, nil)
-        end
-        antiBotLastNotifiedCount = count
-        antiBotLastNotifyTick = tick()
-        return
-    end
-
-    local now = tick()
-    local crossedUp = antiBotLastNotifiedCount < threshold and count >= threshold
-    local crossedDown = antiBotLastNotifiedCount >= threshold and count < threshold
-    local changed = count ~= antiBotLastNotifiedCount
-
-    if crossedUp then
-            notify("Bot Detection", ("High bot signal (%d total: %d booths, %d zero donated). Confirming before hop."):format(count, boothCount, zeroCount), 5, "bot-cross-up", 10)
-        antiBotLastNotifyTick = now
-    elseif crossedDown then
-        notify("Bot Detection", "Bot signal dropped below threshold.", 4, "bot-cross-down", 10)
-        antiBotLastNotifyTick = now
-    elseif changed and count > 0 and (now - antiBotLastNotifyTick) >= antiBotNotifyCooldown then
-            notify("Bot Scan", ("Bot total: %d | Booths: %d | Zero donated: %d"):format(count, boothCount, zeroCount), 4, "bot-periodic", 20)
-        antiBotLastNotifyTick = now
-    end
-
-    antiBotLastNotifiedCount = count
-end
-
-local function shouldHopForBots(scan)
-    local boothCount = type(scan) == "table" and tonumber(scan.boothCount) or tonumber(scan) or 0
-    local zeroCount = type(scan) == "table" and tonumber(scan.zeroCount) or 0
-    local count = type(scan) == "table" and tonumber(scan.totalCount) or boothCount
-    local threshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-    notifyBotScanResult(scan, false)
-
-    if boothCount >= threshold then
-        if not antiBotPendingConfirmation then
-            antiBotPendingConfirmation = true
-            task.spawn(function()
-                task.wait(antiBotConfirmationDelay)
-                local confirmScan = runBotDetectionScan()
-                local confirmCount = tonumber(confirmScan.totalCount) or 0
-                local confirmBoothCount = tonumber(confirmScan.boothCount) or 0
-                notifyBotScanResult(confirmScan, false)
-                if confirmBoothCount >= threshold and settings.antiBotServers then
-                    notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero raised). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
-                        notify("Bot Detection", ("Confirmed %d suspicious booths (%d total signals, %d zero donated). Hopping..."):format(confirmBoothCount, confirmCount, tonumber(confirmScan.zeroCount) or 0), 5, "bot-hop", 10)
-                    requestServerHop("bot-detection")
-                end
-                antiBotPendingConfirmation = false
-            end)
-        end
-        return false
-    end
-    antiBotPendingConfirmation = false
-    return false
 end
 
 local function sendChatMessage(message)
@@ -1338,19 +1118,6 @@ local function buildGoalProgressBar()
         string.rep("|", filledSegments),
         string.rep("|", emptySegments)
     )
-end
-
-countZeroDonatedPlayers = function()
-    local count = 0
-    for _, pl in ipairs(Players:GetPlayers()) do
-        local ls = pl:FindFirstChild("leaderstats")
-        local donatedObj = ls and ls:FindFirstChild("Donated")
-        local donated = tonumber(donatedObj and donatedObj.Value) or 0
-        if donated <= 0 then
-            count += 1
-        end
-    end
-    return count
 end
 
 local function buildBoothText()
@@ -2071,7 +1838,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = ".gg/SYpKSnFetn | PLS DONO ANIMOSITY"
+    title.Text = placeName .. " | discord.gg/Nb6kKc9wJ"
     title.Parent = topBar
 end
 
@@ -3203,11 +2970,29 @@ end
 local dropdownCloseFns = {}
 local activeDropdown
 
-local function createTextBox(parent, text, key, numeric)
+local function decorateControl(control, withStroke)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = control
+
+    if withStroke then
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 1
+        stroke.Color = THEME.stroke
+        stroke.Parent = control
+    end
+end
+
+local function createControlRow(parent, height)
     local row = Instance.new("Frame")
     row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 30)
+    row.Size = UDim2.new(1, 0, 0, height)
     row.Parent = parent
+    return row
+end
+
+local function createTextBox(parent, text, key, numeric)
+    local row = createControlRow(parent, 30)
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1, 0, 0, 24)
@@ -3223,14 +3008,7 @@ local function createTextBox(parent, text, key, numeric)
     box.Text = prefix .. tostring(settings[key])
     box.Parent = row
 
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 4)
-    boxCorner.Parent = box
-
-    local boxStroke = Instance.new("UIStroke")
-    boxStroke.Thickness = 1
-    boxStroke.Color = THEME.stroke
-    boxStroke.Parent = box
+    decorateControl(box, true)
 
     box.FocusLost:Connect(function(enterPressed)
         local prefPattern = "^" .. escapePattern(prefix)
@@ -3262,11 +3040,8 @@ local function createTextBox(parent, text, key, numeric)
 end
 
 local function createPlainTextBox(parent, placeholder, key, height, multiline)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
     local boxHeight = math.max(38, tonumber(height) or 38)
-    row.Size = UDim2.new(1, 0, 0, boxHeight + 6)
-    row.Parent = parent
+    local row = createControlRow(parent, boxHeight + 6)
 
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(1, 0, 0, boxHeight)
@@ -3290,14 +3065,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
     boxPadding.PaddingRight = UDim.new(0, 8)
     boxPadding.Parent = box
 
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 4)
-    boxCorner.Parent = box
-
-    local boxStroke = Instance.new("UIStroke")
-    boxStroke.Thickness = 1
-    boxStroke.Color = THEME.stroke
-    boxStroke.Parent = box
+    decorateControl(box, true)
 
     local liveUpdateRevision = 0
     if key == "customBoothText" then
@@ -3338,10 +3106,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
 end
 
 local function createDropdown(parent, text, key, options)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 30)
-    row.Parent = parent
+    local row = createControlRow(parent, 30)
 
     local baseHeight = 30
     local optionHeight = 22
@@ -3356,14 +3121,7 @@ local function createDropdown(parent, text, key, options)
     btn.TextSize = 12
     btn.Parent = row
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
-
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 1
-    btnStroke.Color = THEME.stroke
-    btnStroke.Parent = btn
+    decorateControl(btn, true)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
@@ -3374,14 +3132,7 @@ local function createDropdown(parent, text, key, options)
     listFrame.ZIndex = 20
     listFrame.Parent = row
 
-    local listCorner = Instance.new("UICorner")
-    listCorner.CornerRadius = UDim.new(0, 4)
-    listCorner.Parent = listFrame
-
-    local listStroke = Instance.new("UIStroke")
-    listStroke.Thickness = 1
-    listStroke.Color = THEME.stroke
-    listStroke.Parent = listFrame
+    decorateControl(listFrame, true)
 
     local listLayout = Instance.new("UIListLayout")
     listLayout.Padding = UDim.new(0, 2)
@@ -3430,9 +3181,7 @@ local function createDropdown(parent, text, key, options)
         optionBtn.ZIndex = 21
         optionBtn.Parent = listFrame
 
-        local optionCorner = Instance.new("UICorner")
-        optionCorner.CornerRadius = UDim.new(0, 4)
-        optionCorner.Parent = optionBtn
+        decorateControl(optionBtn, false)
 
         optionBtn.MouseButton1Click:Connect(function()
             idx = i
@@ -3463,10 +3212,7 @@ local function createDropdown(parent, text, key, options)
 end
 
 local function createMessageDropdown(parent, text, key, fallback)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 30)
-    row.Parent = parent
+    local row = createControlRow(parent, 30)
 
     local baseHeight = 30
     local contentHeight = 216
@@ -3481,14 +3227,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     btn.Text = text
     btn.Parent = row
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
-
-    local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 1
-    btnStroke.Color = THEME.stroke
-    btnStroke.Parent = btn
+    decorateControl(btn, true)
 
     local content = Instance.new("Frame")
     content.Visible = false
@@ -3498,14 +3237,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     content.Size = UDim2.new(1, 0, 0, contentHeight)
     content.Parent = row
 
-    local contentCorner = Instance.new("UICorner")
-    contentCorner.CornerRadius = UDim.new(0, 4)
-    contentCorner.Parent = content
-
-    local contentStroke = Instance.new("UIStroke")
-    contentStroke.Thickness = 1
-    contentStroke.Color = THEME.stroke
-    contentStroke.Parent = content
+    decorateControl(content, true)
 
     local contentPad = Instance.new("UIPadding")
     contentPad.PaddingTop = UDim.new(0, 6)
@@ -3536,14 +3268,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     editorPad.PaddingRight = UDim.new(0, 8)
     editorPad.Parent = editor
 
-    local editorCorner = Instance.new("UICorner")
-    editorCorner.CornerRadius = UDim.new(0, 4)
-    editorCorner.Parent = editor
-
-    local editorStroke = Instance.new("UIStroke")
-    editorStroke.Thickness = 1
-    editorStroke.Color = THEME.stroke
-    editorStroke.Parent = editor
+    decorateControl(editor, true)
 
     local saveBtn = Instance.new("TextButton")
     saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
@@ -3555,9 +3280,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     saveBtn.Text = "Save"
     saveBtn.Parent = content
 
-    local saveCorner = Instance.new("UICorner")
-    saveCorner.CornerRadius = UDim.new(0, 4)
-    saveCorner.Parent = saveBtn
+    decorateControl(saveBtn, false)
 
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0.5, -3, 0, 24)
@@ -3569,9 +3292,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     closeBtn.Text = "Close"
     closeBtn.Parent = content
 
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 4)
-    closeCorner.Parent = closeBtn
+    decorateControl(closeBtn, false)
 
     local nextLineBtn = Instance.new("TextButton")
     nextLineBtn.Size = UDim2.new(1, 0, 0, 24)
@@ -3583,9 +3304,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     nextLineBtn.Text = "Skip To Next Line"
     nextLineBtn.Parent = content
 
-    local nextLineCorner = Instance.new("UICorner")
-    nextLineCorner.CornerRadius = UDim.new(0, 4)
-    nextLineCorner.Parent = nextLineBtn
+    decorateControl(nextLineBtn, false)
 
     local currentList = normalizeMessageList(settings[key], defaults[key])
     settings[key] = currentList
@@ -3656,9 +3375,7 @@ local function createButton(parent, text, callback)
     btn.Text = text
     btn.Parent = parent
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    decorateControl(btn, false)
 
     btn.MouseButton1Click:Connect(function()
         local ok, err = pcall(callback)
@@ -3669,10 +3386,7 @@ local function createButton(parent, text, callback)
 end
 
 local function createSlider(parent, text, key, minVal, maxVal)
-    local row = Instance.new("Frame")
-    row.BackgroundTransparency = 1
-    row.Size = UDim2.new(1, 0, 0, 44)
-    row.Parent = parent
+    local row = createControlRow(parent, 44)
 
     local lbl = Instance.new("TextLabel")
     lbl.BackgroundTransparency = 1
@@ -3691,14 +3405,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     track.BorderSizePixel = 0
     track.Parent = row
 
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(0, 4)
-    trackCorner.Parent = track
-
-    local trackStroke = Instance.new("UIStroke")
-    trackStroke.Thickness = 1
-    trackStroke.Color = THEME.stroke
-    trackStroke.Parent = track
+    decorateControl(track, true)
 
     local fill = Instance.new("Frame")
     fill.Size = UDim2.new(0, 0, 1, 0)
@@ -3706,9 +3413,7 @@ local function createSlider(parent, text, key, minVal, maxVal)
     fill.BorderSizePixel = 0
     fill.Parent = track
 
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 4)
-    fillCorner.Parent = fill
+    decorateControl(fill, false)
 
     local thumb = Instance.new("Frame")
     thumb.Size = UDim2.new(0, 14, 0, 14)
@@ -3908,15 +3613,7 @@ do
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
-    createToggle(serverSection, "Anti Bot Booths [BETA]", "antiBotServers")
-    createTextBox(serverSection, "Bot Booth Threshold", "antiBotThreshold", true)
-    createTextBox(serverSection, "Bot Scan Interval (S)", "antiBotInterval", true)
-    createTextBox(serverSection, "Zero Donated Bot Threshold", "zeroDonatedBotThreshold", true)
     createToggle(serverSection, "Mod Evader", "modEvader")
-    createButton(serverSection, "Scan Bot Booths Now", function()
-        local scan = runBotDetectionScan()
-        notifyBotScanResult(scan, true)
-    end)
     createButton(serverSection, "Server Hop Now", function()
         requestServerHop("manual-button")
     end)
@@ -3986,29 +3683,6 @@ task.spawn(function()
         local ownedSlot = boothUiFolder and findOwnedBoothSlot(boothUiFolder)
         if ownedSlot then
             onBoothClaimDetected(ownedSlot)
-        end
-    end
-end)
-
-task.spawn(function()
-    local lastHopTick = 0
-    while task.wait(1) do
-        if settings.antiBotServers then
-            local interval = math.max(2, tonumber(settings.antiBotInterval) or 8)
-            task.wait(interval)
-
-            local scan = runBotDetectionScan()
-            local zeroThreshold = math.max(1, tonumber(settings.zeroDonatedBotThreshold) or 16)
-            local boothThreshold = math.max(1, tonumber(settings.antiBotThreshold) or 6)
-            local zeroCount = tonumber(scan.zeroCount) or 0
-            if zeroCount > zeroThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                notify("Bot Detection", ("Zero donated check tripped: %d > %d | Booths: %d | Total: %d. Hopping..."):format(zeroCount, zeroThreshold, tonumber(scan.boothCount) or 0, tonumber(scan.totalCount) or 0), 5, "zero-donated-hop", 10)
-                requestServerHop("zero-donated-bot-server")
-            elseif (tonumber(scan.boothCount) or 0) >= boothThreshold and (tick() - lastHopTick) > 8 then
-                lastHopTick = tick()
-                shouldHopForBots(scan)
-            end
         end
     end
 end)
@@ -4086,6 +3760,7 @@ task.spawn(function()
 
         lastRaised = current
         markDonationForHopTimer(delta)
+        sendChatMessage(math.random(2) == 1 and "/e wave" or "/e cheer")
 
         if settings.spinSet then
             local spin = getSpinMover()
