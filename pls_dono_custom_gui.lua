@@ -25,9 +25,9 @@ if not LocalPlayer then
 end
 
 pcall(function()
-    local benches = Workspace:FindFirstChild("Benches") or Workspace:WaitForChild("Benches", 5)
-    if benches then
-        benches:Destroy()
+    local bench = Workspace:FindFirstChild("Bench", true)
+    if bench then
+        bench:Destroy()
     end
 end)
 
@@ -353,9 +353,7 @@ local defaults = {
     textUpdateToggle = true,
     textUpdateDelay = 30,
     hexBox = "#32CD32",
-    goalBox = 5,
-    customBoothText = "Please help me reach my goal! Goal: $G",
-    goalBarHeaderText = "GOAL $G",
+    customBoothText = "Please help me!",
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
@@ -366,7 +364,7 @@ local defaults = {
     thanksMessage = {"Thank you", "Thankss!", "ty"},
     autoBeg = true,
     begDelay = 300,
-    begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
+    begMessage = {"Grateful for any donation", "Please help me!", "Anything helps, thank you!"},
 
     webhookToggle = false,
     webhookBox = "",
@@ -481,6 +479,11 @@ local function migrateLegacySettings(data)
     end
 
     data.render = nil
+    data.goalBox = nil
+    data.goalBarHeaderText = nil
+    if type(data.customBoothText) == "string" then
+        data.customBoothText = data.customBoothText:gsub("%$BAR", ""):gsub("%$G", "")
+    end
     data.helicopterShowPlatform = nil
     return data
 end
@@ -1097,53 +1100,11 @@ local function escapeRichTextText(value)
     return text
 end
 
-local function getGoalProgressSnapshot()
-    local current = tonumber(getCurrentRaisedAmount()) or 0
-    local goal = math.max(0, tonumber(settings.goalBox) or 0)
-    local safeGoal = math.max(goal, 1)
-    local ratio = math.clamp(current / safeGoal, 0, 1)
-    return current, goal, ratio
-end
-
-local function buildGoalProgressBar()
-    local current, goal, ratio = getGoalProgressSnapshot()
-    local totalSegments = 21
-    local filledSegments = math.clamp(math.floor((ratio * totalSegments) + 0.5), 0, totalSegments)
-
-    if current > 0 and goal > 0 and filledSegments == 0 then
-        filledSegments = 1
-    end
-
-    local emptySegments = math.max(0, totalSegments - filledSegments)
-    return string.format(
-        "<font color=\"rgb(30,144,255)\" size=\"17\">%s</font><font color=\"rgb(70,70,70)\" size=\"17\">%s</font>",
-        string.rep("|", filledSegments),
-        string.rep("|", emptySegments)
-    )
-end
-
 local function buildBoothText()
     local text = tostring(settings.customBoothText or "")
-    local current, goal = getGoalProgressSnapshot()
-
-    text = text:gsub("%$C", formatBoothNumber(current))
-    text = text:gsub("%$G", formatBoothNumber(goal))
-    text = text:gsub("%$BAR", buildGoalProgressBar())
+    text = text:gsub("%$C", formatBoothNumber(getCurrentRaisedAmount()))
     text = text:gsub("%$JPR", "1")
     return text
-end
-
-local function buildGoalBarTemplate()
-    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
-
-    return table.concat({
-        "<font color=\"rgb(30,144,255)\" size=\"22\"><b>",
-        headerText,
-        "</b></font><br/>",
-        "<stroke thickness=\"3\" color=\"rgb(0,0,0)\">",
-        "$BAR",
-        "</stroke>",
-    })
 end
 
 local function hexToColor3(hex)
@@ -1734,17 +1695,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(50, 205, 50),
-    topBarText = Color3.fromRGB(0, 0, 0),
+    topBar = Color3.fromRGB(36, 108, 210),
+    topBarText = Color3.fromRGB(245, 248, 255),
     panel = Color3.fromRGB(0, 0, 0),
-    tabIdle = Color3.fromRGB(12, 12, 12),
-    tabActive = Color3.fromRGB(50, 205, 50),
-    section = Color3.fromRGB(8, 8, 8),
-    control = Color3.fromRGB(15, 15, 15),
+    tabIdle = Color3.fromRGB(16, 13, 28),
+    tabActive = Color3.fromRGB(56, 32, 108),
+    section = Color3.fromRGB(9, 7, 16),
+    control = Color3.fromRGB(18, 15, 30),
     controlText = Color3.fromRGB(235, 235, 235),
-    subtleText = Color3.fromRGB(150, 150, 150),
-    accent = Color3.fromRGB(50, 205, 50),
-    stroke = Color3.fromRGB(35, 35, 35),
+    subtleText = Color3.fromRGB(170, 166, 190),
+    accent = Color3.fromRGB(84, 142, 255),
+    stroke = Color3.fromRGB(48, 38, 74),
 }
 
 local main = Instance.new("Frame")
@@ -1808,6 +1769,40 @@ topBar.BorderSizePixel = 0
 topBar.Parent = main
 
 do
+    local topCorner = Instance.new("UICorner")
+    topCorner.CornerRadius = UDim.new(0, 11)
+    topCorner.Parent = topBar
+
+    local topGradient = Instance.new("UIGradient")
+    topGradient.Rotation = 18
+    topGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 92, 210)),
+        ColorSequenceKeypoint.new(0.42, Color3.fromRGB(80, 46, 170)),
+        ColorSequenceKeypoint.new(0.72, Color3.fromRGB(24, 26, 76)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 8, 28)),
+    })
+    topGradient.Parent = topBar
+
+    task.spawn(function()
+        while topBar.Parent do
+            local forward = TweenService:Create(
+                topGradient,
+                TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Offset = Vector2.new(1, 0), Rotation = 42}
+            )
+            forward:Play()
+            forward.Completed:Wait()
+
+            local backward = TweenService:Create(
+                topGradient,
+                TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                {Offset = Vector2.new(-1, 0), Rotation = -6}
+            )
+            backward:Play()
+            backward.Completed:Wait()
+        end
+    end)
+
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
@@ -2840,17 +2835,6 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
-    goalBox = function()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    goalBarHeaderText = function()
-        saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
     fontFace = function(value)
         local fontName = tostring(value or defaults.fontFace)
         if not Enum.Font[fontName] then
@@ -3487,34 +3471,10 @@ local function buildSettingsTabs()
     createToggle(boothSection, "Text Update", "textUpdateToggle")
     createTextBox(boothSection, "Text Update Delay (S)", "textUpdateDelay", true)
     createTextBox(boothSection, "Text Color Hex", "hexBox", false)
-    createTextBox(boothSection, "Robux Goal", "goalBox", true)
     local boothTextBox
-    createInfoLabel(boothSection, "Goal Bar Header:")
-    local goalBarHeaderBox = createPlainTextBox(boothSection, "GOAL $G", "goalBarHeaderText", 38, false)
-    createInfoLabel(boothSection, "Use $G here if you want the current goal amount.")
-    createButton(boothSection, "Paste Blue Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-        local nextText = buildGoalBarTemplate()
-        if #nextText > 221 then
-            notify("Goal Bar", "Goal bar template is too long for the booth.", 4, "goal-bar-limit", 1)
-            return
-        end
-        settings.customBoothText = nextText
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Blue goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
-        elseif mode == "local-preview-only" then
-            boothTextBox.Text = nextText
-            notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
-        else
-            notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
-        end
-    end)
     createInfoLabel(boothSection, "Custom Booth Text:")
     boothTextBox = createPlainTextBox(boothSection, "Write the exact booth text here...", "customBoothText", 56, true)
-    createInfoLabel(boothSection, "$C = current | $G = goal | $BAR = goal progress")
+    createInfoLabel(boothSection, "$C = current raised amount")
     createDropdown(boothSection, "Font", "fontFace", boothFontOptions)
     createButton(boothSection, "Update", function()
         local nextText = tostring(boothTextBox.Text or "")
