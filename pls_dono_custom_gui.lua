@@ -376,6 +376,8 @@ local defaults = {
 
     serverHopToggle = true,
     serverHopDelay = 15,
+    populationHopToggle = false,
+    populationHopThreshold = 15,
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
@@ -1340,7 +1342,7 @@ serverHopNow = function()
 
     loadVisitedIds()
 
-    local placeId = 8737602449
+    local placeId = game.PlaceId
     local cursor = nil
     local candidates = {}
     for _ = 1, 3 do
@@ -1732,17 +1734,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(18, 20, 28),
-    topBarText = Color3.fromRGB(232, 236, 245),
-    panel = Color3.fromRGB(12, 14, 20),
-    tabIdle = Color3.fromRGB(25, 28, 38),
-    tabActive = Color3.fromRGB(76, 94, 128),
-    section = Color3.fromRGB(19, 22, 31),
-    control = Color3.fromRGB(28, 32, 44),
-    controlText = Color3.fromRGB(222, 227, 238),
-    subtleText = Color3.fromRGB(150, 157, 176),
-    accent = Color3.fromRGB(136, 154, 194),
-    stroke = Color3.fromRGB(52, 58, 74),
+    topBar = Color3.fromRGB(50, 205, 50),
+    topBarText = Color3.fromRGB(0, 0, 0),
+    panel = Color3.fromRGB(0, 0, 0),
+    tabIdle = Color3.fromRGB(12, 12, 12),
+    tabActive = Color3.fromRGB(50, 205, 50),
+    section = Color3.fromRGB(8, 8, 8),
+    control = Color3.fromRGB(15, 15, 15),
+    controlText = Color3.fromRGB(235, 235, 235),
+    subtleText = Color3.fromRGB(150, 150, 150),
+    accent = Color3.fromRGB(50, 205, 50),
+    stroke = Color3.fromRGB(35, 35, 35),
 }
 
 local main = Instance.new("Frame")
@@ -1796,14 +1798,6 @@ do
     stroke.Thickness = 1
     stroke.Parent = main
 
-    local gradient = Instance.new("UIGradient")
-    gradient.Rotation = 90
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 27, 36)),
-        ColorSequenceKeypoint.new(0.52, Color3.fromRGB(16, 19, 27)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 12, 18)),
-    })
-    gradient.Parent = main
 end
 
 local topBar = Instance.new("Frame")
@@ -1812,21 +1806,6 @@ topBar.Size = UDim2.new(1, 0, 0, 30)
 topBar.BackgroundColor3 = THEME.topBar
 topBar.BorderSizePixel = 0
 topBar.Parent = main
-
-do
-    local topCorner = Instance.new("UICorner")
-    topCorner.CornerRadius = UDim.new(0, 11)
-    topCorner.Parent = topBar
-
-    local topGradient = Instance.new("UIGradient")
-    topGradient.Rotation = 0
-    topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(44, 48, 62)),
-        ColorSequenceKeypoint.new(0.55, Color3.fromRGB(28, 31, 42)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 20, 29)),
-    })
-    topGradient.Parent = topBar
-end
 
 do
     local title = Instance.new("TextLabel")
@@ -2146,7 +2125,7 @@ local function createToggle(parent, text, key)
         local enabled = settings[key] == true
         btn.Text = enabled and "x" or ""
         btn.BackgroundColor3 = enabled and THEME.accent or THEME.control
-        btn.TextColor3 = enabled and Color3.fromRGB(19, 11, 21) or THEME.controlText
+        btn.TextColor3 = enabled and Color3.fromRGB(0, 0, 0) or THEME.controlText
     end
 
     applyState()
@@ -3611,6 +3590,8 @@ do
     local serverSection = createSection(serverTab, "Serverhop Settings")
     createToggle(serverSection, "Auto Server Hop", "serverHopToggle")
     createTextBox(serverSection, "Server Hop Delay (Minutes)", "serverHopDelay", true)
+    createToggle(serverSection, "Hop When Server Is Small", "populationHopToggle")
+    createTextBox(serverSection, "Small Server Threshold", "populationHopThreshold", true)
     createTextBox(serverSection, "Min Players in Server", "minPlayerCount", true)
     createTextBox(serverSection, "Max Players in Server", "maxPlayerCount", true)
     createToggle(serverSection, "Mod Evader", "modEvader")
@@ -3690,13 +3671,17 @@ end)
 task.spawn(function()
     local lastPopulationHopTick = 0
     while task.wait(1) do
-        task.wait(9)
-        local playerCount = #Players:GetPlayers()
-        local threshold = 15
-        if playerCount < threshold and (tick() - lastPopulationHopTick) > 10 then
+        if settings.populationHopToggle then
+            task.wait(9)
+            local playerCount = #Players:GetPlayers()
+            local threshold = math.max(1, tonumber(settings.populationHopThreshold) or 15)
+            if playerCount < threshold and (tick() - lastPopulationHopTick) > 10 then
+                lastPopulationHopTick = tick()
+                notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
+                requestServerHop("population-hop")
+            end
+        else
             lastPopulationHopTick = tick()
-            notify("Server Hop", ("Server has %d players (below %d). Hopping..."):format(playerCount, threshold), 5, "population-hop", 6)
-            requestServerHop("population-hop")
         end
     end
 end)
