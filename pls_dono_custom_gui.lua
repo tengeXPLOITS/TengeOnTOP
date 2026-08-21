@@ -1002,7 +1002,14 @@ local function sendDonationWebhook(amount, donorInfo)
 
         local embed = {
             color = 0x1E90FF,
-            title = "Donation Stats",
+            title = LocalPlayer.Name .. " just got donated!",
+            description = string.format(
+                "**%d R$** by **%s**\n- After Tax: %d R$\n- Total Raised: %d R$",
+                tonumber(amount) or 0,
+                donorLabel,
+                taxed,
+                getCurrentRaisedAmount()
+            ),
             author = {
                 name = donorLabel,
                 url = latestUserId > 0 and ("https://www.roblox.com/users/%d/profile"):format(latestUserId) or donorProfileUrl,
@@ -1697,15 +1704,15 @@ gui.Parent = GuiParent
 local THEME = {
     topBar = Color3.fromRGB(36, 108, 210),
     topBarText = Color3.fromRGB(245, 248, 255),
-    panel = Color3.fromRGB(0, 0, 0),
-    tabIdle = Color3.fromRGB(16, 13, 28),
-    tabActive = Color3.fromRGB(56, 32, 108),
-    section = Color3.fromRGB(9, 7, 16),
-    control = Color3.fromRGB(18, 15, 30),
-    controlText = Color3.fromRGB(235, 235, 235),
-    subtleText = Color3.fromRGB(170, 166, 190),
-    accent = Color3.fromRGB(84, 142, 255),
-    stroke = Color3.fromRGB(48, 38, 74),
+    panel = Color3.fromRGB(48, 48, 48),
+    tabIdle = Color3.fromRGB(66, 66, 66),
+    tabActive = Color3.fromRGB(96, 96, 96),
+    section = Color3.fromRGB(58, 58, 58),
+    control = Color3.fromRGB(78, 78, 78),
+    controlText = Color3.fromRGB(245, 245, 245),
+    subtleText = Color3.fromRGB(205, 205, 205),
+    accent = Color3.fromRGB(145, 145, 145),
+    stroke = Color3.fromRGB(112, 112, 112),
 }
 
 local main = Instance.new("Frame")
@@ -3236,8 +3243,8 @@ local function createMessageDropdown(parent, text, key, fallback)
     local saveBtn = Instance.new("TextButton")
     saveBtn.Size = UDim2.new(0.5, -3, 0, 24)
     saveBtn.Position = UDim2.new(0, 0, 0, 146)
-    saveBtn.BackgroundColor3 = THEME.topBar
-    saveBtn.TextColor3 = THEME.topBarText
+    saveBtn.BackgroundColor3 = THEME.control
+    saveBtn.TextColor3 = THEME.controlText
     saveBtn.Font = Enum.Font.GothamSemibold
     saveBtn.TextSize = 11
     saveBtn.Text = "Save"
@@ -3331,8 +3338,8 @@ end
 local function createButton(parent, text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 104, 0, 23)
-    btn.BackgroundColor3 = THEME.topBar
-    btn.TextColor3 = THEME.topBarText
+    btn.BackgroundColor3 = THEME.control
+    btn.TextColor3 = THEME.controlText
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 11
     btn.Text = text
@@ -3514,17 +3521,6 @@ local function buildSettingsTabs()
         createToggle(mainSection, "Die After Landing", "helicopterDieAfterLanding")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
-        createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
-        createButton(mainSection, "Test Donation", function()
-            local stat = getRaisedStatObject()
-            local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
-            if stat and type(stat.Value) == "number" then
-                stat.Value += amount
-                notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono", 1)
-            else
-                notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
-            end
-        end)
     end
 
     do
@@ -3541,6 +3537,15 @@ local function buildSettingsTabs()
     local webhookSection = createSection(webhookTab, "Webhook Settings")
     createToggle(webhookSection, "Webhook Enabled", "webhookToggle")
     createTextBox(webhookSection, "Webhook URL", "webhookBox", false)
+    createButton(webhookSection, "Test Webhook", function()
+        local url = tostring(settings.webhookBox or ""):match("%S+")
+        if url and url ~= "" then
+            postWebhookJson(url, {content = "PLS DONATE webhook works!"})
+            notify("Webhook", "Test sent.", 3, "webhook-test", 1)
+        else
+            notify("Webhook", "Enter a webhook URL first.", 3, "webhook-test-missing", 1)
+        end
+    end)
     createToggle(webhookSection, "Webhook After Serverhop", "webhookAfterSH")
     createToggle(webhookSection, "Ping Everyone", "pingEveryone")
     createTextBox(webhookSection, "Ping Above Donation", "pingAboveDono", true)
@@ -3687,31 +3692,30 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    local raisedObj = getRaisedStatObject()
-    if not raisedObj then
+local lastDonationActionTick = 0
+local lastDonationActionAmount = 0
+
+local function handleDonation(amount, donorInfo)
+    amount = tonumber(amount) or 0
+    if amount <= 0 then
         return
     end
 
-    local lastRaised = tonumber(raisedObj.Value) or 0
+    local now = tick()
+    if amount == lastDonationActionAmount and now - lastDonationActionTick <= 2 then
+        return
+    end
+    lastDonationActionAmount = amount
+    lastDonationActionTick = now
 
-    raisedObj.Changed:Connect(function()
-        local current = tonumber(raisedObj.Value) or 0
-        local delta = current - lastRaised
-        if delta <= 0 then
-            lastRaised = current
-            return
-        end
-
-        lastRaised = current
-        markDonationForHopTimer(delta)
+        markDonationForHopTimer(amount)
         sendChatMessage(math.random(2) == 1 and "/e wave" or "/e cheer")
 
         if settings.spinSet then
             local spin = getSpinMover()
             if spin then
                 local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-                local averageDelta = delta / 3
+                local averageDelta = amount / 3
                 local nextVelocity = (averageDelta * multiplier) + spin.AngularVelocity.Y
                 spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
             else
@@ -3720,12 +3724,12 @@ task.spawn(function()
         end
 
         if settings.helicopterEnabled then
-            performHelicopterDonationSequence(delta)
+            performHelicopterDonationSequence(amount)
         end
 
         if settings.animSpeedPerRobux then
             local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
-            local increasedBoost = donationAnimSpeedBoost + (delta * multiplier)
+            local increasedBoost = donationAnimSpeedBoost + (amount * multiplier)
             local rawBoost = math.floor((increasedBoost * 100) + 0.5) / 100
             local maxBoost = math.max(0, 1000 - math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100))
             local reachedCap = rawBoost >= maxBoost and maxBoost > 0
@@ -3744,13 +3748,44 @@ task.spawn(function()
             end
         end
 
-        sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
+        sendDonationWebhook(amount, donorInfo or consumeRecentDonationDonorInfo(amount))
 
         if settings.autoThanks then
             task.spawn(function()
                 task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
                 sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
             end)
+        end
+end
+
+pcall(function()
+    local vfxObjects = ReplicatedStorage:WaitForChild("VFXObjects", 10)
+    local createVfx = vfxObjects and vfxObjects:WaitForChild("CreateVfx", 10)
+    if createVfx and createVfx:IsA("RemoteEvent") then
+        createVfx.OnClientEvent:Connect(function(effectName, _, recipientCharacter, donationAmount)
+            if effectName ~= "GiveCurrency" or recipientCharacter ~= LocalPlayer.Character then
+                return
+            end
+
+            handleDonation(tonumber(donationAmount) or 1, getNearestPlayerInfo())
+        end)
+    end
+end)
+
+task.spawn(function()
+    local raisedObj = getRaisedStatObject()
+    if not raisedObj then
+        return
+    end
+
+    local lastRaised = tonumber(raisedObj.Value) or 0
+
+    raisedObj.Changed:Connect(function()
+        local current = tonumber(raisedObj.Value) or 0
+        local delta = current - lastRaised
+        lastRaised = current
+        if delta > 0 then
+            handleDonation(delta)
         end
     end)
 end)
