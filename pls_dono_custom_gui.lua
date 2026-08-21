@@ -1702,7 +1702,7 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(36, 108, 210),
+    topBar = Color3.fromRGB(56, 56, 56),
     topBarText = Color3.fromRGB(245, 248, 255),
     panel = Color3.fromRGB(48, 48, 48),
     tabIdle = Color3.fromRGB(66, 66, 66),
@@ -1717,15 +1717,15 @@ local THEME = {
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 620, 0, 430)
+main.Size = UDim2.new(0, 470, 0, 540)
 main.Position = UDim2.fromOffset(220, 120)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = false
 
-local expandedWidth = 620
-local expandedHeight = 430
+local expandedWidth = 470
+local expandedHeight = 540
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
@@ -1737,12 +1737,12 @@ end
 
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
-    expandedWidth = math.clamp(math.floor(viewport.X - 30), 340, 620)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 280, 430)
+    expandedWidth = math.clamp(math.floor(viewport.X - 30), 340, 470)
+    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 280, 540)
 
     if not UserInputService.TouchEnabled then
-        expandedWidth = math.max(expandedWidth, 500)
-        expandedHeight = math.max(expandedHeight, 330)
+        expandedWidth = math.max(expandedWidth, 470)
+        expandedHeight = math.max(expandedHeight, 500)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -1779,36 +1779,6 @@ do
     local topCorner = Instance.new("UICorner")
     topCorner.CornerRadius = UDim.new(0, 11)
     topCorner.Parent = topBar
-
-    local topGradient = Instance.new("UIGradient")
-    topGradient.Rotation = 18
-    topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 92, 210)),
-        ColorSequenceKeypoint.new(0.42, Color3.fromRGB(80, 46, 170)),
-        ColorSequenceKeypoint.new(0.72, Color3.fromRGB(24, 26, 76)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 8, 28)),
-    })
-    topGradient.Parent = topBar
-
-    task.spawn(function()
-        while topBar.Parent do
-            local forward = TweenService:Create(
-                topGradient,
-                TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                {Offset = Vector2.new(1, 0), Rotation = 42}
-            )
-            forward:Play()
-            forward.Completed:Wait()
-
-            local backward = TweenService:Create(
-                topGradient,
-                TweenInfo.new(4.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
-                {Offset = Vector2.new(-1, 0), Rotation = -6}
-            )
-            backward:Play()
-            backward.Completed:Wait()
-        end
-    end)
 
     local title = Instance.new("TextLabel")
     title.Name = "Title"
@@ -1866,13 +1836,6 @@ do
     tabLayout.Padding = UDim.new(0, 4)
     tabLayout.Parent = tabHolder
 
-    local tabUnderline = Instance.new("Frame")
-    tabUnderline.Name = "TabUnderline"
-    tabUnderline.Size = UDim2.new(1, -10, 0, 1)
-    tabUnderline.Position = UDim2.new(0, 5, 0, 29)
-    tabUnderline.BackgroundColor3 = THEME.accent
-    tabUnderline.BorderSizePixel = 0
-    tabUnderline.Parent = body
 end
 
 local pages = Instance.new("Frame")
@@ -3521,6 +3484,17 @@ local function buildSettingsTabs()
         createToggle(mainSection, "Die After Landing", "helicopterDieAfterLanding")
         createToggle(mainSection, "1R$= +1 Spin Speed", "spinSet")
         createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
+        createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
+        createButton(mainSection, "Test Donation", function()
+            local stat = getRaisedStatObject()
+            local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
+            if stat and type(stat.Value) == "number" then
+                stat.Value += amount
+                notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono", 1)
+            else
+                notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
+            end
+        end)
     end
 
     do
