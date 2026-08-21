@@ -1702,22 +1702,22 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(56, 56, 56),
+    topBar = Color3.fromRGB(0, 128, 0),
     topBarText = Color3.fromRGB(245, 248, 255),
-    panel = Color3.fromRGB(48, 48, 48),
-    tabIdle = Color3.fromRGB(66, 66, 66),
-    tabActive = Color3.fromRGB(96, 96, 96),
-    section = Color3.fromRGB(58, 58, 58),
-    control = Color3.fromRGB(78, 78, 78),
+    panel = Color3.fromRGB(18, 18, 18),
+    tabIdle = Color3.fromRGB(42, 42, 42),
+    tabActive = Color3.fromRGB(0, 100, 0),
+    section = Color3.fromRGB(29, 29, 29),
+    control = Color3.fromRGB(55, 55, 55),
     controlText = Color3.fromRGB(245, 245, 245),
-    subtleText = Color3.fromRGB(205, 205, 205),
-    accent = Color3.fromRGB(145, 145, 145),
-    stroke = Color3.fromRGB(112, 112, 112),
+    subtleText = Color3.fromRGB(190, 190, 190),
+    accent = Color3.fromRGB(0, 100, 0),
+    stroke = Color3.fromRGB(68, 68, 68),
 }
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 470, 0, 540)
+main.Size = UDim2.new(0, 470, 0, 460)
 main.Position = UDim2.fromOffset(220, 120)
 main.BackgroundColor3 = THEME.panel
 main.BorderSizePixel = 0
@@ -1725,7 +1725,7 @@ main.Parent = gui
 main.Visible = false
 
 local expandedWidth = 470
-local expandedHeight = 540
+local expandedHeight = 460
 
 local function getViewportSize()
     local camera = workspace.CurrentCamera
@@ -1738,11 +1738,11 @@ end
 local function applyResponsiveSize(centerOnApply)
     local viewport = getViewportSize()
     expandedWidth = math.clamp(math.floor(viewport.X - 30), 340, 470)
-    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 280, 540)
+    expandedHeight = math.clamp(math.floor(viewport.Y - 50), 280, 460)
 
     if not UserInputService.TouchEnabled then
         expandedWidth = math.max(expandedWidth, 470)
-        expandedHeight = math.max(expandedHeight, 500)
+        expandedHeight = math.max(expandedHeight, 430)
     end
 
     main.Size = UDim2.new(0, expandedWidth, 0, expandedHeight)
@@ -3486,13 +3486,10 @@ local function buildSettingsTabs()
         createTextBox(mainSection, "Spin Speed Multiplier", "spinSpeedMultiplier", true)
         createTextBox(mainSection, "Test Donation Amount (R$)", "testDonationAmount", true)
         createButton(mainSection, "Test Donation", function()
-            local stat = getRaisedStatObject()
             local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
-            if stat and type(stat.Value) == "number" then
-                stat.Value += amount
-                notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono", 1)
-            else
-                notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
+            if triggerTestDonation then
+                triggerTestDonation(amount)
+                notify("Test Donation", ("Simulated %d R$ donation without changing Raised."):format(amount), 3, "test-dono", 1)
             end
         end)
     end
@@ -3668,6 +3665,7 @@ end)
 
 local lastDonationActionTick = 0
 local lastDonationActionAmount = 0
+local triggerTestDonation
 
 local function handleDonation(amount, donorInfo)
     amount = tonumber(amount) or 0
@@ -3730,6 +3728,10 @@ local function handleDonation(amount, donorInfo)
                 sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
             end)
         end
+end
+
+triggerTestDonation = function(amount)
+    handleDonation(amount, getNearestPlayerInfo())
 end
 
 pcall(function()
