@@ -3677,14 +3677,14 @@ local lastDonationActionTick = 0
 local lastDonationActionAmount = 0
 local triggerTestDonation
 
-local function handleDonation(amount, donorInfo)
+local function handleDonation(amount, donorInfo, force)
     amount = tonumber(amount) or 0
     if amount <= 0 then
         return
     end
 
     local now = tick()
-    if amount == lastDonationActionAmount and now - lastDonationActionTick <= 2 then
+    if not force and amount == lastDonationActionAmount and now - lastDonationActionTick <= 2 then
         return
     end
     lastDonationActionAmount = amount
@@ -3741,7 +3741,11 @@ local function handleDonation(amount, donorInfo)
 end
 
 triggerTestDonation = function(amount)
-    handleDonation(amount, getNearestPlayerInfo())
+    handleDonation(amount, {
+        name = "TestDonor",
+        displayName = "Test Donor",
+        userId = 0,
+    }, true)
 end
 
 pcall(function()
