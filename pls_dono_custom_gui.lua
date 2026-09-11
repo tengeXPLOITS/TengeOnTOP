@@ -24,6 +24,7 @@ end
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
+local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -1195,11 +1196,15 @@ updateBoothTextNow = function()
 end
 
 local function choosePlaceId()
-    if settings.vcServerHopToggle then
-        return 8943844393
-    else
-        return 8737602449
+    if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
+        return EXTRA_PLS_DONATE_PLACE_ID
     end
+
+    if settings.vcServerHopToggle then
+        return VC_PLS_DONATE_PLACE_ID
+    end
+
+    return DEFAULT_PLS_DONATE_PLACE_ID
 end
 
 serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride)
@@ -1661,22 +1666,9 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = "PLS DONATE ANIMOSITY"
+    title.Text = tostring(game.Name or "PLS DONATE")
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
-
-    local subtitle = Instance.new("TextLabel")
-    subtitle.Name = "Subtitle"
-    subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -48, 0, 11)
-    subtitle.Position = UDim2.new(0, 32, 0, 18)
-    subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.TextColor3 = THEME.subtleText
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 10
-    subtitle.Text = "developed by mattyB"
-    subtitle.Parent = topBar
-    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
