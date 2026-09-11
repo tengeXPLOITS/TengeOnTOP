@@ -689,11 +689,20 @@ local function performHttpRequest(options)
     if syn and syn.request then
         return syn.request(options)
     end
+    if http and http.request then
+        return http.request(options)
+    end
     if request then
         return request(options)
     end
     if http_request then
         return http_request(options)
+    end
+    if fluxus and fluxus.request then
+        return fluxus.request(options)
+    end
+    if type(httprequest) == "function" then
+        return httprequest(options)
     end
     return nil
 end
@@ -974,11 +983,15 @@ local function sendDonationWebhook(amount, donorInfo)
         and ("Donation received from %s. Gathering info to show stats..."):format(donorLabel)
         or "Donation received. Gathering info to show stats..."
 
-    postWebhookJson(url, {
+    local initialSent = postWebhookJson(url, {
         username = "PLS DONATE",
         avatar_url = donorAvatarUrl or localAvatarUrl,
         content = initialMessage,
     })
+
+    if not initialSent then
+        notify("Webhook", "Request failed or no HTTP request function is available.", 5, "webhook-request-failed", 2)
+    end
 
     task.spawn(function()
         local latestUserId = donorUserId
@@ -3500,6 +3513,8 @@ local function buildSettingsTabs()
             if triggerTestDonation then
                 triggerTestDonation(amount)
                 notify("Test Donation", ("Simulated %d R$ donation without changing Raised."):format(amount), 3, "test-dono", 1)
+            else
+                notify("Test Donation", "Donation handler is not ready.", 5, "test-dono-not-ready", 2)
             end
         end)
     end
