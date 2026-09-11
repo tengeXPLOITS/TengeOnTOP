@@ -1493,23 +1493,23 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(92, 97, 108),
-    topBarText = Color3.fromRGB(248, 249, 252),
-    panel = Color3.fromRGB(31, 34, 40),
-    tabIdle = Color3.fromRGB(82, 87, 98),
-    tabActive = Color3.fromRGB(124, 130, 142),
-    section = Color3.fromRGB(43, 47, 55),
-    control = Color3.fromRGB(58, 63, 73),
+    topBar = Color3.fromRGB(82, 84, 87),
+    topBarText = Color3.fromRGB(246, 246, 246),
+    panel = Color3.fromRGB(20, 21, 22),
+    tabIdle = Color3.fromRGB(55, 57, 60),
+    tabActive = Color3.fromRGB(77, 79, 83),
+    section = Color3.fromRGB(28, 29, 31),
+    control = Color3.fromRGB(47, 49, 52),
     controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(198, 202, 211),
-    accent = Color3.fromRGB(170, 181, 198),
-    stroke = Color3.fromRGB(124, 130, 142),
+    subtleText = Color3.fromRGB(190, 190, 190),
+    accent = Color3.fromRGB(78, 214, 103),
+    stroke = Color3.fromRGB(71, 73, 76),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(210, 218, 232)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(158, 168, 184)
+local GLOW_COLOR = Color3.fromRGB(210, 210, 210)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(150, 150, 150)
 local GLOW_TRANSPARENCY = 0.84
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
@@ -1629,9 +1629,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 56, 64)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(41, 45, 53)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(31, 34, 40)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 30, 32)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(22, 23, 24)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(17, 18, 19)),
     })
     gradient.Parent = main
 end
@@ -1649,9 +1649,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(110, 116, 130)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(94, 100, 114)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(78, 84, 98)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(92, 94, 98)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(79, 81, 84)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(67, 69, 72)),
     })
     topGradient.Parent = topBar
 end
