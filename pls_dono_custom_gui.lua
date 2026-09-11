@@ -137,13 +137,16 @@ end
 
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
+
+    task.delay(0.2, function()
+        if serverHopNow then
+            serverHopNow("booth-update", 24, 25, 1)
+        end
+    end)
+
     pcall(function()
         LocalPlayer:Kick(localized("rejoinMessage"))
     end)
-    
-    if serverHopNow then
-        serverHopNow("booth-update", 24, 25)
-    end
 end
 
 local GuiParent = resolveGuiParent()
@@ -1207,14 +1210,17 @@ local function choosePlaceId()
     return DEFAULT_PLS_DONATE_PLACE_ID
 end
 
-serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride)
+serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAttempt)
+    local attemptNumber = math.max(1, tonumber(retryAttempt) or 1)
     if serverHopIsActive then
         return true
     end
 
     serverHopIsActive = true
     task.spawn(function()
-        while true do
+        local maxAttempts = 12
+
+        for attempt = attemptNumber, maxAttempts do
             local placeId = choosePlaceId()
             local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 23
             local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
@@ -1234,6 +1240,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride)
                 end
             end
 
+            local chosen = nil
             if body then
                 local servers = {}
                 for _, server in ipairs(body.data) do
@@ -1244,24 +1251,42 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride)
                 end
 
                 if #servers > 0 then
-                    local selectedServer = servers[math.random(1, #servers)]
-                    local teleported = false
-                    pcall(function()
-                        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                        teleported = true
-                    end)
-
-                    if teleported then
-                        markPendingFarmHop(reason, placeId, selectedServer.id)
-                        serverHopIsActive = false
-                        return
-                    end
+                    chosen = servers[math.random(1, #servers)]
                 end
             end
 
-            task.wait(0.35)
+            if chosen then
+                local teleported = false
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, chosen.id, LocalPlayer)
+                    teleported = true
+                end)
+
+                if teleported then
+                    markPendingFarmHop(reason, placeId, chosen.id)
+                    serverHopIsActive = false
+                    return
+                end
+            end
+
+            if attempt < maxAttempts then
+                notify("Server Hop", ("Retrying hop (%d/%d)..."):format(attempt, maxAttempts), 2, "server-hop-retry", 0.5)
+                task.wait(1.5 + (attempt * 0.5))
+            else
+                serverHopIsActive = false
+                notify("Server Hop", "No valid server found. Retrying shortly...", 5, "server-hop-fail", 3)
+                task.delay(3, function()
+                    if serverHopNow then
+                        serverHopNow(reason, minPlayersOverride, maxPlayersOverride, 1)
+                    end
+                end)
+                return
+            end
         end
+
+        serverHopIsActive = false
     end)
+
     return true
 end
 
@@ -2046,8 +2071,8 @@ local function createToggle(parent, text, key)
     local function applyState()
         local enabled = settings[key] == true
         btn.Text = enabled and "✓" or ""
-        btn.BackgroundColor3 = enabled and THEME.accent or THEME.control
-        btn.TextColor3 = enabled and Color3.fromRGB(19, 11, 21) or THEME.controlText
+        btn.BackgroundColor3 = enabled and Color3.fromRGB(92, 96, 102) or THEME.control
+        btn.TextColor3 = enabled and Color3.fromRGB(255, 255, 255) or THEME.controlText
     end
 
     applyState()
