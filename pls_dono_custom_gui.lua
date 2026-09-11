@@ -142,7 +142,7 @@ local function rejoinAfterUserBoothUpdate()
     end)
     
     if serverHopNow then
-        serverHopNow("booth-update", 26, 27)
+        serverHopNow("booth-update", 24, 25)
     end
 end
 
@@ -3385,6 +3385,16 @@ end
 end
 
 buildSettingsTabs()
+
+do
+    local targetPosition = main.Position
+    main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
+    TweenService:Create(
+        main,
+        TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        {Position = targetPosition}
+    ):Play()
+end
 
 task.spawn(function()
     task.wait(2)
