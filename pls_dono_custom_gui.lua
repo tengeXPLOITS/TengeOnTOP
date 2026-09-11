@@ -1493,17 +1493,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(28, 164, 52),
-    topBarText = Color3.fromRGB(248, 255, 248),
-    panel = Color3.fromRGB(23, 23, 25),
-    tabIdle = Color3.fromRGB(72, 72, 76),
-    tabActive = Color3.fromRGB(96, 96, 102),
-    section = Color3.fromRGB(18, 18, 20),
-    control = Color3.fromRGB(31, 31, 34),
+    topBar = Color3.fromRGB(62, 67, 77),
+    topBarText = Color3.fromRGB(245, 247, 250),
+    panel = Color3.fromRGB(23, 24, 28),
+    tabIdle = Color3.fromRGB(55, 59, 68),
+    tabActive = Color3.fromRGB(88, 95, 108),
+    section = Color3.fromRGB(18, 19, 23),
+    control = Color3.fromRGB(36, 39, 46),
     controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(181, 191, 181),
-    accent = Color3.fromRGB(57, 196, 76),
-    stroke = Color3.fromRGB(66, 66, 71),
+    subtleText = Color3.fromRGB(180, 187, 198),
+    accent = Color3.fromRGB(104, 166, 196),
+    stroke = Color3.fromRGB(77, 83, 95),
 }
 
 local SHELL_CORNER_RADIUS = 8
@@ -1649,9 +1649,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 196, 71)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(31, 171, 56)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(22, 139, 44)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(78, 84, 97)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(62, 68, 80)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(48, 53, 64)),
     })
     topGradient.Parent = topBar
 end
@@ -1675,7 +1675,7 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(24, 132, 41)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(76, 82, 94)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
@@ -1707,7 +1707,8 @@ tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 2
-tabHolder.ScrollBarImageColor3 = THEME.accent
+tabHolder.ScrollBarImageColor3 = THEME.stroke
+tabHolder.ScrollBarImageTransparency = 0.15
 tabHolder.AutomaticCanvasSize = Enum.AutomaticSize.X
 tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
 tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
@@ -1830,7 +1831,7 @@ local function setMinimized(state)
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
     minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(21, 120, 38) or Color3.fromRGB(24, 132, 41)
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(58, 64, 75) or Color3.fromRGB(76, 82, 94)
 
     minimizeTween = TweenService:Create(
         main,
