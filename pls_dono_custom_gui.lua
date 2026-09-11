@@ -802,7 +802,7 @@ local function getCurrentRaisedAmount()
         return raised
     end
 
-    local valueObj = leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("Donated")
+    local valueObj = leaderstats:FindFirstChild("Raised", true)
     if valueObj and type(valueObj.Value) == "number" then
         raised = valueObj.Value
     end
@@ -1081,7 +1081,17 @@ local function getRaisedStatObject()
     if not leaderstats then
         return nil
     end
-    return leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("Donated") or leaderstats:WaitForChild("Raised", 8)
+
+    local raised = leaderstats:FindFirstChild("Raised", true)
+    if raised then
+        return raised
+    end
+
+    local createdRaised = Instance.new("IntValue")
+    createdRaised.Name = "Raised"
+    createdRaised.Value = 0
+    createdRaised.Parent = leaderstats
+    return createdRaised
 end
 
 local function formatBoothNumber(n)
@@ -3749,19 +3759,44 @@ pcall(function()
 end)
 
 task.spawn(function()
-    local raisedObj = getRaisedStatObject()
-    if not raisedObj then
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:WaitForChild("leaderstats", 12)
+    if not leaderstats then
         return
     end
 
-    local lastRaised = tonumber(raisedObj.Value) or 0
+    local raisedConnection
+    local descendantConnection
+    local lastRaised = 0
 
-    raisedObj.Changed:Connect(function()
-        local current = tonumber(raisedObj.Value) or 0
-        local delta = current - lastRaised
-        lastRaised = current
-        if delta > 0 then
-            handleDonation(delta)
+    local function bindRaisedObject(raisedObj)
+        if not raisedObj or not raisedObj:IsA("IntValue") then
+            return
+        end
+
+        if raisedConnection then
+            raisedConnection:Disconnect()
+        end
+
+        lastRaised = tonumber(raisedObj.Value) or 0
+        raisedConnection = raisedObj.Changed:Connect(function()
+            local current = tonumber(raisedObj.Value) or 0
+            local delta = current - lastRaised
+            lastRaised = current
+            if delta > 0 then
+                handleDonation(delta)
+            end
+        end)
+    end
+
+    local raisedObj = leaderstats:FindFirstChild("Raised", true)
+    if not raisedObj then
+        raisedObj = getRaisedStatObject()
+    end
+    bindRaisedObject(raisedObj)
+
+    descendantConnection = leaderstats.DescendantAdded:Connect(function(descendant)
+        if descendant.Name == "Raised" and descendant:IsA("IntValue") then
+            bindRaisedObject(descendant)
         end
     end)
 end)
