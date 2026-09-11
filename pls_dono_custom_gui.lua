@@ -15,7 +15,6 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
-local LogService = game:GetService("LogService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -37,9 +36,7 @@ end
 local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
 local avatarThumbnailCache = {}
-local recentDonationLogs = {}
 local getNearestPlayerInfo
-local observedDonationChatChannels = {}
 
 local function notify(title, text, duration, dedupeKey, cooldown)
     local now = tick()
@@ -87,215 +84,6 @@ local function normalizeMessageList(value, fallback)
     return normalized
 end
 
-local function normalizePlayerText(value)
-    return trimText(value):gsub("^@", ""):lower()
-end
-
-local function textMatchesLocalPlayer(value)
-    local normalized = normalizePlayerText(value)
-    if normalized == "" then
-        return false
-    end
-
-    local localName = normalizePlayerText(LocalPlayer.Name)
-    local localDisplayName = normalizePlayerText(LocalPlayer.DisplayName)
-    return normalized == localName or normalized == localDisplayName
-end
-
-local function resolvePlayerInfoFromText(value)
-    local normalized = normalizePlayerText(value)
-    if normalized == "" then
-        return nil
-    end
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and normalizePlayerText(pl.Name) == normalized then
-            return {
-                name = tostring(pl.Name or "Unknown"),
-                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
-                userId = tonumber(pl.UserId) or 0,
-            }
-        end
-    end
-
-    for _, pl in ipairs(Players:GetPlayers()) do
-        if pl ~= LocalPlayer and normalizePlayerText(pl.DisplayName) == normalized then
-            return {
-                name = tostring(pl.Name or "Unknown"),
-                displayName = tostring(pl.DisplayName or pl.Name or "Unknown"),
-                userId = tonumber(pl.UserId) or 0,
-            }
-        end
-    end
-
-    return {
-        name = trimText(value),
-        displayName = trimText(value),
-        userId = 0,
-    }
-end
-
-local function pruneRecentDonationLogs(now)
-    now = tonumber(now) or tick()
-    for index = #recentDonationLogs, 1, -1 do
-        local entry = recentDonationLogs[index]
-        if not entry or (now - (tonumber(entry.time) or 0)) > 15 then
-            table.remove(recentDonationLogs, index)
-        end
-    end
-end
-
-local function recordDonationEvent(donorText, amountValue, recipientText)
-    donorText = trimText(donorText)
-    recipientText = trimText(recipientText):gsub("[!%.:,;]+$", "")
-    local amount = tonumber(amountValue) or 0
-    if donorText == "" or recipientText == "" or amount <= 0 then
-        return
-    end
-
-    if not textMatchesLocalPlayer(recipientText) then
-        return
-    end
-
-    local now = tick()
-    lastDonationTick = now
-    pruneRecentDonationLogs(now)
-    local normalizedDonor = normalizePlayerText(donorText)
-    for _, entry in ipairs(recentDonationLogs) do
-        local entryDonor = entry and entry.donorInfo and entry.donorInfo.name or ""
-        if entry
-            and tonumber(entry.amount) == amount
-            and normalizePlayerText(entryDonor) == normalizedDonor
-            and (now - (tonumber(entry.time) or 0)) <= 2 then
-            return
-        end
-    end
-
-    table.insert(recentDonationLogs, {
-        amount = amount,
-        donorInfo = resolvePlayerInfoFromText(donorText),
-        time = now,
-    })
-
-    while #recentDonationLogs > 20 do
-        table.remove(recentDonationLogs, 1)
-    end
-end
-
-local function parseDonationMessageText(message)
-    local cleaned = tostring(message or "")
-    if cleaned == "" then
-        return nil
-    end
-
-    cleaned = cleaned:gsub("<[^>]->", "")
-    cleaned = cleaned:gsub("%s+", " ")
-    cleaned = trimText(cleaned)
-
-    local donorText, amountText, recipientText = cleaned:match("^%s*(.-)%s+[Tt][Ii][Pp][Pp][Ee][Dd]%s+([%d,]+)%s+[Tt][Oo]%s+(.+)%s*$")
-    if donorText and amountText and recipientText then
-        return donorText, tonumber((amountText:gsub(",", ""))) or 0, recipientText
-    end
-
-    donorText, amountText, recipientText = cleaned:match("^%s*(.-)%s+[Dd][Oo][Nn][Aa][Tt][Ee][Dd]%s*[^%d]*([%d,]+)%s+[Tt][Oo]%s+(.+)%s*$")
-    if donorText and amountText and recipientText then
-        return donorText, tonumber((amountText:gsub(",", ""))) or 0, recipientText
-    end
-
-    return nil
-end
-
-local function recordDonationLogMessage(message)
-    local donorText, amount, recipientText = parseDonationMessageText(message)
-    if donorText and amount and recipientText then
-        recordDonationEvent(donorText, amount, recipientText)
-    end
-end
-
-local function consumeRecentDonationDonorInfo(amount)
-    pruneRecentDonationLogs()
-
-    local targetAmount = tonumber(amount) or 0
-    if targetAmount > 0 then
-        for index = 1, #recentDonationLogs do
-            local entry = recentDonationLogs[index]
-            if entry and tonumber(entry.amount) == targetAmount then
-                table.remove(recentDonationLogs, index)
-                return entry.donorInfo
-            end
-        end
-    end
-
-    return getNearestPlayerInfo()
-end
-
-pcall(function()
-    LogService.MessageOut:Connect(function(message)
-        recordDonationLogMessage(message)
-    end)
-end)
-
-local function recordDonationChatMessage(message)
-    local text = ""
-    local prefixText = ""
-
-    pcall(function()
-        text = tostring(message.Text or "")
-    end)
-    pcall(function()
-        prefixText = tostring(message.PrefixText or "")
-    end)
-
-    local donorText, amount, recipientText = parseDonationMessageText(text)
-    if donorText and amount and recipientText then
-        recordDonationEvent(donorText, amount, recipientText)
-        return
-    end
-
-    if prefixText ~= "" then
-        donorText, amount, recipientText = parseDonationMessageText(prefixText .. " " .. text)
-        if donorText and amount and recipientText then
-            recordDonationEvent(donorText, amount, recipientText)
-        end
-    end
-end
-
-local function watchDonationChatChannel(channel)
-    if not channel or observedDonationChatChannels[channel] then
-        return
-    end
-
-    local isTextChannel = false
-    pcall(function()
-        isTextChannel = channel:IsA("TextChannel")
-    end)
-    if not isTextChannel then
-        return
-    end
-
-    observedDonationChatChannels[channel] = true
-    pcall(function()
-        channel.MessageReceived:Connect(function(message)
-            recordDonationChatMessage(message)
-        end)
-    end)
-end
-
-pcall(function()
-    local channels = TextChatService:FindFirstChild("TextChannels") or TextChatService:WaitForChild("TextChannels", 10)
-    if not channels then
-        return
-    end
-
-    for _, channel in ipairs(channels:GetChildren()) do
-        watchDonationChatChannel(channel)
-    end
-
-    channels.ChildAdded:Connect(function(channel)
-        watchDonationChatChannel(channel)
-    end)
-end)
-
 local function cloneRef(v)
     if type(cloneref) == "function" then
         return cloneref(v)
@@ -320,6 +108,7 @@ local function resolveGuiParent()
 end
 
 local sendChatMessage
+local serverHopNow
 
 local function queueScriptOnTeleport()
     local queueOnTeleport = (syn and syn.queue_on_teleport)
@@ -347,41 +136,16 @@ end
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
-    local rejoinPending = true
-    local failureConnection
-    local function showKickMessage()
-        if not rejoinPending then
-            return
+    task.defer(function()
+        if serverHopNow then
+            serverHopNow("booth-update")
         end
 
-        rejoinPending = false
-        if failureConnection then
-            failureConnection:Disconnect()
-            failureConnection = nil
-        end
-
-        pcall(function()
-            LocalPlayer:Kick(localized("rejoinMessage"))
+        task.delay(0.75, function()
+            pcall(function()
+                LocalPlayer:Kick(localized("rejoinMessage"))
+            end)
         end)
-    end
-
-    failureConnection = TeleportService.TeleportInitFailed:Connect(function(player)
-        if player == LocalPlayer then
-            showKickMessage()
-        end
-    end)
-
-    task.delay(0.35, function()
-        local requested = pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-
-        if not requested then
-            showKickMessage()
-            return
-        end
-
-        task.delay(15, showKickMessage)
     end)
 end
 
@@ -578,6 +342,7 @@ local languageOptions = {"English", "Spanish"}
 local translations = {
     English = {
         webhookTitle = "@%s has gotten tipped %dR$ by %s, check your balance! 🎉",
+        serverHopTitle = "@%s has serverhopped",
         rejoinMessage = "rejoining server, you updated booth text and your buttons were invis.",
         languageSection = "Language Settings",
         languageLabel = "Language",
@@ -633,6 +398,7 @@ local translations = {
     },
     Spanish = {
         webhookTitle = "@%s ha recibido una propina de %dR$ de %s, revisa tu saldo! 🎉",
+        serverHopTitle = "@%s ha cambiado de servidor",
         rejoinMessage = "reuniendo el servidor, actualizaste el texto del puesto y tus botones no se veian.",
         languageSection = "Configuracion de idioma",
         languageLabel = "Idioma",
@@ -756,7 +522,6 @@ local function boothOwnedByLocalPlayer(ownerText)
     return owner:find(LocalPlayer.DisplayName, 1, true) ~= nil or owner:find(LocalPlayer.Name, 1, true) ~= nil
 end
 
-local serverHopNow
 local requestServerHop
 local updateBoothTextNow
 
@@ -800,7 +565,7 @@ farmSessionStats.botEvaded = math.max(0, tonumber(farmSessionStats.botEvaded) or
 farmSessionStats.modServers = math.max(0, tonumber(farmSessionStats.modServers) or 0)
 farmSessionStats.lastSummaryHopCount = math.max(0, tonumber(farmSessionStats.lastSummaryHopCount) or 0)
 
-local pendingFarmSummaryHopCount
+local pendingFarmHopNotification
 
 local function shouldTrackFarmHop(reason)
     local normalizedReason = tostring(reason or "")
@@ -833,26 +598,33 @@ local function finalizeSuccessfulPendingFarmHop()
     local landedOnExpectedServer = targetServerId == "" or targetServerId == tostring(game.JobId or "")
     local changedServers = fromJobId ~= "" and fromJobId ~= tostring(game.JobId or "")
 
-    if not isFresh or not landedOnExpectedServer or not changedServers or not shouldTrackFarmHop(pendingReason) then
+    if not isFresh or not landedOnExpectedServer or not changedServers then
         return nil
     end
 
-    farmSessionStats.successfulHops += 1
-    if pendingReason == "mod-detection" then
-        farmSessionStats.modServers += 1
+    local summaryHopCount
+    if shouldTrackFarmHop(pendingReason) then
+        farmSessionStats.successfulHops += 1
+        if pendingReason == "mod-detection" then
+            farmSessionStats.modServers += 1
+        end
+
+        if farmSessionStats.successfulHops > 0
+            and farmSessionStats.successfulHops % 100 == 0
+            and farmSessionStats.lastSummaryHopCount < farmSessionStats.successfulHops then
+            farmSessionStats.lastSummaryHopCount = farmSessionStats.successfulHops
+            summaryHopCount = farmSessionStats.successfulHops
+        end
     end
 
-    if farmSessionStats.successfulHops > 0
-        and farmSessionStats.successfulHops % 100 == 0
-        and farmSessionStats.lastSummaryHopCount < farmSessionStats.successfulHops then
-        farmSessionStats.lastSummaryHopCount = farmSessionStats.successfulHops
-        return farmSessionStats.successfulHops
-    end
-
-    return nil
+    return {
+        count = farmSessionStats.successfulHops,
+        reason = pendingReason,
+        summaryCount = summaryHopCount,
+    }
 end
 
-pendingFarmSummaryHopCount = finalizeSuccessfulPendingFarmHop()
+pendingFarmHopNotification = finalizeSuccessfulPendingFarmHop()
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -1132,6 +904,32 @@ local function sendDonationWebhook(amount, donorInfo)
         }},
     })
 end
+
+local function sendServerHopWebhook(hopInfo)
+    if not settings.webhookToggle or type(hopInfo) ~= "table" then
+        return
+    end
+
+    local url = tostring(settings.webhookBox or ""):match("%S+")
+    if not url or url == "" then
+        return
+    end
+
+    postWebhookJson(url, {
+        username = "PLS DONATE",
+        embeds = {{
+            color = 0x3498DB,
+            title = localized("serverHopTitle", tostring(LocalPlayer.Name or "Unknown")),
+            description = string.format(
+                "Server hops this session: **%d**",
+                tonumber(hopInfo.count) or 0
+            ),
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        }},
+    })
+end
+
+sendServerHopWebhook(pendingFarmHopNotification)
 
 
 
@@ -3695,6 +3493,7 @@ task.spawn(function()
         end
 
         lastRaised = current
+        lastDonationTick = tick()
         markDonationForHopTimer(delta)
 
         if settings.spinSet then
@@ -3712,7 +3511,7 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
-        sendDonationWebhook(delta, consumeRecentDonationDonorInfo(delta))
+        sendDonationWebhook(delta, getNearestPlayerInfo())
 
         if settings.autoThanks then
             task.spawn(function()
