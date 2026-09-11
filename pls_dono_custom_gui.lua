@@ -1459,8 +1459,12 @@ requestServerHop = function(reason)
     if now - lastHopTick < hopCooldownSeconds then
         return false
     end
-    lastHopTick = now
-    return serverHopNow(reason)
+
+    local started = serverHopNow(reason)
+    if started then
+        lastHopTick = now
+    end
+    return started
 end
 
 findOwnedBoothSlot = function(boothUiFolder)
@@ -3717,6 +3721,12 @@ local function handleDonation(amount, donorInfo, force)
                 spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
             else
                 applySpinState()
+                spin = getSpinMover()
+                if spin then
+                    local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+                    local averageDelta = amount / 3
+                    spin.AngularVelocity = Vector3.new(0, spin.AngularVelocity.Y + (averageDelta * multiplier), 0)
+                end
             end
         end
 
