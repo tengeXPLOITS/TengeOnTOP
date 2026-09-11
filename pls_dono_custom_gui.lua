@@ -1493,23 +1493,23 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(62, 67, 77),
-    topBarText = Color3.fromRGB(245, 247, 250),
-    panel = Color3.fromRGB(23, 24, 28),
-    tabIdle = Color3.fromRGB(55, 59, 68),
-    tabActive = Color3.fromRGB(88, 95, 108),
-    section = Color3.fromRGB(18, 19, 23),
-    control = Color3.fromRGB(36, 39, 46),
+    topBar = Color3.fromRGB(92, 97, 108),
+    topBarText = Color3.fromRGB(248, 249, 252),
+    panel = Color3.fromRGB(31, 34, 40),
+    tabIdle = Color3.fromRGB(82, 87, 98),
+    tabActive = Color3.fromRGB(124, 130, 142),
+    section = Color3.fromRGB(43, 47, 55),
+    control = Color3.fromRGB(58, 63, 73),
     controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(180, 187, 198),
-    accent = Color3.fromRGB(104, 166, 196),
-    stroke = Color3.fromRGB(77, 83, 95),
+    subtleText = Color3.fromRGB(198, 202, 211),
+    accent = Color3.fromRGB(170, 181, 198),
+    stroke = Color3.fromRGB(124, 130, 142),
 }
 
 local SHELL_CORNER_RADIUS = 8
 local CONTROL_CORNER_RADIUS = 6
-local GLOW_COLOR = Color3.fromRGB(168, 255, 183)
-local SUBTLE_GLOW_COLOR = Color3.fromRGB(96, 180, 108)
+local GLOW_COLOR = Color3.fromRGB(210, 218, 232)
+local SUBTLE_GLOW_COLOR = Color3.fromRGB(158, 168, 184)
 local GLOW_TRANSPARENCY = 0.84
 local SUBTLE_GLOW_TRANSPARENCY = 0.9
 
@@ -1629,9 +1629,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 34, 36)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 24, 26)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 20)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 56, 64)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(41, 45, 53)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(31, 34, 40)),
     })
     gradient.Parent = main
 end
@@ -1649,9 +1649,9 @@ do
     local topGradient = Instance.new("UIGradient")
     topGradient.Rotation = 0
     topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(78, 84, 97)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(62, 68, 80)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(48, 53, 64)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(110, 116, 130)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(94, 100, 114)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(78, 84, 98)),
     })
     topGradient.Parent = topBar
 end
@@ -1915,15 +1915,6 @@ local function createTab(name, buttonText)
     btnStroke.Thickness = 1
     btnStroke.Color = THEME.stroke
     btnStroke.Parent = btn
-
-    local activeBar = Instance.new("Frame")
-    activeBar.Name = "ActiveBar"
-    activeBar.Size = UDim2.new(1, 0, 0, 3)
-    activeBar.Position = UDim2.new(0, 0, 1, -3)
-    activeBar.BackgroundColor3 = THEME.accent
-    activeBar.BorderSizePixel = 0
-    activeBar.Visible = false
-    activeBar.Parent = btn
 
     btn.MouseEnter:Connect(function()
         if activeTab ~= name then
