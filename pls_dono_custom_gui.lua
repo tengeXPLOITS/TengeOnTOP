@@ -1669,6 +1669,19 @@ do
     title.Text = tostring(game.Name or "PLS DONATE")
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Name = "Subtitle"
+    subtitle.BackgroundTransparency = 1
+    subtitle.Size = UDim2.new(1, -48, 0, 11)
+    subtitle.Position = UDim2.new(0, 32, 0, 18)
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.TextColor3 = THEME.subtleText
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 10
+    subtitle.Text = "annoying ass beggars, LMAO"
+    subtitle.Parent = topBar
+    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
@@ -3484,6 +3497,7 @@ task.spawn(function()
         lastRaised = current
         lastDonationTick = tick()
         markDonationForHopTimer(delta)
+        sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
 
         if settings.spinSet then
             local spin = getSpinMover()
