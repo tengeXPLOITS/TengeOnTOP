@@ -1493,20 +1493,20 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(82, 84, 87),
-    topBarText = Color3.fromRGB(246, 246, 246),
-    panel = Color3.fromRGB(20, 21, 22),
-    tabIdle = Color3.fromRGB(55, 57, 60),
-    tabActive = Color3.fromRGB(77, 79, 83),
-    section = Color3.fromRGB(28, 29, 31),
-    control = Color3.fromRGB(47, 49, 52),
-    controlText = Color3.fromRGB(238, 238, 238),
-    subtleText = Color3.fromRGB(190, 190, 190),
-    accent = Color3.fromRGB(78, 214, 103),
-    stroke = Color3.fromRGB(71, 73, 76),
+    topBar = Color3.fromRGB(62, 67, 73),
+    topBarText = Color3.fromRGB(244, 244, 246),
+    panel = Color3.fromRGB(28, 29, 33),
+    tabIdle = Color3.fromRGB(52, 55, 60),
+    tabActive = Color3.fromRGB(70, 74, 81),
+    section = Color3.fromRGB(31, 33, 37),
+    control = Color3.fromRGB(41, 44, 50),
+    controlText = Color3.fromRGB(236, 236, 239),
+    subtleText = Color3.fromRGB(180, 181, 187),
+    accent = Color3.fromRGB(84, 191, 108),
+    stroke = Color3.fromRGB(76, 80, 86),
 }
 
-local SHELL_CORNER_RADIUS = 8
+local SHELL_CORNER_RADIUS = 10
 local CONTROL_CORNER_RADIUS = 6
 local GLOW_COLOR = Color3.fromRGB(210, 210, 210)
 local SUBTLE_GLOW_COLOR = Color3.fromRGB(150, 150, 150)
@@ -1532,6 +1532,7 @@ local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
     btn.TextSize = textSize or 11
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
+    btn.BackgroundTransparency = 0
 end
 
 local function styleTextBox(box, alignment, multiline)
@@ -1561,7 +1562,7 @@ local function createStyledButton(parent, text, size, position, backgroundColor,
     stroke.Parent = btn
 
     createCorner(btn, CONTROL_CORNER_RADIUS)
-    applyTextGlow(btn, GLOW_COLOR, 0.88)
+    applyTextGlow(btn, GLOW_COLOR, 0.9)
     return btn
 end
 
@@ -1878,7 +1879,7 @@ local function setTabVisualState(btn, active)
         return
     end
     btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
-    btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(205, 205, 210)
+    btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(214, 214, 218)
     local activeBar = btn:FindFirstChild("ActiveBar")
     if activeBar then
         activeBar.Visible = active
@@ -1899,15 +1900,15 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 80, 0, 28)
+    btn.Size = UDim2.new(0, 82, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
-    btn.TextColor3 = Color3.fromRGB(205, 205, 210)
+    btn.TextColor3 = Color3.fromRGB(214, 214, 218)
     btn.Font = Enum.Font.GothamSemibold
     btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
     btn.Parent = tabHolder
-    applyTextGlow(btn, GLOW_COLOR, 0.86)
+    applyTextGlow(btn, GLOW_COLOR, 0.88)
 
     createCorner(btn, 8)
 
@@ -1915,6 +1916,16 @@ local function createTab(name, buttonText)
     btnStroke.Thickness = 1
     btnStroke.Color = THEME.stroke
     btnStroke.Parent = btn
+
+    local activeLine = Instance.new("Frame")
+    activeLine.Name = "ActiveBar"
+    activeLine.Size = UDim2.new(1, -10, 0, 2)
+    activeLine.Position = UDim2.new(0, 5, 1, -3)
+    activeLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    activeLine.BorderSizePixel = 0
+    activeLine.Visible = false
+    activeLine.Parent = btn
+    createCorner(activeLine, 3)
 
     btn.MouseEnter:Connect(function()
         if activeTab ~= name then
