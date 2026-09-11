@@ -37,6 +37,7 @@ local TextChatService = game:GetService("TextChatService")
 local notificationTimestamps = {}
 local avatarThumbnailCache = {}
 local getNearestPlayerInfo
+local localized
 
 local function notify(title, text, duration, dedupeKey, cooldown)
     local now = tick()
@@ -449,7 +450,7 @@ local translations = {
     },
 }
 
-local function localized(key, ...)
+localized = function(key, ...)
     local language = translations[settings.language] and settings.language or "English"
     local value = translations[language][key] or translations.English[key] or key
     if select("#", ...) > 0 then
