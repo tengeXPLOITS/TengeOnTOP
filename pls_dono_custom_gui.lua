@@ -135,18 +135,13 @@ end
 
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
-
-    task.defer(function()
-        if serverHopNow then
-            serverHopNow("booth-update")
-        end
-
-        task.delay(0.75, function()
-            pcall(function()
-                LocalPlayer:Kick(localized("rejoinMessage"))
-            end)
-        end)
+    pcall(function()
+        LocalPlayer:Kick(localized("rejoinMessage"))
     end)
+    
+    if serverHopNow then
+        serverHopNow("booth-update", 26, 27)
+    end
 end
 
 local GuiParent = resolveGuiParent()
@@ -1206,7 +1201,7 @@ local function choosePlaceId()
     end
 end
 
-serverHopNow = function(reason)
+serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride)
     if serverHopIsActive then
         return true
     end
@@ -1215,8 +1210,8 @@ serverHopNow = function(reason)
     task.spawn(function()
         while true do
             local placeId = choosePlaceId()
-            local minPlayers = tonumber(settings.minPlayerCount) or 23
-            local maxPlayers = tonumber(settings.maxPlayerCount) or 24
+            local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 23
+            local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
 
             local req = performHttpRequest({
                 Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
