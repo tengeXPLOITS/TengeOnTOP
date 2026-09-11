@@ -2925,6 +2925,7 @@ end
 
 local dropdownCloseFns = {}
 local activeDropdown
+local triggerTestDonation
 
 local function decorateControl(control, withStroke)
     local corner = Instance.new("UICorner")
@@ -3690,7 +3691,6 @@ end)
 
 local lastDonationActionTick = 0
 local lastDonationActionAmount = 0
-local triggerTestDonation
 
 local function handleDonation(amount, donorInfo, force)
     amount = tonumber(amount) or 0
