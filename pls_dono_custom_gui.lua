@@ -1211,13 +1211,32 @@ updateBoothTextNow = function()
 end
 
 local function getDisplayPlaceName(placeId)
-    local targetPlaceId = tonumber(placeId) or tonumber(game.PlaceId) or 0
-    if targetPlaceId > 0 then
-        local ok, info = pcall(function()
-            return MarketplaceService:GetProductInfo(targetPlaceId, Enum.InfoType.Game)
-        end)
-        if ok and info and type(info.Name) == "string" and info.Name ~= "" and info.Name ~= "UGC" then
-            return info.Name
+    local candidateIds = {}
+    local requestedPlaceId = tonumber(placeId) or 0
+    if requestedPlaceId > 0 then
+        table.insert(candidateIds, requestedPlaceId)
+    end
+
+    local currentPlaceId = tonumber(game.PlaceId) or 0
+    if currentPlaceId > 0 then
+        table.insert(candidateIds, currentPlaceId)
+    end
+
+    if ACCESSIBLE_PLS_DONATE_PLACE_ID > 0 then
+        table.insert(candidateIds, ACCESSIBLE_PLS_DONATE_PLACE_ID)
+    end
+
+    local seen = {}
+    for _, targetPlaceId in ipairs(candidateIds) do
+        if targetPlaceId > 0 and not seen[targetPlaceId] then
+            seen[targetPlaceId] = true
+
+            local ok, info = pcall(function()
+                return MarketplaceService:GetProductInfo(targetPlaceId, Enum.InfoType.Game)
+            end)
+            if ok and info and type(info.Name) == "string" and info.Name ~= "" and info.Name ~= "UGC" then
+                return info.Name
+            end
         end
     end
 
@@ -1230,7 +1249,7 @@ local function getDisplayPlaceName(placeId)
 end
 
 local function choosePlaceId()
-    if game.PlaceId == ACCESSIBLE_PLS_DONATE_PLACE_ID then
+    if ACCESSIBLE_PLS_DONATE_PLACE_ID > 0 then
         return ACCESSIBLE_PLS_DONATE_PLACE_ID
     end
 
@@ -1731,7 +1750,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = getDisplayPlaceName(game.PlaceId)
+    title.Text = getDisplayPlaceName(ACCESSIBLE_PLS_DONATE_PLACE_ID)
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
