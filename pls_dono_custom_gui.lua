@@ -1531,17 +1531,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(62, 67, 73),
+    topBar = Color3.fromRGB(92, 97, 104),
     topBarText = Color3.fromRGB(244, 244, 246),
-    panel = Color3.fromRGB(28, 29, 33),
-    tabIdle = Color3.fromRGB(52, 55, 60),
-    tabActive = Color3.fromRGB(70, 74, 81),
-    section = Color3.fromRGB(31, 33, 37),
-    control = Color3.fromRGB(41, 44, 50),
+    panel = Color3.fromRGB(75, 80, 87),
+    tabIdle = Color3.fromRGB(84, 89, 96),
+    tabActive = Color3.fromRGB(101, 106, 113),
+    section = Color3.fromRGB(69, 74, 81),
+    control = Color3.fromRGB(86, 91, 98),
     controlText = Color3.fromRGB(236, 236, 239),
     subtleText = Color3.fromRGB(180, 181, 187),
     accent = Color3.fromRGB(84, 191, 108),
-    stroke = Color3.fromRGB(76, 80, 86),
+    stroke = Color3.fromRGB(102, 107, 114),
 }
 
 local SHELL_CORNER_RADIUS = 10
@@ -1661,16 +1661,16 @@ do
     createCorner(main, SHELL_CORNER_RADIUS)
 
     local stroke = Instance.new("UIStroke")
-    stroke.Color = THEME.stroke
-    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(123, 128, 136)
+    stroke.Thickness = 0
     stroke.Parent = main
 
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 30, 32)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(22, 23, 24)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(17, 18, 19)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 85, 92)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(72, 77, 84)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(66, 71, 78)),
     })
     gradient.Parent = main
 end
@@ -1703,44 +1703,31 @@ do
     title.Position = UDim2.new(0, 32, 0, 2)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
-    title.Font = Enum.Font.GothamSemibold
+    title.Font = Enum.Font.GothamBold
     title.TextSize = 13
     title.Text = tostring(game.Name or "PLS DONATE")
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
-
-    local subtitle = Instance.new("TextLabel")
-    subtitle.Name = "Subtitle"
-    subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -48, 0, 11)
-    subtitle.Position = UDim2.new(0, 32, 0, 18)
-    subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.TextColor3 = THEME.subtleText
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 10
-    subtitle.Text = "annoying ass beggars, LMAO"
-    subtitle.Parent = topBar
-    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(84, 89, 96)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(104, 110, 118)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 11
+minimizeBtn.Font = Enum.Font.GothamBlack
+minimizeBtn.TextSize = 12
 minimizeBtn.Text = "▾"
 minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
-applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
+applyTextGlow(minimizeBtn, GLOW_COLOR, 0.86)
 
 do
-    createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
+    createCorner(minimizeBtn, 4)
 
     local miniStroke = Instance.new("UIStroke")
-    miniStroke.Thickness = 0.5
+    miniStroke.Thickness = 0
     miniStroke.Color = Color3.fromRGB(170, 176, 183)
     miniStroke.Parent = minimizeBtn
 end
@@ -1756,7 +1743,7 @@ local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
 tabHolder.Size = UDim2.new(1, -12, 0, 28)
 tabHolder.Position = UDim2.new(0, 6, 0, 5)
-tabHolder.BackgroundColor3 = THEME.section
+tabHolder.BackgroundColor3 = THEME.panel
 tabHolder.BorderSizePixel = 0
 tabHolder.ScrollBarThickness = 2
 tabHolder.ScrollBarImageColor3 = THEME.stroke
@@ -1766,14 +1753,7 @@ tabHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
 tabHolder.ScrollingDirection = Enum.ScrollingDirection.X
 tabHolder.Parent = body
 
-do
-    createCorner(tabHolder, CONTROL_CORNER_RADIUS)
-
-    local tabStroke = Instance.new("UIStroke")
-    tabStroke.Thickness = 1
-    tabStroke.Color = THEME.stroke
-    tabStroke.Parent = tabHolder
-end
+createCorner(tabHolder, 4)
 
 do
     local tabLayout = Instance.new("UIListLayout")
@@ -1914,6 +1894,7 @@ local function setTabVisualState(btn, active)
     local activeBar = btn:FindFirstChild("ActiveBar")
     if activeBar then
         activeBar.Visible = false
+        activeBar:Destroy()
     end
 end
 
@@ -1941,7 +1922,7 @@ local function createTab(name, buttonText)
     btn.Parent = tabHolder
     applyTextGlow(btn, GLOW_COLOR, 0.88)
 
-    createCorner(btn, 4)
+    createCorner(btn, 3)
 
     local btnStroke = Instance.new("UIStroke")
     btnStroke.Thickness = 0
