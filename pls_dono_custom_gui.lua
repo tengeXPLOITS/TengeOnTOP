@@ -1583,6 +1583,9 @@ local function createCorner(target, radius)
 end
 
 local function applyTextGlow(target, color, transparency)
+    if not target then
+        return
+    end
     target.TextStrokeColor3 = color or GLOW_COLOR
     target.TextStrokeTransparency = transparency or GLOW_TRANSPARENCY
 end
@@ -1753,8 +1756,8 @@ do
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -96, 1, 0)
-    title.Position = UDim2.new(0, 48, 0, 0)
+    title.Size = UDim2.new(1, -64, 0, 15)
+    title.Position = UDim2.new(0, 32, 0, 2)
     title.TextXAlignment = Enum.TextXAlignment.Center
     title.TextYAlignment = Enum.TextYAlignment.Center
     title.TextColor3 = THEME.topBarText
@@ -1769,7 +1772,7 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(85, 90, 96)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(105, 110, 116)
 minimizeBtn.TextColor3 = Color3.fromRGB(240, 240, 242)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
@@ -3018,7 +3021,7 @@ local function createDropdown(parent, text, key, options)
     local optionHeight = 22
     local optionsHeight = (#options * optionHeight) + 6
 
-    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.dropdown, THEME.controlText, 12, Enum.Font.Gotham)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
@@ -3113,7 +3116,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     local baseHeight = 30
     local contentHeight = 216
 
-    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.dropdown, THEME.controlText, 12, Enum.Font.Gotham)
 
     local content = Instance.new("Frame")
     content.Visible = false
