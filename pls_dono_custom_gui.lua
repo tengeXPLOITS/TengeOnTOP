@@ -138,31 +138,15 @@ end
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
-    local retryCount = 0
-    local function retryHop()
-        retryCount += 1
+    task.delay(0.2, function()
         if serverHopNow then
-            local didStart = serverHopNow("booth-update", 24, 25, retryCount)
-            if didStart then
-                task.delay(0.8, function()
-                    pcall(function()
-                        LocalPlayer:Kick(localized("rejoinMessage"))
-                    end)
-                end)
-                return
-            end
+            serverHopNow("booth-update", 24, 25, 1)
         end
+    end)
 
-        if retryCount < 6 then
-            task.delay(2 + retryCount, retryHop)
-        else
-            pcall(function()
-                LocalPlayer:Kick(localized("rejoinMessage"))
-            end)
-        end
-    end
-
-    task.delay(0.2, retryHop)
+    pcall(function()
+        LocalPlayer:Kick(localized("rejoinMessage"))
+    end)
 end
 
 local GuiParent = resolveGuiParent()
@@ -193,7 +177,6 @@ local defaults = {
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
-    antiAfkToggle = false,
 
     autoThanks = true,
     thanksDelay = 3,
@@ -368,16 +351,15 @@ local translations = {
         tabBooth = "Booth",
         tabMain = "Main",
         tabChat = "Chat",
-        tabWebhook = "Hook",
-        tabServerHop = "Hop",
-        tabLanguage = "Lang",
+        tabWebhook = "Webhook",
+        tabServerHop = "Server Hop",
+        tabLanguage = "Language",
         boothSection = "Booth Settings",
         mainSection = "Main Settings",
         chatSection = "Chat Settings",
         webhookSection = "Webhook Settings",
-        serverSection = "Server Hop",
+        serverSection = "Serverhop Settings",
         textUpdate = "Text Update",
-        antiAfk = "Anti AFK",
         textUpdateDelay = "Text Update Delay (S)",
         textColor = "Text Color",
         robuxGoal = "Robux Goal",
@@ -424,18 +406,17 @@ local translations = {
         languageLabel = "Idioma",
         languageSaved = "Idioma guardado. Vuelve a entrar para aplicarlo a toda la interfaz.",
         tabBooth = "Puesto",
-        tabMain = "Inicio",
+        tabMain = "Principal",
         tabChat = "Chat",
-        tabWebhook = "Hook",
-        tabServerHop = "Servidor",
+        tabWebhook = "Webhook",
+        tabServerHop = "Cambiar servidor",
         tabLanguage = "Idioma",
         boothSection = "Configuracion del puesto",
         mainSection = "Configuracion principal",
         chatSection = "Configuracion del chat",
         webhookSection = "Configuracion del webhook",
-        serverSection = "Cambio de servidor",
+        serverSection = "Configuracion de cambio de servidor",
         textUpdate = "Actualizar texto",
-        antiAfk = "Anti AFK",
         textUpdateDelay = "Retraso de actualizacion (S)",
         textColor = "Color del texto",
         robuxGoal = "Meta de Robux",
@@ -647,18 +628,6 @@ local function finalizeSuccessfulPendingFarmHop()
 end
 
 pendingFarmHopNotification = finalizeSuccessfulPendingFarmHop()
-
-local function buildPendingHopWebhookInfo(reason)
-    local count = math.max(0, tonumber(farmSessionStats.successfulHops) or 0)
-    if shouldTrackFarmHop(reason) then
-        count += 1
-    end
-    return {
-        count = count,
-        reason = tostring(reason or ""),
-        summaryCount = nil,
-    }
-end
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -961,6 +930,17 @@ local function sendServerHopWebhook(hopInfo)
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
     })
+end
+
+local function buildPendingHopWebhookInfo(reason)
+    local hopCount = math.max(0, tonumber(farmSessionStats.successfulHops) or 0)
+    if reason and tostring(reason) ~= "" and tostring(reason) ~= "manual-button" and tostring(reason) ~= "vc-server-hop-toggle" then
+        hopCount = hopCount + 1
+    end
+    return {
+        count = hopCount,
+        reason = tostring(reason or ""),
+    }
 end
 
 local function resetHopTimer()
@@ -1551,21 +1531,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(64, 69, 74),
+    topBar = Color3.fromRGB(62, 67, 73),
     topBarText = Color3.fromRGB(244, 244, 246),
     panel = Color3.fromRGB(28, 29, 33),
-    tabIdle = Color3.fromRGB(63, 67, 73),
-    tabActive = Color3.fromRGB(82, 87, 94),
+    tabIdle = Color3.fromRGB(52, 55, 60),
+    tabActive = Color3.fromRGB(70, 74, 81),
     section = Color3.fromRGB(31, 33, 37),
-    control = Color3.fromRGB(54, 58, 64),
-    dropdown = Color3.fromRGB(72, 77, 82),
-    dropdownHover = Color3.fromRGB(86, 91, 97),
-    toggleOn = Color3.fromRGB(98, 103, 109),
-    toggleOff = Color3.fromRGB(48, 52, 58),
+    control = Color3.fromRGB(41, 44, 50),
     controlText = Color3.fromRGB(236, 236, 239),
     subtleText = Color3.fromRGB(180, 181, 187),
     accent = Color3.fromRGB(84, 191, 108),
-    stroke = Color3.fromRGB(82, 86, 92),
+    stroke = Color3.fromRGB(76, 80, 86),
 }
 
 local SHELL_CORNER_RADIUS = 10
@@ -1583,9 +1559,6 @@ local function createCorner(target, radius)
 end
 
 local function applyTextGlow(target, color, transparency)
-    if not target then
-        return
-    end
     target.TextStrokeColor3 = color or GLOW_COLOR
     target.TextStrokeTransparency = transparency or GLOW_TRANSPARENCY
 end
@@ -1618,26 +1591,8 @@ local function createStyledButton(parent, text, size, position, backgroundColor,
     btn.Size = size or UDim2.new(0, 104, 0, 23)
     btn.Position = position or UDim2.new(0, 0, 0, 0)
     btn.Text = tostring(text or "")
-    btn.BackgroundColor3 = backgroundColor or THEME.dropdown
-    btn.TextColor3 = textColor or THEME.controlText
-    btn.Font = font or Enum.Font.GothamSemibold
-    btn.TextSize = textSize or 11
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.BackgroundTransparency = 0
+    styleTextButton(btn, backgroundColor, textColor, textSize, font)
     btn.Parent = parent
-
-    btn.MouseEnter:Connect(function()
-        if backgroundColor then
-            btn.BackgroundColor3 = backgroundColor:Lerp(Color3.fromRGB(255, 255, 255), 0.04)
-        else
-            btn.BackgroundColor3 = THEME.dropdownHover
-        end
-    end)
-
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = backgroundColor or THEME.dropdown
-    end)
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1
@@ -1740,43 +1695,43 @@ do
     topGradient.Parent = topBar
 end
 
-local function getCurrentPlaceName()
-    if MarketplaceService and MarketplaceService.GetProductInfo then
-        local ok, info = pcall(function()
-            return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Game)
-        end)
-        if ok and info and type(info.Name) == "string" and info.Name ~= "" then
-            return info.Name
-        end
-    end
-    return tostring(game.Name or "PLS DONATE")
-end
-
 do
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -64, 0, 15)
+    title.Size = UDim2.new(1, -48, 0, 15)
     title.Position = UDim2.new(0, 32, 0, 2)
-    title.TextXAlignment = Enum.TextXAlignment.Center
-    title.TextYAlignment = Enum.TextYAlignment.Center
+    title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = getCurrentPlaceName()
+    title.Text = tostring(game.Name or "PLS DONATE")
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Name = "Subtitle"
+    subtitle.BackgroundTransparency = 1
+    subtitle.Size = UDim2.new(1, -48, 0, 11)
+    subtitle.Position = UDim2.new(0, 32, 0, 18)
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.TextColor3 = THEME.subtleText
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 10
+    subtitle.Text = "annoying ass beggars, LMAO"
+    subtitle.Parent = topBar
+    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
-minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(105, 110, 116)
-minimizeBtn.TextColor3 = Color3.fromRGB(240, 240, 242)
+minimizeBtn.Position = UDim2.new(1, -26, 0.5, -9)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(84, 89, 96)
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 13
-minimizeBtn.Text = "-"
+minimizeBtn.TextSize = 11
+minimizeBtn.Text = "▾"
 minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
 applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
@@ -1786,7 +1741,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(176, 181, 186)
+    miniStroke.Color = Color3.fromRGB(170, 176, 183)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -1825,7 +1780,7 @@ do
     tabLayout.FillDirection = Enum.FillDirection.Horizontal
     tabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
     tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    tabLayout.Padding = UDim.new(0, 6)
+    tabLayout.Padding = UDim.new(0, 3)
     tabLayout.Parent = tabHolder
 
     local tabPad = Instance.new("UIPadding")
@@ -1927,8 +1882,8 @@ local function setMinimized(state)
     end
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
-    minimizeBtn.Text = state and "+" or "-"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(58, 64, 75) or Color3.fromRGB(76, 82, 94)
+    minimizeBtn.Text = state and "▴" or "▾"
+    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(63, 68, 75) or Color3.fromRGB(84, 89, 96)
 
     minimizeTween = TweenService:Create(
         main,
@@ -1982,26 +1937,22 @@ end
 local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.AutomaticSize = Enum.AutomaticSize.X
-    btn.Size = UDim2.new(0, 0, 0, 28)
+    btn.AutomaticSize = Enum.AutomaticSize.None
+    btn.Size = UDim2.new(0, 82, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 11
+    btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
-    btn.TextWrapped = false
-    btn.TextScaled = false
-    btn.TextXAlignment = Enum.TextXAlignment.Center
-    btn.TextYAlignment = Enum.TextYAlignment.Center
     btn.AutoButtonColor = false
     btn.Parent = tabHolder
     applyTextGlow(btn, GLOW_COLOR, 0.88)
 
-    createCorner(btn, 8)
+    createCorner(btn, 4)
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 1
-    btnStroke.Color = THEME.stroke
+    btnStroke.Thickness = 0.75
+    btnStroke.Color = Color3.fromRGB(90, 94, 99)
     btnStroke.Parent = btn
 
     local activeLine = Instance.new("Frame")
@@ -2133,7 +2084,7 @@ local function createToggle(parent, text, key)
     local function applyState()
         local enabled = settings[key] == true
         btn.Text = enabled and "✓" or ""
-        btn.BackgroundColor3 = enabled and THEME.toggleOn or THEME.toggleOff
+        btn.BackgroundColor3 = enabled and Color3.fromRGB(92, 96, 102) or THEME.control
         btn.TextColor3 = enabled and Color3.fromRGB(255, 255, 255) or THEME.controlText
     end
 
@@ -2832,10 +2783,6 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
-    antiAfkToggle = function(value)
-        applyAntiAfk(value == true)
-        saveSettings()
-    end,
     spinSet = function()
         applySpinState()
     end,
@@ -3021,7 +2968,7 @@ local function createDropdown(parent, text, key, options)
     local optionHeight = 22
     local optionsHeight = (#options * optionHeight) + 6
 
-    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.dropdown, THEME.controlText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, nil, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
 
     local listFrame = Instance.new("Frame")
     listFrame.Visible = false
@@ -3116,7 +3063,7 @@ local function createMessageDropdown(parent, text, key, fallback)
     local baseHeight = 30
     local contentHeight = 216
 
-    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.dropdown, THEME.controlText, 12, Enum.Font.Gotham)
+    local btn = createStyledButton(row, text, UDim2.new(1, 0, 0, 24), UDim2.new(0, 0, 0.5, -12), THEME.control, THEME.controlText, 12, Enum.Font.Gotham)
 
     local content = Instance.new("Frame")
     content.Visible = false
@@ -3363,38 +3310,6 @@ local function createInfoLabel(parent, text)
     return label
 end
 
-local antiAfkConnection
-local function applyAntiAfk(enabled)
-    if antiAfkConnection then
-        antiAfkConnection:Disconnect()
-        antiAfkConnection = nil
-    end
-
-    if not enabled then
-        return
-    end
-
-    local virtualUser = game:GetService("VirtualUser")
-    if not virtualUser then
-        return
-    end
-
-    pcall(function()
-        virtualUser:CaptureController()
-    end)
-
-    antiAfkConnection = LocalPlayer.Idled:Connect(function()
-        pcall(function()
-            virtualUser:Button2Down(Vector2.new(0, 0))
-            task.delay(0.15, function()
-                pcall(function()
-                    virtualUser:Button2Up(Vector2.new(0, 0))
-                end)
-            end)
-        end)
-    end)
-end
-
 local function buildSettingsTabs()
     local boothTab = createTab("Booth", localized("tabBooth"))
     local mainTab = createTab("Main", localized("tabMain"))
@@ -3465,7 +3380,6 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, localized("mainSection"))
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
-        createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3530,8 +3444,6 @@ do
         {Position = targetPosition}
     ):Play()
 end
-
-applyAntiAfk(settings.antiAfkToggle == true)
 
 task.spawn(function()
     task.wait(2)
