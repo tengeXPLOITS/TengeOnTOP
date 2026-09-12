@@ -138,15 +138,31 @@ end
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
-    task.delay(0.2, function()
+    local retryCount = 0
+    local function retryHop()
+        retryCount += 1
         if serverHopNow then
-            serverHopNow("booth-update", 24, 25, 1)
+            local didStart = serverHopNow("booth-update", 24, 25, retryCount)
+            if didStart then
+                task.delay(0.8, function()
+                    pcall(function()
+                        LocalPlayer:Kick(localized("rejoinMessage"))
+                    end)
+                end)
+                return
+            end
         end
-    end)
 
-    pcall(function()
-        LocalPlayer:Kick(localized("rejoinMessage"))
-    end)
+        if retryCount < 6 then
+            task.delay(2 + retryCount, retryHop)
+        else
+            pcall(function()
+                LocalPlayer:Kick(localized("rejoinMessage"))
+            end)
+        end
+    end
+
+    task.delay(0.2, retryHop)
 end
 
 local GuiParent = resolveGuiParent()
@@ -177,6 +193,7 @@ local defaults = {
     fontFace = "SciFi",
     standingPosition = "Front",
     boothPosition = 3,
+    antiAfkToggle = false,
 
     autoThanks = true,
     thanksDelay = 3,
@@ -187,6 +204,7 @@ local defaults = {
 
     webhookToggle = false,
     webhookBox = "",
+    notifyPerHopToggle = false,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -350,15 +368,16 @@ local translations = {
         tabBooth = "Booth",
         tabMain = "Main",
         tabChat = "Chat",
-        tabWebhook = "Webhook",
-        tabServerHop = "Server Hop",
-        tabLanguage = "Language",
+        tabWebhook = "Hook",
+        tabServerHop = "Hop",
+        tabLanguage = "Lang",
         boothSection = "Booth Settings",
         mainSection = "Main Settings",
         chatSection = "Chat Settings",
         webhookSection = "Webhook Settings",
-        serverSection = "Serverhop Settings",
+        serverSection = "Server Hop",
         textUpdate = "Text Update",
+        antiAfk = "Anti AFK",
         textUpdateDelay = "Text Update Delay (S)",
         textColor = "Text Color",
         robuxGoal = "Robux Goal",
@@ -385,6 +404,7 @@ local translations = {
         begMessages = "Begging Messages",
         webhookEnabled = "Webhook Enabled",
         webhookUrl = "Webhook URL",
+        notifyPerHop = "Notify Per Hop",
         autoServerHop = "Auto Server Hop",
         serverHopDelay = "Server Hop Delay (Minutes)",
         minPlayers = "Min Players in Server",
@@ -404,17 +424,18 @@ local translations = {
         languageLabel = "Idioma",
         languageSaved = "Idioma guardado. Vuelve a entrar para aplicarlo a toda la interfaz.",
         tabBooth = "Puesto",
-        tabMain = "Principal",
+        tabMain = "Inicio",
         tabChat = "Chat",
-        tabWebhook = "Webhook",
-        tabServerHop = "Cambiar servidor",
+        tabWebhook = "Hook",
+        tabServerHop = "Servidor",
         tabLanguage = "Idioma",
         boothSection = "Configuracion del puesto",
         mainSection = "Configuracion principal",
         chatSection = "Configuracion del chat",
         webhookSection = "Configuracion del webhook",
-        serverSection = "Configuracion de cambio de servidor",
+        serverSection = "Cambio de servidor",
         textUpdate = "Actualizar texto",
+        antiAfk = "Anti AFK",
         textUpdateDelay = "Retraso de actualizacion (S)",
         textColor = "Color del texto",
         robuxGoal = "Meta de Robux",
@@ -441,6 +462,7 @@ local translations = {
         begMessages = "Mensajes para pedir",
         webhookEnabled = "Webhook activado",
         webhookUrl = "URL del webhook",
+        notifyPerHop = "Notificar por cada cambio",
         autoServerHop = "Cambio automatico de servidor",
         serverHopDelay = "Retraso del cambio (minutos)",
         minPlayers = "Minimo de jugadores",
@@ -625,6 +647,18 @@ local function finalizeSuccessfulPendingFarmHop()
 end
 
 pendingFarmHopNotification = finalizeSuccessfulPendingFarmHop()
+
+local function buildPendingHopWebhookInfo(reason)
+    local count = math.max(0, tonumber(farmSessionStats.successfulHops) or 0)
+    if shouldTrackFarmHop(reason) then
+        count += 1
+    end
+    return {
+        count = count,
+        reason = tostring(reason or ""),
+        summaryCount = nil,
+    }
+end
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -906,7 +940,7 @@ local function sendDonationWebhook(amount, donorInfo)
 end
 
 local function sendServerHopWebhook(hopInfo)
-    if not settings.webhookToggle or type(hopInfo) ~= "table" then
+    if not settings.webhookToggle or not settings.notifyPerHopToggle or type(hopInfo) ~= "table" then
         return
     end
 
@@ -928,10 +962,6 @@ local function sendServerHopWebhook(hopInfo)
         }},
     })
 end
-
-sendServerHopWebhook(pendingFarmHopNotification)
-
-
 
 local function resetHopTimer()
     hopTimerResetTick = tick()
@@ -1264,6 +1294,9 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
                 if teleported then
                     markPendingFarmHop(reason, placeId, chosen.id)
+                    if settings.notifyPerHopToggle then
+                        sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
+                    end
                     serverHopIsActive = false
                     return
                 end
@@ -1518,17 +1551,21 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(62, 67, 73),
+    topBar = Color3.fromRGB(64, 69, 74),
     topBarText = Color3.fromRGB(244, 244, 246),
     panel = Color3.fromRGB(28, 29, 33),
-    tabIdle = Color3.fromRGB(52, 55, 60),
-    tabActive = Color3.fromRGB(70, 74, 81),
+    tabIdle = Color3.fromRGB(63, 67, 73),
+    tabActive = Color3.fromRGB(82, 87, 94),
     section = Color3.fromRGB(31, 33, 37),
-    control = Color3.fromRGB(41, 44, 50),
+    control = Color3.fromRGB(54, 58, 64),
+    dropdown = Color3.fromRGB(72, 77, 82),
+    dropdownHover = Color3.fromRGB(86, 91, 97),
+    toggleOn = Color3.fromRGB(98, 103, 109),
+    toggleOff = Color3.fromRGB(48, 52, 58),
     controlText = Color3.fromRGB(236, 236, 239),
     subtleText = Color3.fromRGB(180, 181, 187),
     accent = Color3.fromRGB(84, 191, 108),
-    stroke = Color3.fromRGB(76, 80, 86),
+    stroke = Color3.fromRGB(82, 86, 92),
 }
 
 local SHELL_CORNER_RADIUS = 10
@@ -1578,8 +1615,26 @@ local function createStyledButton(parent, text, size, position, backgroundColor,
     btn.Size = size or UDim2.new(0, 104, 0, 23)
     btn.Position = position or UDim2.new(0, 0, 0, 0)
     btn.Text = tostring(text or "")
-    styleTextButton(btn, backgroundColor, textColor, textSize, font)
+    btn.BackgroundColor3 = backgroundColor or THEME.dropdown
+    btn.TextColor3 = textColor or THEME.controlText
+    btn.Font = font or Enum.Font.GothamSemibold
+    btn.TextSize = textSize or 11
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.BackgroundTransparency = 0
     btn.Parent = parent
+
+    btn.MouseEnter:Connect(function()
+        if backgroundColor then
+            btn.BackgroundColor3 = backgroundColor:Lerp(Color3.fromRGB(255, 255, 255), 0.04)
+        else
+            btn.BackgroundColor3 = THEME.dropdownHover
+        end
+    end)
+
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = backgroundColor or THEME.dropdown
+    end)
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1
@@ -1682,44 +1737,44 @@ do
     topGradient.Parent = topBar
 end
 
+local function getCurrentPlaceName()
+    if MarketplaceService and MarketplaceService.GetProductInfo then
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(game.PlaceId, Enum.InfoType.Game)
+        end)
+        if ok and info and type(info.Name) == "string" and info.Name ~= "" then
+            return info.Name
+        end
+    end
+    return tostring(game.Name or "PLS DONATE")
+end
+
 do
     local title = Instance.new("TextLabel")
     title.Name = "Title"
     title.BackgroundTransparency = 1
-    title.Size = UDim2.new(1, -48, 0, 15)
-    title.Position = UDim2.new(0, 32, 0, 2)
-    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Size = UDim2.new(1, -96, 1, 0)
+    title.Position = UDim2.new(0, 48, 0, 0)
+    title.TextXAlignment = Enum.TextXAlignment.Center
+    title.TextYAlignment = Enum.TextYAlignment.Center
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = tostring(game.Name or "PLS DONATE")
+    title.Text = getCurrentPlaceName()
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
-
-    local subtitle = Instance.new("TextLabel")
-    subtitle.Name = "Subtitle"
-    subtitle.BackgroundTransparency = 1
-    subtitle.Size = UDim2.new(1, -48, 0, 11)
-    subtitle.Position = UDim2.new(0, 32, 0, 18)
-    subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.TextColor3 = THEME.subtleText
-    subtitle.Font = Enum.Font.Gotham
-    subtitle.TextSize = 10
-    subtitle.Text = "annoying ass beggars, LMAO"
-    subtitle.Parent = topBar
-    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
 end
 
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(76, 82, 94)
-minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(85, 90, 96)
+minimizeBtn.TextColor3 = Color3.fromRGB(240, 240, 242)
 minimizeBtn.Font = Enum.Font.GothamBold
 minimizeBtn.TextSize = 13
 minimizeBtn.Text = "-"
-minimizeBtn.AutoButtonColor = true
+minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
 applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
 
@@ -1728,7 +1783,7 @@ do
 
     local miniStroke = Instance.new("UIStroke")
     miniStroke.Thickness = 1
-    miniStroke.Color = Color3.fromRGB(210, 255, 218)
+    miniStroke.Color = Color3.fromRGB(176, 181, 186)
     miniStroke.Parent = minimizeBtn
 end
 
@@ -1924,13 +1979,17 @@ end
 local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
-    btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 82, 0, 28)
+    btn.AutomaticSize = Enum.AutomaticSize.X
+    btn.Size = UDim2.new(0, 0, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
     btn.Font = Enum.Font.GothamSemibold
-    btn.TextSize = 12
+    btn.TextSize = 11
     btn.Text = tostring(buttonText or name)
+    btn.TextWrapped = false
+    btn.TextScaled = false
+    btn.TextXAlignment = Enum.TextXAlignment.Center
+    btn.TextYAlignment = Enum.TextYAlignment.Center
     btn.AutoButtonColor = false
     btn.Parent = tabHolder
     applyTextGlow(btn, GLOW_COLOR, 0.88)
@@ -2071,7 +2130,7 @@ local function createToggle(parent, text, key)
     local function applyState()
         local enabled = settings[key] == true
         btn.Text = enabled and "✓" or ""
-        btn.BackgroundColor3 = enabled and Color3.fromRGB(92, 96, 102) or THEME.control
+        btn.BackgroundColor3 = enabled and THEME.toggleOn or THEME.toggleOff
         btn.TextColor3 = enabled and Color3.fromRGB(255, 255, 255) or THEME.controlText
     end
 
@@ -2770,6 +2829,10 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
+    antiAfkToggle = function(value)
+        applyAntiAfk(value == true)
+        saveSettings()
+    end,
     spinSet = function()
         applySpinState()
     end,
@@ -3297,6 +3360,38 @@ local function createInfoLabel(parent, text)
     return label
 end
 
+local antiAfkConnection
+local function applyAntiAfk(enabled)
+    if antiAfkConnection then
+        antiAfkConnection:Disconnect()
+        antiAfkConnection = nil
+    end
+
+    if not enabled then
+        return
+    end
+
+    local virtualUser = game:GetService("VirtualUser")
+    if not virtualUser then
+        return
+    end
+
+    pcall(function()
+        virtualUser:CaptureController()
+    end)
+
+    antiAfkConnection = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            virtualUser:Button2Down(Vector2.new(0, 0))
+            task.delay(0.15, function()
+                pcall(function()
+                    virtualUser:Button2Up(Vector2.new(0, 0))
+                end)
+            end)
+        end)
+    end)
+end
+
 local function buildSettingsTabs()
     local boothTab = createTab("Booth", localized("tabBooth"))
     local mainTab = createTab("Main", localized("tabMain"))
@@ -3367,6 +3462,7 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, localized("mainSection"))
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
+        createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3394,7 +3490,7 @@ do
     local webhookSection = createSection(webhookTab, localized("webhookSection"))
     createToggle(webhookSection, localized("webhookEnabled"), "webhookToggle")
     createTextBox(webhookSection, localized("webhookUrl"), "webhookBox", false)
-    -- Donation Notifier feature only - other webhook options removed per user request
+    createToggle(webhookSection, localized("notifyPerHop"), "notifyPerHopToggle")
 end
 
 do
@@ -3431,6 +3527,8 @@ do
         {Position = targetPosition}
     ):Play()
 end
+
+applyAntiAfk(settings.antiAfkToggle == true)
 
 task.spawn(function()
     task.wait(2)
