@@ -1726,7 +1726,7 @@ end
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
-minimizeBtn.Position = UDim2.new(1, -26, 0.5, -9)
+minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
 minimizeBtn.BackgroundColor3 = Color3.fromRGB(84, 89, 96)
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = Enum.Font.GothamBold
@@ -1740,7 +1740,7 @@ do
     createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
 
     local miniStroke = Instance.new("UIStroke")
-    miniStroke.Thickness = 1
+    miniStroke.Thickness = 0.5
     miniStroke.Color = Color3.fromRGB(170, 176, 183)
     miniStroke.Parent = minimizeBtn
 end
@@ -1789,14 +1789,6 @@ do
     tabPad.PaddingLeft = UDim.new(0, 6)
     tabPad.PaddingRight = UDim.new(0, 6)
     tabPad.Parent = tabHolder
-
-    local tabUnderline = Instance.new("Frame")
-    tabUnderline.Name = "TabUnderline"
-    tabUnderline.Size = UDim2.new(1, -12, 0, 1)
-    tabUnderline.Position = UDim2.new(0, 6, 0, 35)
-    tabUnderline.BackgroundColor3 = THEME.stroke
-    tabUnderline.BorderSizePixel = 0
-    tabUnderline.Parent = body
 end
 
 local pages = Instance.new("Frame")
@@ -1918,9 +1910,10 @@ local function setTabVisualState(btn, active)
     end
     btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
     btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(214, 214, 218)
+    btn.Font = Enum.Font.GothamBold
     local activeBar = btn:FindFirstChild("ActiveBar")
     if activeBar then
-        activeBar.Visible = active
+        activeBar.Visible = false
     end
 end
 
@@ -1941,7 +1934,7 @@ local function createTab(name, buttonText)
     btn.Size = UDim2.new(0, 82, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
-    btn.Font = Enum.Font.GothamSemibold
+    btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
@@ -1951,19 +1944,9 @@ local function createTab(name, buttonText)
     createCorner(btn, 4)
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 0.75
+    btnStroke.Thickness = 0
     btnStroke.Color = Color3.fromRGB(90, 94, 99)
     btnStroke.Parent = btn
-
-    local activeLine = Instance.new("Frame")
-    activeLine.Name = "ActiveBar"
-    activeLine.Size = UDim2.new(1, -10, 0, 2)
-    activeLine.Position = UDim2.new(0, 5, 1, -3)
-    activeLine.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    activeLine.BorderSizePixel = 0
-    activeLine.Visible = false
-    activeLine.Parent = btn
-    createCorner(activeLine, 3)
 
     btn.MouseEnter:Connect(function()
         if activeTab ~= name then
