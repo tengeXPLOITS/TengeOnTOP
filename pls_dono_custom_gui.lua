@@ -15,6 +15,7 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -25,6 +26,7 @@ local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
+local ACCESSIBLE_PLS_DONATE_PLACE_ID = 18852429314
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -1208,7 +1210,30 @@ updateBoothTextNow = function()
     return applied, applied and "updated" or "local-preview-only"
 end
 
+local function getDisplayPlaceName(placeId)
+    local targetPlaceId = tonumber(placeId) or tonumber(game.PlaceId) or 0
+    if targetPlaceId > 0 then
+        local ok, info = pcall(function()
+            return MarketplaceService:GetProductInfo(targetPlaceId, Enum.InfoType.Game)
+        end)
+        if ok and info and type(info.Name) == "string" and info.Name ~= "" and info.Name ~= "UGC" then
+            return info.Name
+        end
+    end
+
+    local currentName = tostring(game.Name or "")
+    if currentName ~= "" and currentName ~= "UGC" then
+        return currentName
+    end
+
+    return "PLS DONATE"
+end
+
 local function choosePlaceId()
+    if game.PlaceId == ACCESSIBLE_PLS_DONATE_PLACE_ID then
+        return ACCESSIBLE_PLS_DONATE_PLACE_ID
+    end
+
     if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
         return EXTRA_PLS_DONATE_PLACE_ID
     end
@@ -1267,6 +1292,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
             if chosen then
                 local teleported = false
+                queueScriptOnTeleport()
                 pcall(function()
                     TeleportService:TeleportToPlaceInstance(placeId, chosen.id, LocalPlayer)
                     teleported = true
@@ -1705,7 +1731,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = tostring(game.Name or "PLS DONATE")
+    title.Text = getDisplayPlaceName(game.PlaceId)
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
