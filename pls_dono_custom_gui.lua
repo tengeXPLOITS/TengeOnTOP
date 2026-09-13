@@ -197,7 +197,6 @@ local defaults = {
     webhookBox = "",
     notifyPerHopToggle = false,
     antiAfkToggle = false,
-    donationSwimToggle = false,
     spinSpeedMultiplier = 0.35,
 
     serverHopToggle = true,
@@ -405,7 +404,6 @@ local translations = {
         webhookUrl = "Webhook URL",
         notifyPerHop = "Notify Per Hop",
         antiAfk = "Anti AFK",
-        donationSwim = "Donation - Swim Around Map",
         autoServerHop = "Auto Server Hop",
         serverHopDelay = "Server Hop Delay (Minutes)",
         minPlayers = "Min Players in Server",
@@ -461,7 +459,6 @@ local translations = {
         webhookUrl = "URL del webhook",
         notifyPerHop = "Notificar por cada cambio",
         antiAfk = "Anti AFK",
-        donationSwim = "Donacion - nadar por el mapa",
         autoServerHop = "Cambio automatico de servidor",
         serverHopDelay = "Retraso del cambio (minutos)",
         minPlayers = "Minimo de jugadores",
@@ -1999,189 +1996,6 @@ local function setAntiAfkEnabled(enabled)
     end)
 end
 
-local currentDonationSwimTask = nil
-local donationSwimWalkSpeed = nil
-local donationSwimWaterPart = nil
-local donationSwimWaterState = false
-
-local function ensureDonationSwimWaterPart()
-    if donationSwimWaterPart and donationSwimWaterPart.Parent then
-        return donationSwimWaterPart
-    end
-
-    local part = Instance.new("Part")
-    part.Name = "DonationSwimWater"
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanTouch = false
-    part.CanQuery = false
-    part.Transparency = 0.3
-    part.Material = Enum.Material.Water
-    part.Color = Color3.fromRGB(70, 170, 255)
-    part.Size = Vector3.new(18, 6, 18)
-    part.Shape = Enum.PartType.Block
-    part.TopSurface = Enum.SurfaceType.Smooth
-    part.BottomSurface = Enum.SurfaceType.Smooth
-    part.Parent = workspace
-
-    donationSwimWaterPart = part
-    return part
-end
-
-local function updateDonationSwimWater(character, root)
-    if not settings.donationSwimToggle or not character or not character.Parent or not root or not root.Parent then
-        if donationSwimWaterPart and donationSwimWaterPart.Parent then
-            donationSwimWaterPart:Destroy()
-            donationSwimWaterPart = nil
-        end
-        donationSwimWaterState = false
-        return
-    end
-
-    local waterPart = ensureDonationSwimWaterPart()
-    local position = root.Position + Vector3.new(0, -2.5, 0)
-    local size = Vector3.new(20, 7, 20)
-    if waterPart.Size ~= size then
-        waterPart.Size = size
-    end
-    waterPart.CFrame = CFrame.new(position)
-    donationSwimWaterState = true
-end
-
-local function stopDonationSwimState()
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
-        if donationSwimWaterPart and donationSwimWaterPart.Parent then
-            donationSwimWaterPart:Destroy()
-            donationSwimWaterPart = nil
-        end
-        donationSwimWaterState = false
-        return
-    end
-
-    if donationSwimWalkSpeed ~= nil then
-        humanoid.WalkSpeed = donationSwimWalkSpeed
-        donationSwimWalkSpeed = nil
-    end
-
-    if donationSwimWaterPart and donationSwimWaterPart.Parent then
-        donationSwimWaterPart:Destroy()
-        donationSwimWaterPart = nil
-    end
-    donationSwimWaterState = false
-
-    if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming and humanoid:GetState() == Enum.HumanoidStateType.Swimming then
-        pcall(function()
-            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end)
-    end
-end
-
-local function setDonationSwimState(enabled)
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local root = humanoid and humanoid.RootPart
-    if not humanoid or not root then
-        return
-    end
-
-    if enabled then
-        if donationSwimWalkSpeed == nil then
-            donationSwimWalkSpeed = humanoid.WalkSpeed
-        end
-        humanoid.WalkSpeed = math.max(12, donationSwimWalkSpeed * 1.5)
-        humanoid.SwimSpeed = math.max(16, humanoid.WalkSpeed * 1.25)
-        updateDonationSwimWater(character, root)
-        pcall(function()
-            if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming then
-                humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
-            end
-        end)
-    else
-        stopDonationSwimState()
-    end
-end
-
-local function performDonationSwimMotion(amount)
-    if not settings.donationSwimToggle then
-        stopDonationSwimState()
-        return
-    end
-
-    local character = LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local root = humanoid and humanoid.RootPart
-    if not root then
-        return
-    end
-
-    setDonationSwimState(true)
-
-    if currentDonationSwimTask then
-        pcall(function()
-            task.cancel(currentDonationSwimTask)
-        end)
-        currentDonationSwimTask = nil
-    end
-
-    local donation = math.max(1, tonumber(amount) or 1)
-    local route = HELICOPTER_PLAZA_ROUTE
-    local laps = math.max(1, math.ceil(donation / 7))
-    local startY = root.Position.Y
-
-    currentDonationSwimTask = task.spawn(function()
-        local baseStartIndex = 1
-        local nearestDistance = math.huge
-        for index, point in ipairs(route) do
-            local delta = Vector3.new(point.X, startY, point.Z) - root.Position
-            local distance = delta.Magnitude
-            if distance < nearestDistance then
-                nearestDistance = distance
-                baseStartIndex = index
-            end
-        end
-
-        for lap = 1, laps do
-            for index = baseStartIndex, #route do
-                if not settings.donationSwimToggle or not character or not character.Parent or not root.Parent then
-                    return
-                end
-
-                local point = route[index]
-                local targetPos = Vector3.new(point.X, startY + 2.2, point.Z)
-                local startTick = tick()
-                local travelDuration = math.max(0.2, 0.9 - (donation * 0.006))
-
-                while settings.donationSwimToggle and character and character.Parent and root and root.Parent and (tick() - startTick) < travelDuration do
-                    local alpha = math.clamp((tick() - startTick) / travelDuration, 0, 1)
-                    local eased = alpha * alpha * (3 - (2 * alpha))
-                    local smoothed = root.Position:Lerp(targetPos, eased)
-                    local dir = (targetPos - smoothed)
-                    if dir.Magnitude < 0.001 then
-                        dir = Vector3.new(0, 0, -1)
-                    else
-                        dir = dir.Unit
-                    end
-
-                    pcall(function()
-                        updateDonationSwimWater(character, root)
-                        humanoid:Move(Vector3.new(dir.X * 2.5, 0.1, dir.Z * 2.5))
-                        root.CFrame = CFrame.lookAt(smoothed, smoothed + dir)
-                    end)
-                    task.wait()
-                end
-
-                if not settings.donationSwimToggle or not character or not character.Parent or not root.Parent then
-                    return
-                end
-            end
-
-            baseStartIndex = 1
-        end
-    end)
-end
-
 local function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.BackgroundColor3 = THEME.section
@@ -2887,20 +2701,6 @@ settingHandlers = {
     antiAfkToggle = function(value)
         setAntiAfkEnabled(value == true)
     end,
-    donationSwimToggle = function(value)
-        if value then
-            setDonationSwimState(true)
-            performDonationSwimMotion(math.max(1, tonumber(settings.testDonationAmount) or 6))
-        else
-            if currentDonationSwimTask then
-                pcall(function()
-                    task.cancel(currentDonationSwimTask)
-                end)
-                currentDonationSwimTask = nil
-            end
-            stopDonationSwimState()
-        end
-    end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
             updateBoothTextNow()
@@ -3546,7 +3346,6 @@ local function buildSettingsTabs()
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
         createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
-        createToggle(mainSection, localized("donationSwim"), "donationSwimToggle")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3572,9 +3371,6 @@ local function buildSettingsTabs()
                 end
                 if settings.helicopterEnabled then
                     performHelicopterDonationSequence(amount)
-                end
-                if settings.donationSwimToggle then
-                    performDonationSwimMotion(amount)
                 end
             else
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
@@ -3737,10 +3533,6 @@ local function bindDonationListener()
 
         if settings.helicopterEnabled then
             performHelicopterDonationSequence(delta)
-        end
-
-        if settings.donationSwimToggle then
-            performDonationSwimMotion(delta)
         end
 
         if settings.webhookToggle then
