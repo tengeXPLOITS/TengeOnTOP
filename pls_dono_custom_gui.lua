@@ -2688,6 +2688,19 @@ local function applySpinState()
 end
 
 
+local function restoreRuntimeSettings()
+    if type(settingHandlers) ~= "table" then
+        return
+    end
+
+    for key, value in pairs(settings) do
+        local handler = settingHandlers[key]
+        if type(handler) == "function" then
+            pcall(handler, value)
+        end
+    end
+end
+
 settingHandlers = {
     language = function(value)
         if not translations[value] then
@@ -3459,15 +3472,7 @@ task.spawn(function()
 end)
 
 task.defer(function()
-    if settings.antiAfkToggle then
-        setAntiAfkEnabled(true)
-    end
-    if settings.helicopterEnabled then
-        startHelicopterIdleMode()
-    end
-    if settings.spinSet then
-        applySpinState()
-    end
+    restoreRuntimeSettings()
 end)
 
 task.spawn(function()
@@ -3625,15 +3630,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         stopAstronautIdle()
         stopHelicopterIdleTask()
         stopHelicopterSpin()
-        if settings.antiAfkToggle then
-            setAntiAfkEnabled(true)
-        end
-        if settings.helicopterEnabled then
-            startHelicopterIdleMode()
-        end
-        if settings.spinSet then
-            applySpinState()
-        end
+        restoreRuntimeSettings()
         bindDonationListener()
     end)
 end)
