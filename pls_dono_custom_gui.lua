@@ -2108,6 +2108,7 @@ end
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
 local pendingHelicopterRaisedAmount = 0
+local spinBoostAmount = 0
 
 local function stopAstronautIdle()
     if currentAstronautIdleTrack then
@@ -2652,7 +2653,7 @@ local function getCharacterHumanoidRoot()
 end
 
 local function getSpinAngularVelocity()
-    return SPIN_DONATION_BASE_SPEED
+    return SPIN_DONATION_BASE_SPEED + spinBoostAmount
 end
 
 local function getSpinMover()
@@ -2682,8 +2683,11 @@ local function applySpinState()
             existing.Parent = root
         end
         existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
-    elseif existing and existing:IsA("BodyAngularVelocity") then
-        existing:Destroy()
+    else
+        spinBoostAmount = 0
+        if existing and existing:IsA("BodyAngularVelocity") then
+            existing:Destroy()
+        end
     end
 end
 
@@ -2801,6 +2805,9 @@ settingHandlers = {
         saveSettings()
     end,
     spinSet = function()
+        if not settings.spinSet then
+            spinBoostAmount = 0
+        end
         applySpinState()
     end,
     serverHopDelay = function(value)
@@ -3575,11 +3582,10 @@ local function bindDonationListener()
         sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
 
         if settings.spinSet then
+            spinBoostAmount = spinBoostAmount + math.max(0, tonumber(delta) or 0)
             local spin = getSpinMover()
             if spin then
-                local averageDelta = delta / 3
-                local nextVelocity = averageDelta + spin.AngularVelocity.Y
-                spin.AngularVelocity = Vector3.new(0, nextVelocity, 0)
+                spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
             else
                 applySpinState()
             end
