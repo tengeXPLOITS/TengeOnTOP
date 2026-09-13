@@ -15,7 +15,6 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local StarterGui = game:GetService("StarterGui")
-local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
@@ -26,7 +25,6 @@ local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
-local ACCESSIBLE_PLS_DONATE_PLACE_ID = 18852429314
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -190,6 +188,7 @@ local defaults = {
     webhookToggle = false,
     webhookBox = "",
     notifyPerHopToggle = false,
+    antiAfkToggle = false,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -389,6 +388,7 @@ local translations = {
         webhookEnabled = "Webhook Enabled",
         webhookUrl = "Webhook URL",
         notifyPerHop = "Notify Per Hop",
+        antiAfk = "Anti AFK",
         autoServerHop = "Auto Server Hop",
         serverHopDelay = "Server Hop Delay (Minutes)",
         minPlayers = "Min Players in Server",
@@ -446,6 +446,7 @@ local translations = {
         webhookEnabled = "Webhook activado",
         webhookUrl = "URL del webhook",
         notifyPerHop = "Notificar por cada cambio",
+        antiAfk = "Anti AFK",
         autoServerHop = "Cambio automatico de servidor",
         serverHopDelay = "Retraso del cambio (minutos)",
         minPlayers = "Minimo de jugadores",
@@ -1210,49 +1211,7 @@ updateBoothTextNow = function()
     return applied, applied and "updated" or "local-preview-only"
 end
 
-local function getDisplayPlaceName(placeId)
-    local candidateIds = {}
-    local requestedPlaceId = tonumber(placeId) or 0
-    if requestedPlaceId > 0 then
-        table.insert(candidateIds, requestedPlaceId)
-    end
-
-    local currentPlaceId = tonumber(game.PlaceId) or 0
-    if currentPlaceId > 0 then
-        table.insert(candidateIds, currentPlaceId)
-    end
-
-    if ACCESSIBLE_PLS_DONATE_PLACE_ID > 0 then
-        table.insert(candidateIds, ACCESSIBLE_PLS_DONATE_PLACE_ID)
-    end
-
-    local seen = {}
-    for _, targetPlaceId in ipairs(candidateIds) do
-        if targetPlaceId > 0 and not seen[targetPlaceId] then
-            seen[targetPlaceId] = true
-
-            local ok, info = pcall(function()
-                return MarketplaceService:GetProductInfo(targetPlaceId, Enum.InfoType.Game)
-            end)
-            if ok and info and type(info.Name) == "string" and info.Name ~= "" and info.Name ~= "UGC" then
-                return info.Name
-            end
-        end
-    end
-
-    local currentName = tostring(game.Name or "")
-    if currentName ~= "" and currentName ~= "UGC" then
-        return currentName
-    end
-
-    return "PLS DONATE"
-end
-
 local function choosePlaceId()
-    if ACCESSIBLE_PLS_DONATE_PLACE_ID > 0 then
-        return ACCESSIBLE_PLS_DONATE_PLACE_ID
-    end
-
     if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
         return EXTRA_PLS_DONATE_PLACE_ID
     end
@@ -1273,11 +1232,31 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
     serverHopIsActive = true
     task.spawn(function()
         local maxAttempts = 12
+        local startTime = os.clock()
+        local primaryMin = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 23
+        local primaryMax = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
+        local fallbackRanges = {
+            { 21, 23 },
+            { 26, 27 },
+        }
 
         for attempt = attemptNumber, maxAttempts do
             local placeId = choosePlaceId()
-            local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 23
-            local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
+            local elapsed = os.clock() - startTime
+            local rangeIndex = 0
+            if elapsed >= 5 then
+                rangeIndex = 1
+            end
+            if elapsed >= 10 then
+                rangeIndex = 2
+            end
+
+            local minPlayers = primaryMin
+            local maxPlayers = primaryMax
+            if rangeIndex > 0 then
+                minPlayers = fallbackRanges[rangeIndex][1]
+                maxPlayers = fallbackRanges[rangeIndex][2]
+            end
 
             local req = performHttpRequest({
                 Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
@@ -1299,7 +1278,8 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 local servers = {}
                 for _, server in ipairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
-                    if server.id ~= game.JobId and playing >= minPlayers and playing <= maxPlayers then
+                    local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
+                    if server.id ~= game.JobId and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers then
                         table.insert(servers, server)
                     end
                 end
@@ -1328,7 +1308,11 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
             end
 
             if attempt < maxAttempts then
-                notify("Server Hop", ("Retrying hop (%d/%d)..."):format(attempt, maxAttempts), 2, "server-hop-retry", 0.5)
+                local statusText = ("Retrying hop (%d/%d)..."):format(attempt, maxAttempts)
+                if elapsed >= 5 then
+                    statusText = string.format("Trying fallback range %d-%d (%d/%d)...", minPlayers, maxPlayers, attempt, maxAttempts)
+                end
+                notify("Server Hop", statusText, 2, "server-hop-retry", 0.5)
                 task.wait(1.5 + (attempt * 0.5))
             else
                 serverHopIsActive = false
@@ -1576,17 +1560,17 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(62, 67, 73),
-    topBarText = Color3.fromRGB(244, 244, 246),
-    panel = Color3.fromRGB(28, 29, 33),
-    tabIdle = Color3.fromRGB(52, 55, 60),
-    tabActive = Color3.fromRGB(70, 74, 81),
-    section = Color3.fromRGB(31, 33, 37),
-    control = Color3.fromRGB(41, 44, 50),
-    controlText = Color3.fromRGB(236, 236, 239),
-    subtleText = Color3.fromRGB(180, 181, 187),
-    accent = Color3.fromRGB(84, 191, 108),
-    stroke = Color3.fromRGB(76, 80, 86),
+    topBar = Color3.fromRGB(191, 104, 41),
+    topBarText = Color3.fromRGB(255, 247, 235),
+    panel = Color3.fromRGB(145, 89, 39),
+    tabIdle = Color3.fromRGB(170, 107, 57),
+    tabActive = Color3.fromRGB(205, 126, 64),
+    section = Color3.fromRGB(120, 76, 36),
+    control = Color3.fromRGB(169, 96, 47),
+    controlText = Color3.fromRGB(255, 247, 235),
+    subtleText = Color3.fromRGB(255, 221, 187),
+    accent = Color3.fromRGB(255, 168, 92),
+    stroke = Color3.fromRGB(110, 72, 35),
 }
 
 local SHELL_CORNER_RADIUS = 10
@@ -1713,9 +1697,9 @@ do
     local gradient = Instance.new("UIGradient")
     gradient.Rotation = 90
     gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 30, 32)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(22, 23, 24)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(17, 18, 19)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(168, 98, 40)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(138, 81, 33)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(111, 67, 28)),
     })
     gradient.Parent = main
 end
@@ -1750,7 +1734,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = Enum.Font.GothamSemibold
     title.TextSize = 13
-    title.Text = getDisplayPlaceName(ACCESSIBLE_PLS_DONATE_PLACE_ID)
+    title.Text = "PLS DONATE 🍁 | @ii.matty"
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -2038,6 +2022,26 @@ local function createTab(name, buttonText)
     end)
 
     return content
+end
+
+local antiAfkConnection
+local function setAntiAfkEnabled(enabled)
+    if antiAfkConnection then
+        antiAfkConnection:Disconnect()
+        antiAfkConnection = nil
+    end
+
+    if not enabled then
+        return
+    end
+
+    local virtualUser = game:GetService("VirtualUser")
+    antiAfkConnection = LocalPlayer.Idled:Connect(function()
+        pcall(function()
+            virtualUser:CaptureController()
+            virtualUser:ClickButton2(Vector2.new())
+        end)
+    end)
 end
 
 local function createSection(parent, titleText)
@@ -2732,6 +2736,9 @@ settingHandlers = {
             stopAstronautIdle()
         end
     end,
+    antiAfkToggle = function(value)
+        setAntiAfkEnabled(value == true)
+    end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
             updateBoothTextNow()
@@ -3408,6 +3415,7 @@ local function buildSettingsTabs()
         local mainSection = createSection(mainTab, localized("mainSection"))
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
+        createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3592,7 +3600,9 @@ task.spawn(function()
             performHelicopterDonationSequence(delta)
         end
 
-        sendDonationWebhook(delta, getNearestPlayerInfo())
+        if settings.webhookToggle then
+            sendDonationWebhook(delta, getNearestPlayerInfo())
+        end
 
         if settings.autoThanks then
             task.spawn(function()
