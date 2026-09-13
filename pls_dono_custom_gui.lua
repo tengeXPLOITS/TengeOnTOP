@@ -171,6 +171,8 @@ end
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
+local UI_BOOT_DELAY = 0.25
+
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local LEGACY_SETTINGS_FILE = "plsdonatesettings.txt"
@@ -3418,28 +3420,30 @@ end
 
 end
 
-buildSettingsTabs()
+task.delay(UI_BOOT_DELAY, function()
+    buildSettingsTabs()
 
-do
-    local targetPosition = main.Position
-    main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
-    TweenService:Create(
-        main,
-        TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        {Position = targetPosition}
-    ):Play()
-end
-
-task.spawn(function()
-    task.wait(2)
-    local claimed, info = claimBoothNow()
-    if claimed then
-        onBoothClaimDetected(info)
+    do
+        local targetPosition = main.Position
+        main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
+        TweenService:Create(
+            main,
+            TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {Position = targetPosition}
+        ):Play()
     end
-end)
 
-task.defer(function()
-    restoreRuntimeSettings()
+    task.spawn(function()
+        task.wait(2)
+        local claimed, info = claimBoothNow()
+        if claimed then
+            onBoothClaimDetected(info)
+        end
+    end)
+
+    task.defer(function()
+        restoreRuntimeSettings()
+    end)
 end)
 
 task.spawn(function()
