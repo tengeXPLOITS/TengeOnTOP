@@ -173,13 +173,12 @@ SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
+local LEGACY_SETTINGS_FILE = "plsdonatesettings.txt"
+local LEGACY_SETTINGS_BACKUP_FILE = "plsdonatesettingsbackup.txt"
 
 local defaults = {
     language = "English",
     textUpdateToggle = true,
-    textUpdateDelay = 30,
-    textColor = "#32CD32",
-    goalBox = 5,
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarHeaderText = "GOAL $G",
     goalBarColor = "blue",
@@ -198,7 +197,8 @@ local defaults = {
     webhookBox = "",
     notifyPerHopToggle = false,
     antiAfkToggle = false,
-    spinSpeedMultiplier = 1,
+    donationSwimToggle = false,
+    spinSpeedMultiplier = 0.35,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -264,18 +264,15 @@ local function migrateLegacySettings(data)
         return data
     end
 
-    if data.textColor == nil and data.hexBox ~= nil then
-        data.textColor = data.hexBox
-    end
-
     data.hexBox = nil
     return data
 end
 
 local function saveSettings()
+    SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+    SharedEnv.plsdonoSettings = settings
+
     if not canUseFiles() then
-        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
-        SharedEnv.plsdonoSettings = settings
         return
     end
 
@@ -283,20 +280,38 @@ local function saveSettings()
         return HttpService:JSONEncode(settings)
     end)
     if not ok then
-        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
-        SharedEnv.plsdonoSettings = settings
         return
     end
-
-    SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
-    SharedEnv.plsdonoSettings = settings
 
     pcall(function()
         writefile(SETTINGS_FILE, encoded)
         writefile(SETTINGS_BACKUP_FILE, encoded)
+        writefile(LEGACY_SETTINGS_FILE, encoded)
+        writefile(LEGACY_SETTINGS_BACKUP_FILE, encoded)
     end)
 end
 
+local function readSettingsFile(fileName)
+    if not canUseFiles() or not isfile(fileName) then
+        return nil
+    end
+
+    local ok, content = pcall(function()
+        return readfile(fileName)
+    end)
+    if not ok or type(content) ~= "string" or content == "" then
+        return nil
+    end
+
+    local decodeOk, data = pcall(function()
+        return HttpService:JSONDecode(content)
+    end)
+    if not decodeOk or type(data) ~= "table" then
+        return nil
+    end
+
+    return migrateLegacySettings(data)
+end
 
 local function loadSettings()
     settings = deepCopy(defaults)
@@ -312,49 +327,22 @@ local function loadSettings()
         return
     end
 
-    if not isfile(SETTINGS_FILE) then
-        saveSettings()
-        return
-    end
+    local candidates = {
+        SETTINGS_FILE,
+        SETTINGS_BACKUP_FILE,
+        LEGACY_SETTINGS_FILE,
+        LEGACY_SETTINGS_BACKUP_FILE,
+    }
 
-    local readOk, content = pcall(function()
-        return readfile(SETTINGS_FILE)
-    end)
-
-    if not readOk or type(content) ~= "string" or content == "" then
-        saveSettings()
-        return
-    end
-
-    local decodeOk, data = pcall(function()
-        return HttpService:JSONDecode(content)
-    end)
-
-    if decodeOk and type(data) == "table" then
-        settings = migrateLegacySettings(data)
-        mergeDefaults(settings, defaults)
-        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
-        SharedEnv.plsdonoSettings = settings
-        saveSettings()
-        return
-    end
-
-    if isfile(SETTINGS_BACKUP_FILE) then
-        local backupOk, backupContent = pcall(function()
-            return readfile(SETTINGS_BACKUP_FILE)
-        end)
-        if backupOk and type(backupContent) == "string" and backupContent ~= "" then
-            local backupDecodeOk, backupData = pcall(function()
-                return HttpService:JSONDecode(backupContent)
-            end)
-            if backupDecodeOk and type(backupData) == "table" then
-                settings = migrateLegacySettings(backupData)
-                mergeDefaults(settings, defaults)
-                SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
-                SharedEnv.plsdonoSettings = settings
-                saveSettings()
-                return
-            end
+    for _, fileName in ipairs(candidates) do
+        local data = readSettingsFile(fileName)
+        if type(data) == "table" then
+            settings = deepCopy(data)
+            mergeDefaults(settings, defaults)
+            SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+            SharedEnv.plsdonoSettings = settings
+            saveSettings()
+            return
         end
     end
 
@@ -392,9 +380,6 @@ local translations = {
         webhookSection = "Webhook Settings",
         serverSection = "Serverhop Settings",
         textUpdate = "Text Update",
-        textUpdateDelay = "Text Update Delay (S)",
-        textColor = "Text Color",
-        robuxGoal = "Robux Goal",
         goalBarColor = "Goal Bar Color",
         goalBarHeader = "Goal Bar Header:",
         goalBarHint = "Use $G here if you want the current goal amount.",
@@ -420,6 +405,7 @@ local translations = {
         webhookUrl = "Webhook URL",
         notifyPerHop = "Notify Per Hop",
         antiAfk = "Anti AFK",
+        donationSwim = "Donation - Swim Around Map",
         autoServerHop = "Auto Server Hop",
         serverHopDelay = "Server Hop Delay (Minutes)",
         minPlayers = "Min Players in Server",
@@ -450,9 +436,6 @@ local translations = {
         webhookSection = "Configuracion del webhook",
         serverSection = "Configuracion de cambio de servidor",
         textUpdate = "Actualizar texto",
-        textUpdateDelay = "Retraso de actualizacion (S)",
-        textColor = "Color del texto",
-        robuxGoal = "Meta de Robux",
         goalBarColor = "Color de la barra de meta",
         goalBarHeader = "Encabezado de la barra de meta:",
         goalBarHint = "Usa $G aqui para mostrar la meta actual.",
@@ -478,6 +461,7 @@ local translations = {
         webhookUrl = "URL del webhook",
         notifyPerHop = "Notificar por cada cambio",
         antiAfk = "Anti AFK",
+        donationSwim = "Donacion - nadar por el mapa",
         autoServerHop = "Cambio automatico de servidor",
         serverHopDelay = "Retraso del cambio (minutos)",
         minPlayers = "Minimo de jugadores",
@@ -1029,7 +1013,7 @@ end
 
 local function getGoalProgressSnapshot()
     local current = tonumber(getCurrentRaisedAmount()) or 0
-    local goal = math.max(0, tonumber(settings.goalBox) or 0)
+    local goal = 5
     local safeGoal = math.max(goal, 1)
     local ratio = math.clamp(current / safeGoal, 0, 1)
     return current, goal, ratio
@@ -1159,7 +1143,7 @@ updateBoothTextNow = function()
         richText = true,
         strokeColor = Color3.new(0, 0, 0),
         strokeOpacity = 0,
-        textColor = hexToColor3(settings.textColor),
+        textColor = hexToColor3("#32CD32"),
         buttonStrokeColor = Color3.new(0, 0, 0),
         buttonTextColor = Color3.new(1, 1, 1),
         buttonColor = Color3.new(98 / 255, 1, 0),
@@ -2015,6 +1999,128 @@ local function setAntiAfkEnabled(enabled)
     end)
 end
 
+local currentDonationSwimTask = nil
+local donationSwimWalkSpeed = nil
+
+local function stopDonationSwimState()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return
+    end
+
+    if donationSwimWalkSpeed ~= nil then
+        humanoid.WalkSpeed = donationSwimWalkSpeed
+        donationSwimWalkSpeed = nil
+    end
+
+    if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming and humanoid:GetState() == Enum.HumanoidStateType.Swimming then
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end)
+    end
+end
+
+local function setDonationSwimState(enabled)
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return
+    end
+
+    if enabled then
+        if donationSwimWalkSpeed == nil then
+            donationSwimWalkSpeed = humanoid.WalkSpeed
+        end
+        humanoid.WalkSpeed = math.max(12, donationSwimWalkSpeed * 1.5)
+        pcall(function()
+            if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming then
+                humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+            end
+        end)
+    else
+        stopDonationSwimState()
+    end
+end
+
+local function performDonationSwimMotion(amount)
+    if not settings.donationSwimToggle then
+        stopDonationSwimState()
+        return
+    end
+
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = humanoid and humanoid.RootPart
+    if not root then
+        return
+    end
+
+    setDonationSwimState(true)
+
+    if currentDonationSwimTask then
+        pcall(function()
+            task.cancel(currentDonationSwimTask)
+        end)
+        currentDonationSwimTask = nil
+    end
+
+    local donation = math.max(1, tonumber(amount) or 1)
+    local route = HELICOPTER_PLAZA_ROUTE
+    local laps = math.max(1, math.ceil(donation / 7))
+    local startY = root.Position.Y
+
+    currentDonationSwimTask = task.spawn(function()
+        local baseStartIndex = 1
+        local nearestDistance = math.huge
+        for index, point in ipairs(route) do
+            local delta = Vector3.new(point.X, startY, point.Z) - root.Position
+            local distance = delta.Magnitude
+            if distance < nearestDistance then
+                nearestDistance = distance
+                baseStartIndex = index
+            end
+        end
+
+        for lap = 1, laps do
+            for index = baseStartIndex, #route do
+                if not settings.donationSwimToggle or not character or not character.Parent or not root.Parent then
+                    return
+                end
+
+                local point = route[index]
+                local targetPos = Vector3.new(point.X, startY + 2.2, point.Z)
+                local startTick = tick()
+                local travelDuration = math.max(0.2, 0.9 - (donation * 0.006))
+
+                while settings.donationSwimToggle and character and character.Parent and root and root.Parent and (tick() - startTick) < travelDuration do
+                    local alpha = math.clamp((tick() - startTick) / travelDuration, 0, 1)
+                    local eased = alpha * alpha * (3 - (2 * alpha))
+                    local smoothed = root.Position:Lerp(targetPos, eased)
+                    local dir = (targetPos - smoothed)
+                    if dir.Magnitude < 0.001 then
+                        dir = Vector3.new(0, 0, -1)
+                    else
+                        dir = dir.Unit
+                    end
+
+                    pcall(function()
+                        humanoid:Move(Vector3.new(dir.X * 2.5, 0.1, dir.Z * 2.5))
+                        root.CFrame = CFrame.lookAt(smoothed, smoothed + dir)
+                    end)
+                    task.wait()
+                end
+
+                if not settings.donationSwimToggle or not character or not character.Parent or not root.Parent then
+                    return
+                end
+            end
+
+            baseStartIndex = 1
+        end
+    end)
+end
+
 local function createSection(parent, titleText)
     local section = Instance.new("Frame")
     section.BackgroundColor3 = THEME.section
@@ -2387,11 +2493,11 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                 local targetSpinSpeed = math.max(getHelicopterSpinSpeedForAmount(amount), tonumber(spinSpeed) or 25)
                 local minRiseHeight = math.max(0, tonumber(config.minRiseHeight) or 0)
                 local riseHeight = getHelicopterRiseHeight(amount, minRiseHeight)
-                local registerDelay = math.max(0.35, tonumber(config.registerDelay) or 1.8)
-                local prepDuration = math.max(0.3, tonumber(config.prepDuration) or 0.75)
-                local groundedSpinDuration = math.max(1.2, tonumber(config.groundedSpinDuration) or math.max(2.5, tonumber(spinDuration) or 2.5))
-                local ascentDuration = math.max(3, tonumber(config.ascentDuration) or 6.5)
-                local landingDuration = math.max(3.5, tonumber(config.landingDuration) or 5.5)
+                local registerDelay = math.max(0.03, tonumber(config.registerDelay) or 0.05)
+                local prepDuration = math.max(0.04, tonumber(config.prepDuration) or 0.06)
+                local groundedSpinDuration = math.max(0.16, tonumber(config.groundedSpinDuration) or math.max(0.22, tonumber(spinDuration) or 0.22))
+                local ascentDuration = math.max(0.18, tonumber(config.ascentDuration) or 0.22)
+                local landingDuration = math.max(0.35, tonumber(config.landingDuration) or 0.55)
                 local flightDuration = getHelicopterFlightDuration(amount)
 
                 stopHelicopterIdleTask()
@@ -2426,8 +2532,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     local groundedPrepPos = Vector3.new(prepTargetCF.Position.X, holdCF.Position.Y, prepTargetCF.Position.Z)
                     prepTargetCF = CFrame.new(groundedPrepPos, groundedPrepPos + flatLook)
                 end
-                sendChatMessage("Preparing for takeoff...")
-
                 local prepStart = tick()
                 while tick() - prepStart < prepDuration and char.Parent and root.Parent do
                     local t = math.clamp((tick() - prepStart) / prepDuration, 0, 1)
@@ -2444,13 +2548,6 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     task.wait()
                 end
                 root.CFrame = prepTargetCF
-
-                sendChatMessage("TAKE OFF IN 3")
-                task.wait(1)
-                sendChatMessage("2")
-                task.wait(1)
-                sendChatMessage("1")
-                task.wait(1)
 
                 local startPos = prepTargetCF.Position
                 local startRot = prepTargetCF - prepTargetCF.Position
@@ -2637,13 +2734,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
-    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 3.5, {
-        registerDelay = math.random(14, 20) / 10,
-        prepDuration = 0.8,
-        groundedSpinDuration = 2.8,
-        minRiseHeight = 28,
-        ascentDuration = 4,
-        landingDuration = 5.5
+    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 0.2, {
+        registerDelay = 0.04,
+        prepDuration = 0.06,
+        groundedSpinDuration = 0.2,
+        minRiseHeight = 110,
+        ascentDuration = 0.2,
+        landingDuration = 0.55
     })
 end
 
@@ -2729,35 +2826,22 @@ settingHandlers = {
     antiAfkToggle = function(value)
         setAntiAfkEnabled(value == true)
     end,
-    textUpdateToggle = function(value)
-        if value and updateBoothTextNow then
-            updateBoothTextNow()
+    donationSwimToggle = function(value)
+        if value then
+            setDonationSwimState(true)
+            performDonationSwimMotion(math.max(1, tonumber(settings.testDonationAmount) or 6))
+        else
+            if currentDonationSwimTask then
+                pcall(function()
+                    task.cancel(currentDonationSwimTask)
+                end)
+                currentDonationSwimTask = nil
+            end
+            stopDonationSwimState()
         end
     end,
-    textColor = function(value)
-        local normalized = tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local lower = normalized:lower()
-        local allowedNames = {
-            green = true,
-            blue = true,
-            yellow = true,
-            black = true,
-            white = true,
-            red = true,
-            orange = true,
-            pink = true,
-            purple = true,
-            gray = true,
-            grey = true,
-        }
-        if not allowedNames[lower] and not normalized:match("^#%x%x%x%x%x%x$") then
-            settings.textColor = defaults.textColor
-            saveSettings()
-            return
-        end
-        settings.textColor = allowedNames[lower] and lower or normalized:upper()
-        saveSettings()
-        if updateBoothTextNow then
+    textUpdateToggle = function(value)
+        if value and updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
@@ -2772,11 +2856,6 @@ settingHandlers = {
         }
         settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
         saveSettings()
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
-    goalBox = function()
         if updateBoothTextNow then
             updateBoothTextNow()
         end
@@ -3348,9 +3427,6 @@ local function buildSettingsTabs()
 
     local boothSection = createSection(boothTab, localized("boothSection"))
     createToggle(boothSection, localized("textUpdate"), "textUpdateToggle")
-    createTextBox(boothSection, localized("textUpdateDelay"), "textUpdateDelay", true)
-    createTextBox(boothSection, localized("textColor"), "textColor", false)
-    createTextBox(boothSection, localized("robuxGoal"), "goalBox", true)
     createDropdown(boothSection, localized("goalBarColor"), "goalBarColor", {"green", "blue", "red", "orange", "purple"})
     local boothTextBox
     createInfoLabel(boothSection, localized("goalBarHeader"))
@@ -3409,6 +3485,7 @@ local function buildSettingsTabs()
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
         createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
+        createToggle(mainSection, localized("donationSwim"), "donationSwimToggle")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3434,6 +3511,9 @@ local function buildSettingsTabs()
                 end
                 if settings.helicopterEnabled then
                     performHelicopterDonationSequence(amount)
+                end
+                if settings.donationSwimToggle then
+                    performDonationSwimMotion(amount)
                 end
             else
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
@@ -3551,29 +3631,6 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    local lastTextUpdate = 0
-    while task.wait(1) do
-        if settings.textUpdateToggle then
-            local delaySeconds = math.max(3, tonumber(settings.textUpdateDelay) or 30)
-            if tick() - lastTextUpdate >= delaySeconds then
-                lastTextUpdate = tick()
-                local ok = updateBoothTextNow()
-                if not ok then
-                    local boothLocation = getBoothLocation()
-                    local boothUiFolder = boothLocation and boothLocation:FindFirstChild("BoothUI")
-                    if boothUiFolder then
-                        local owned = findOwnedBoothSlot(boothUiFolder)
-                        if owned then
-                            claimedBoothSlot = owned
-                        end
-                    end
-                end
-            end
-        end
-    end
-end)
-
 local activeDonationListener = nil
 local function bindDonationListener()
     local raisedObj = getRaisedStatObject()
@@ -3619,6 +3676,10 @@ local function bindDonationListener()
 
         if settings.helicopterEnabled then
             performHelicopterDonationSequence(delta)
+        end
+
+        if settings.donationSwimToggle then
+            performDonationSwimMotion(delta)
         end
 
         if settings.webhookToggle then
