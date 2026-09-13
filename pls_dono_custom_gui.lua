@@ -1524,8 +1524,8 @@ local THEME = {
     stroke = Color3.fromRGB(76, 80, 86),
 }
 
-local UI_FONT = Enum.Font.Comic
-local UI_FONT_BOLD = Enum.Font.Comic
+local UI_FONT = Enum.Font.Fantasy
+local UI_FONT_BOLD = Enum.Font.Fantasy
 
 local SHELL_CORNER_RADIUS = 10
 local CONTROL_CORNER_RADIUS = 6
