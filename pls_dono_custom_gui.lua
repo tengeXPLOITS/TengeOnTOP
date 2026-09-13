@@ -2001,11 +2001,62 @@ end
 
 local currentDonationSwimTask = nil
 local donationSwimWalkSpeed = nil
+local donationSwimWaterPart = nil
+local donationSwimWaterState = false
+
+local function ensureDonationSwimWaterPart()
+    if donationSwimWaterPart and donationSwimWaterPart.Parent then
+        return donationSwimWaterPart
+    end
+
+    local part = Instance.new("Part")
+    part.Name = "DonationSwimWater"
+    part.Anchored = true
+    part.CanCollide = false
+    part.CanTouch = false
+    part.CanQuery = false
+    part.Transparency = 0.3
+    part.Material = Enum.Material.Water
+    part.Color = Color3.fromRGB(70, 170, 255)
+    part.Size = Vector3.new(18, 6, 18)
+    part.Shape = Enum.PartType.Block
+    part.TopSurface = Enum.SurfaceType.Smooth
+    part.BottomSurface = Enum.SurfaceType.Smooth
+    part.Parent = workspace
+
+    donationSwimWaterPart = part
+    return part
+end
+
+local function updateDonationSwimWater(character, root)
+    if not settings.donationSwimToggle or not character or not character.Parent or not root or not root.Parent then
+        if donationSwimWaterPart and donationSwimWaterPart.Parent then
+            donationSwimWaterPart:Destroy()
+            donationSwimWaterPart = nil
+        end
+        donationSwimWaterState = false
+        return
+    end
+
+    local waterPart = ensureDonationSwimWaterPart()
+    local position = root.Position + Vector3.new(0, -2.5, 0)
+    local size = Vector3.new(20, 7, 20)
+    if waterPart.Size ~= size then
+        waterPart.Size = size
+    end
+    waterPart.CFrame = CFrame.new(position)
+    donationSwimWaterState = true
+end
 
 local function stopDonationSwimState()
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not humanoid then
+        if donationSwimWaterPart and donationSwimWaterPart.Parent then
+            donationSwimWaterPart:Destroy()
+            donationSwimWaterPart = nil
+        end
+        donationSwimWaterState = false
         return
     end
 
@@ -2013,6 +2064,12 @@ local function stopDonationSwimState()
         humanoid.WalkSpeed = donationSwimWalkSpeed
         donationSwimWalkSpeed = nil
     end
+
+    if donationSwimWaterPart and donationSwimWaterPart.Parent then
+        donationSwimWaterPart:Destroy()
+        donationSwimWaterPart = nil
+    end
+    donationSwimWaterState = false
 
     if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming and humanoid:GetState() == Enum.HumanoidStateType.Swimming then
         pcall(function()
@@ -2024,7 +2081,8 @@ end
 local function setDonationSwimState(enabled)
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then
+    local root = humanoid and humanoid.RootPart
+    if not humanoid or not root then
         return
     end
 
@@ -2033,6 +2091,8 @@ local function setDonationSwimState(enabled)
             donationSwimWalkSpeed = humanoid.WalkSpeed
         end
         humanoid.WalkSpeed = math.max(12, donationSwimWalkSpeed * 1.5)
+        humanoid.SwimSpeed = math.max(16, humanoid.WalkSpeed * 1.25)
+        updateDonationSwimWater(character, root)
         pcall(function()
             if Enum.HumanoidStateType and Enum.HumanoidStateType.Swimming then
                 humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
@@ -2105,6 +2165,7 @@ local function performDonationSwimMotion(amount)
                     end
 
                     pcall(function()
+                        updateDonationSwimWater(character, root)
                         humanoid:Move(Vector3.new(dir.X * 2.5, 0.1, dir.Z * 2.5))
                         root.CFrame = CFrame.lookAt(smoothed, smoothed + dir)
                     end)
