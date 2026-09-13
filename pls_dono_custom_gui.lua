@@ -121,14 +121,23 @@ local function queueScriptOnTeleport()
         return false
     end
 
+    local restoreState = [[
+        local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+        if type(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT) == "table" then
+            SharedEnv.plsdonoSettings = SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT
+        end
+    ]]
+
+    local primarySource
     if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_SOURCE ~= "" then
-        return pcall(function()
-            queueOnTeleport(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE)
-        end)
+        primarySource = SharedEnv.PLS_DONO_AUTOEXEC_SOURCE
     elseif type(SharedEnv.PLS_DONO_AUTOEXEC_URL) == "string" and SharedEnv.PLS_DONO_AUTOEXEC_URL ~= "" then
-        local source = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
+        primarySource = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
+    end
+
+    if primarySource then
         return pcall(function()
-            queueOnTeleport(source)
+            queueOnTeleport(restoreState .. "\n" .. primarySource)
         end)
     end
 
@@ -264,6 +273,8 @@ end
 
 local function saveSettings()
     if not canUseFiles() then
+        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+        SharedEnv.plsdonoSettings = settings
         return
     end
 
@@ -271,8 +282,13 @@ local function saveSettings()
         return HttpService:JSONEncode(settings)
     end)
     if not ok then
+        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+        SharedEnv.plsdonoSettings = settings
         return
     end
+
+    SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+    SharedEnv.plsdonoSettings = settings
 
     pcall(function()
         writefile(SETTINGS_FILE, encoded)
@@ -284,7 +300,14 @@ end
 local function loadSettings()
     settings = deepCopy(defaults)
 
+    if type(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT) == "table" then
+        settings = deepCopy(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT)
+        mergeDefaults(settings, defaults)
+    end
+
     if not canUseFiles() then
+        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+        SharedEnv.plsdonoSettings = settings
         return
     end
 
@@ -309,6 +332,8 @@ local function loadSettings()
     if decodeOk and type(data) == "table" then
         settings = migrateLegacySettings(data)
         mergeDefaults(settings, defaults)
+        SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+        SharedEnv.plsdonoSettings = settings
         saveSettings()
         return
     end
@@ -324,6 +349,8 @@ local function loadSettings()
             if backupDecodeOk and type(backupData) == "table" then
                 settings = migrateLegacySettings(backupData)
                 mergeDefaults(settings, defaults)
+                SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+                SharedEnv.plsdonoSettings = settings
                 saveSettings()
                 return
             end
@@ -331,14 +358,17 @@ local function loadSettings()
     end
 
     settings = deepCopy(defaults)
+    SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
+    SharedEnv.plsdonoSettings = settings
     saveSettings()
 end
 
 loadSettings()
 settings.thanksMessage = normalizeMessageList(settings.thanksMessage, defaults.thanksMessage)
 settings.begMessage = normalizeMessageList(settings.begMessage, defaults.begMessage)
-saveSettings()
+SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
 SharedEnv.plsdonoSettings = settings
+saveSettings()
 
 local languageOptions = {"English", "Spanish"}
 local translations = {
@@ -1524,8 +1554,8 @@ local THEME = {
     stroke = Color3.fromRGB(76, 80, 86),
 }
 
-local UI_FONT = Enum.Font.Fantasy
-local UI_FONT_BOLD = Enum.Font.Fantasy
+local UI_FONT = Enum.Font.Oswald
+local UI_FONT_BOLD = Enum.Font.Oswald
 
 local SHELL_CORNER_RADIUS = 10
 local CONTROL_CORNER_RADIUS = 6
@@ -1648,7 +1678,7 @@ do
     stroke.Thickness = 0
     stroke.Parent = main
 
-    main.BackgroundColor3 = Color3.fromRGB(242, 152, 65)
+    main.BackgroundColor3 = Color3.fromRGB(214, 128, 57)
 end
 
 local topBar = Instance.new("Frame")
@@ -1660,7 +1690,7 @@ topBar.Parent = main
 
 do
     createCorner(topBar, SHELL_CORNER_RADIUS)
-    topBar.BackgroundColor3 = Color3.fromRGB(241, 149, 64)
+    topBar.BackgroundColor3 = Color3.fromRGB(210, 122, 51)
 end
 
 do
