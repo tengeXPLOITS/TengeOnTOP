@@ -3459,6 +3459,12 @@ task.spawn(function()
 end)
 
 task.defer(function()
+    if settings.antiAfkToggle then
+        setAntiAfkEnabled(true)
+    end
+    if settings.helicopterEnabled then
+        startHelicopterIdleMode()
+    end
     if settings.spinSet then
         applySpinState()
     end
@@ -3601,6 +3607,9 @@ LocalPlayer.CharacterAdded:Connect(function()
         stopAstronautIdle()
         stopHelicopterIdleTask()
         stopHelicopterSpin()
+        if settings.antiAfkToggle then
+            setAntiAfkEnabled(true)
+        end
         if settings.helicopterEnabled then
             startHelicopterIdleMode()
         end
