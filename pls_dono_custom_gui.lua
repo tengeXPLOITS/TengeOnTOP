@@ -1524,6 +1524,9 @@ local THEME = {
     stroke = Color3.fromRGB(76, 80, 86),
 }
 
+local UI_FONT = Enum.Font.Comic
+local UI_FONT_BOLD = Enum.Font.Comic
+
 local SHELL_CORNER_RADIUS = 10
 local CONTROL_CORNER_RADIUS = 6
 local GLOW_COLOR = Color3.fromRGB(210, 210, 210)
@@ -1546,7 +1549,7 @@ end
 local function styleTextButton(btn, backgroundColor, textColor, textSize, font)
     btn.BackgroundColor3 = backgroundColor or THEME.control
     btn.TextColor3 = textColor or THEME.controlText
-    btn.Font = font or Enum.Font.GothamSemibold
+    btn.Font = font or UI_FONT_BOLD
     btn.TextSize = textSize or 11
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
@@ -1557,7 +1560,7 @@ local function styleTextBox(box, alignment, multiline)
     box.BackgroundColor3 = THEME.control
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
-    box.Font = Enum.Font.Gotham
+    box.Font = UI_FONT
     box.TextSize = 12
     box.ClearTextOnFocus = false
     box.TextXAlignment = alignment or Enum.TextXAlignment.Center
@@ -1641,18 +1644,11 @@ do
     createCorner(main, SHELL_CORNER_RADIUS)
 
     local stroke = Instance.new("UIStroke")
-    stroke.Color = THEME.stroke
-    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(220, 132, 58)
+    stroke.Thickness = 0
     stroke.Parent = main
 
-    local gradient = Instance.new("UIGradient")
-    gradient.Rotation = 90
-    gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(168, 98, 40)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(138, 81, 33)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(111, 67, 28)),
-    })
-    gradient.Parent = main
+    main.BackgroundColor3 = Color3.fromRGB(242, 152, 65)
 end
 
 local topBar = Instance.new("Frame")
@@ -1664,15 +1660,7 @@ topBar.Parent = main
 
 do
     createCorner(topBar, SHELL_CORNER_RADIUS)
-
-    local topGradient = Instance.new("UIGradient")
-    topGradient.Rotation = 0
-    topGradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(92, 94, 98)),
-        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(79, 81, 84)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(67, 69, 72)),
-    })
-    topGradient.Parent = topBar
+    topBar.BackgroundColor3 = Color3.fromRGB(241, 149, 64)
 end
 
 do
@@ -1683,7 +1671,7 @@ do
     title.Position = UDim2.new(0, 32, 0, 2)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
-    title.Font = Enum.Font.GothamSemibold
+    title.Font = UI_FONT_BOLD
     title.TextSize = 13
     title.Text = "PLS DONATE 🍁 | @ii.matty"
     title.Parent = topBar
@@ -1696,7 +1684,7 @@ do
     subtitle.Position = UDim2.new(0, 32, 0, 18)
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
-    subtitle.Font = Enum.Font.Gotham
+    subtitle.Font = UI_FONT
     subtitle.TextSize = 10
     subtitle.Text = "annoying ass beggars, LMAO"
     subtitle.Parent = topBar
@@ -1707,20 +1695,19 @@ local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Name = "Minimize"
 minimizeBtn.Size = UDim2.new(0, 18, 0, 18)
 minimizeBtn.Position = UDim2.new(0, 8, 0.5, -9)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(84, 89, 96)
+minimizeBtn.BackgroundTransparency = 1
+minimizeBtn.BorderSizePixel = 0
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 11
-minimizeBtn.Text = "-"
+minimizeBtn.Font = UI_FONT_BOLD
+minimizeBtn.TextSize = 12
+minimizeBtn.Text = "▼"
 minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
 applyTextGlow(minimizeBtn, GLOW_COLOR, 0.78)
 
 do
-    createCorner(minimizeBtn, CONTROL_CORNER_RADIUS)
-
     local miniStroke = Instance.new("UIStroke")
-    miniStroke.Thickness = 0.5
+    miniStroke.Thickness = 0
     miniStroke.Color = Color3.fromRGB(170, 176, 183)
     miniStroke.Parent = minimizeBtn
 end
@@ -1854,8 +1841,9 @@ local function setMinimized(state)
     end
 
     local targetSize = state and UDim2.new(0, expandedWidth, 0, TOP_BAR_HEIGHT) or UDim2.new(0, expandedWidth, 0, expandedHeight)
-    minimizeBtn.Text = state and "▴" or "▾"
-    minimizeBtn.BackgroundColor3 = state and Color3.fromRGB(63, 68, 75) or Color3.fromRGB(84, 89, 96)
+    minimizeBtn.Text = state and "▲" or "▼"
+    minimizeBtn.BackgroundTransparency = 1
+    minimizeBtn.BorderSizePixel = 0
 
     minimizeTween = TweenService:Create(
         main,
@@ -1890,7 +1878,7 @@ local function setTabVisualState(btn, active)
     end
     btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
     btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(214, 214, 218)
-    btn.Font = Enum.Font.GothamBold
+    btn.Font = UI_FONT_BOLD
     local activeBar = btn:FindFirstChild("ActiveBar")
     if activeBar then
         activeBar.Visible = false
@@ -1914,7 +1902,7 @@ local function createTab(name, buttonText)
     btn.Size = UDim2.new(0, 82, 0, 28)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
-    btn.Font = Enum.Font.GothamBold
+    btn.Font = UI_FONT_BOLD
     btn.TextSize = 12
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
@@ -2010,7 +1998,7 @@ local function createSection(parent, titleText)
     titleLabel.Size = UDim2.new(1, -12, 0, 24)
     titleLabel.Position = UDim2.new(0, 8, 0, 6)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.Font = Enum.Font.GothamSemibold
+    titleLabel.Font = UI_FONT_BOLD
     titleLabel.TextSize = 12
     titleLabel.TextColor3 = THEME.subtleText
     titleLabel.Text = titleText
@@ -2041,7 +2029,7 @@ local function createToggle(parent, text, key)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 18, 0, 18)
     btn.Position = UDim2.new(0, 2, 0.5, -9)
-    btn.Font = Enum.Font.GothamBold
+    btn.Font = UI_FONT_BOLD
     btn.TextSize = 11
     btn.Parent = row
 
@@ -2057,7 +2045,7 @@ local function createToggle(parent, text, key)
     label.Size = UDim2.new(1, -26, 1, 0)
     label.Position = UDim2.new(0, 26, 0, 0)
     label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Font = Enum.Font.Gotham
+    label.Font = UI_FONT
     label.TextSize = 12
     label.TextColor3 = THEME.controlText
     label.Text = text
