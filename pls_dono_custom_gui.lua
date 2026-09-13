@@ -1591,7 +1591,7 @@ local function styleTextBox(box, alignment, multiline)
     box.TextColor3 = THEME.controlText
     box.PlaceholderColor3 = THEME.subtleText
     box.Font = UI_FONT
-    box.TextSize = 12
+    box.TextSize = 13
     box.ClearTextOnFocus = false
     box.TextXAlignment = alignment or Enum.TextXAlignment.Center
     box.TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center
@@ -1702,7 +1702,7 @@ do
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.TextColor3 = THEME.topBarText
     title.Font = UI_FONT_BOLD
-    title.TextSize = 13
+    title.TextSize = 15
     title.Text = "PLS DONATE 🍁 | @ii.matty"
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
@@ -1715,7 +1715,7 @@ do
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextColor3 = THEME.subtleText
     subtitle.Font = UI_FONT
-    subtitle.TextSize = 10
+    subtitle.TextSize = 11
     subtitle.Text = "annoying ass beggars, LMAO"
     subtitle.Parent = topBar
     applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
@@ -1729,7 +1729,7 @@ minimizeBtn.BackgroundTransparency = 1
 minimizeBtn.BorderSizePixel = 0
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = UI_FONT_BOLD
-minimizeBtn.TextSize = 12
+minimizeBtn.TextSize = 13
 minimizeBtn.Text = "▼"
 minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
@@ -1933,7 +1933,7 @@ local function createTab(name, buttonText)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
     btn.Font = UI_FONT_BOLD
-    btn.TextSize = 12
+    btn.TextSize = 13
     btn.Text = tostring(buttonText or name)
     btn.AutoButtonColor = false
     btn.Parent = tabHolder
@@ -2029,7 +2029,7 @@ local function createSection(parent, titleText)
     titleLabel.Position = UDim2.new(0, 8, 0, 6)
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Font = UI_FONT_BOLD
-    titleLabel.TextSize = 12
+    titleLabel.TextSize = 13
     titleLabel.TextColor3 = THEME.subtleText
     titleLabel.Text = titleText
     titleLabel.Parent = section
@@ -2060,7 +2060,7 @@ local function createToggle(parent, text, key)
     btn.Size = UDim2.new(0, 18, 0, 18)
     btn.Position = UDim2.new(0, 2, 0.5, -9)
     btn.Font = UI_FONT_BOLD
-    btn.TextSize = 11
+    btn.TextSize = 12
     btn.Parent = row
 
     createCorner(btn, CONTROL_CORNER_RADIUS)
@@ -2076,7 +2076,7 @@ local function createToggle(parent, text, key)
     label.Position = UDim2.new(0, 26, 0, 0)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Font = UI_FONT
-    label.TextSize = 12
+    label.TextSize = 13
     label.TextColor3 = THEME.controlText
     label.Text = text
     label.Parent = row
