@@ -1554,8 +1554,8 @@ local THEME = {
     stroke = Color3.fromRGB(76, 80, 86),
 }
 
-local UI_FONT = Enum.Font.Oswald
-local UI_FONT_BOLD = Enum.Font.Oswald
+local UI_FONT = Enum.Font.Gotham
+local UI_FONT_BOLD = Enum.Font.GothamBlack
 
 local SHELL_CORNER_RADIUS = 10
 local CONTROL_CORNER_RADIUS = 6
@@ -3539,15 +3539,24 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
+local activeDonationListener = nil
+local function bindDonationListener()
     local raisedObj = getRaisedStatObject()
     if not raisedObj then
         return
     end
 
-    local lastRaised = tonumber(raisedObj.Value) or 0
+    if activeDonationListener and activeDonationListener.Parent == raisedObj then
+        return
+    end
 
-    raisedObj.Changed:Connect(function()
+    if activeDonationListener then
+        activeDonationListener:Disconnect()
+        activeDonationListener = nil
+    end
+
+    local lastRaised = tonumber(raisedObj.Value) or 0
+    activeDonationListener = raisedObj.Changed:Connect(function()
         local current = tonumber(raisedObj.Value) or 0
         local delta = current - lastRaised
         if delta <= 0 then
@@ -3586,6 +3595,15 @@ task.spawn(function()
             end)
         end
     end)
+end
+
+task.spawn(function()
+    bindDonationListener()
+    while task.wait(1.25) do
+        if getRaisedStatObject() then
+            bindDonationListener()
+        end
+    end
 end)
 
 if LocalPlayer.Character then
@@ -3616,6 +3634,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         if settings.spinSet then
             applySpinState()
         end
+        bindDonationListener()
     end)
 end)
 
