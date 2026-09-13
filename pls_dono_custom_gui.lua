@@ -198,6 +198,7 @@ local defaults = {
     webhookBox = "",
     notifyPerHopToggle = false,
     antiAfkToggle = false,
+    spinSpeedMultiplier = 1,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -899,12 +900,12 @@ end
 
 local function sendDonationWebhook(amount, donorInfo)
     if not settings.webhookToggle then
-        return
+        return false
     end
 
     local url = tostring(settings.webhookBox or ""):match("%S+")
     if not url or url == "" then
-        return
+        return false
     end
 
     local received = math.max(0, tonumber(amount) or 0)
@@ -919,7 +920,8 @@ local function sendDonationWebhook(amount, donorInfo)
     else
         donorLabel = donorDisplay
     end
-    postWebhookJson(url, {
+
+    return postWebhookJson(url, {
         username = "PLS DONATE",
         embeds = {{
             color = 0x2ECC71,
@@ -2108,7 +2110,7 @@ end
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
 local pendingHelicopterRaisedAmount = 0
-local spinBoostAmount = 0
+local spinVelocityAccumulator = 0
 
 local function stopAstronautIdle()
     if currentAstronautIdleTrack then
@@ -2653,7 +2655,8 @@ local function getCharacterHumanoidRoot()
 end
 
 local function getSpinAngularVelocity()
-    return SPIN_DONATION_BASE_SPEED + spinBoostAmount
+    local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+    return SPIN_DONATION_BASE_SPEED * multiplier
 end
 
 local function getSpinMover()
@@ -2682,9 +2685,10 @@ local function applySpinState()
             existing.MaxTorque = Vector3.new(0, math.huge, 0)
             existing.Parent = root
         end
-        existing.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+        local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+        existing.AngularVelocity = Vector3.new(0, 0.25 * multiplier, 0)
     else
-        spinBoostAmount = 0
+        spinVelocityAccumulator = 0
         if existing and existing:IsA("BodyAngularVelocity") then
             existing:Destroy()
         end
@@ -2806,7 +2810,7 @@ settingHandlers = {
     end,
     spinSet = function()
         if not settings.spinSet then
-            spinBoostAmount = 0
+            spinVelocityAccumulator = 0
         end
         applySpinState()
     end,
@@ -3410,8 +3414,27 @@ local function buildSettingsTabs()
             local stat = getRaisedStatObject()
             local amount = math.max(1, tonumber(settings.testDonationAmount) or 6)
             if stat and type(stat.Value) == "number" then
+                local before = stat.Value
                 stat.Value += amount
+                if settings.webhookToggle then
+                    sendDonationWebhook(amount, getNearestPlayerInfo())
+                end
                 notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono", 1)
+                if settings.spinSet then
+                    local spin = getSpinMover()
+                    if spin then
+                        local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+                        local averageDelta = (amount / 3)
+                        local currentSpinVelocity = spin.AngularVelocity.Y
+                        spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
+                        spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
+                    else
+                        applySpinState()
+                    end
+                end
+                if settings.helicopterEnabled then
+                    performHelicopterDonationSequence(amount)
+                end
             else
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
             end
@@ -3582,10 +3605,13 @@ local function bindDonationListener()
         sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
 
         if settings.spinSet then
-            spinBoostAmount = spinBoostAmount + math.max(0, tonumber(delta) or 0)
             local spin = getSpinMover()
             if spin then
-                spin.AngularVelocity = Vector3.new(0, getSpinAngularVelocity(), 0)
+                local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+                local averageDelta = (math.max(0, tonumber(delta) or 0) / 3)
+                local currentSpinVelocity = spin.AngularVelocity.Y
+                spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
+                spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
             else
                 applySpinState()
             end
