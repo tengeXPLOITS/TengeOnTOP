@@ -1224,40 +1224,16 @@ local function choosePlaceId()
 end
 
 serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAttempt)
-    local attemptNumber = math.max(1, tonumber(retryAttempt) or 1)
     if serverHopIsActive then
         return true
     end
 
     serverHopIsActive = true
     task.spawn(function()
-        local maxAttempts = 12
-        local startTime = os.clock()
-        local primaryMin = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 23
-        local primaryMax = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
-        local fallbackRanges = {
-            { 21, 23 },
-            { 26, 27 },
-        }
+        local placeId = choosePlaceId()
+        local retryTimer = 1.5
 
-        for attempt = attemptNumber, maxAttempts do
-            local placeId = choosePlaceId()
-            local elapsed = os.clock() - startTime
-            local rangeIndex = 0
-            if elapsed >= 5 then
-                rangeIndex = 1
-            end
-            if elapsed >= 10 then
-                rangeIndex = 2
-            end
-
-            local minPlayers = primaryMin
-            local maxPlayers = primaryMax
-            if rangeIndex > 0 then
-                minPlayers = fallbackRanges[rangeIndex][1]
-                maxPlayers = fallbackRanges[rangeIndex][2]
-            end
-
+        while task.wait(retryTimer) do
             local req = performHttpRequest({
                 Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
                 Method = "GET"
@@ -1273,10 +1249,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
             end
 
-            local chosen = nil
-            if body then
+            if body and body.data then
                 local servers = {}
-                for _, server in ipairs(body.data) do
+                local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
+                local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
+
+                for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
                     local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
                     if server.id ~= game.JobId and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers then
@@ -1285,20 +1263,13 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
 
                 if #servers > 0 then
-                    chosen = servers[math.random(1, #servers)]
-                end
-            end
+                    local selectedServer = servers[math.random(1, #servers)]
+                    queueScriptOnTeleport()
+                    pcall(function()
+                        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                    end)
 
-            if chosen then
-                local teleported = false
-                queueScriptOnTeleport()
-                pcall(function()
-                    TeleportService:TeleportToPlaceInstance(placeId, chosen.id, LocalPlayer)
-                    teleported = true
-                end)
-
-                if teleported then
-                    markPendingFarmHop(reason, placeId, chosen.id)
+                    markPendingFarmHop(reason, placeId, selectedServer.id)
                     if settings.notifyPerHopToggle then
                         sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
                     end
@@ -1306,27 +1277,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                     return
                 end
             end
-
-            if attempt < maxAttempts then
-                local statusText = ("Retrying hop (%d/%d)..."):format(attempt, maxAttempts)
-                if elapsed >= 5 then
-                    statusText = string.format("Trying fallback range %d-%d (%d/%d)...", minPlayers, maxPlayers, attempt, maxAttempts)
-                end
-                notify("Server Hop", statusText, 2, "server-hop-retry", 0.5)
-                task.wait(1.5 + (attempt * 0.5))
-            else
-                serverHopIsActive = false
-                notify("Server Hop", "No valid server found. Retrying shortly...", 5, "server-hop-fail", 3)
-                task.delay(3, function()
-                    if serverHopNow then
-                        serverHopNow(reason, minPlayersOverride, maxPlayersOverride, 1)
-                    end
-                end)
-                return
-            end
         end
-
-        serverHopIsActive = false
     end)
 
     return true
@@ -1562,15 +1513,15 @@ gui.Parent = GuiParent
 local THEME = {
     topBar = Color3.fromRGB(191, 104, 41),
     topBarText = Color3.fromRGB(255, 247, 235),
-    panel = Color3.fromRGB(145, 89, 39),
-    tabIdle = Color3.fromRGB(170, 107, 57),
-    tabActive = Color3.fromRGB(205, 126, 64),
-    section = Color3.fromRGB(120, 76, 36),
-    control = Color3.fromRGB(169, 96, 47),
-    controlText = Color3.fromRGB(255, 247, 235),
-    subtleText = Color3.fromRGB(255, 221, 187),
-    accent = Color3.fromRGB(255, 168, 92),
-    stroke = Color3.fromRGB(110, 72, 35),
+    panel = Color3.fromRGB(28, 29, 33),
+    tabIdle = Color3.fromRGB(52, 55, 60),
+    tabActive = Color3.fromRGB(70, 74, 81),
+    section = Color3.fromRGB(31, 33, 37),
+    control = Color3.fromRGB(41, 44, 50),
+    controlText = Color3.fromRGB(236, 236, 239),
+    subtleText = Color3.fromRGB(180, 181, 187),
+    accent = Color3.fromRGB(84, 191, 108),
+    stroke = Color3.fromRGB(76, 80, 86),
 }
 
 local SHELL_CORNER_RADIUS = 10
@@ -1637,7 +1588,7 @@ local main = Instance.new("Frame")
 main.Name = "Main"
 main.Size = UDim2.new(0, 380, 0, 360)
 main.Position = UDim2.fromOffset(0, 0)
-main.BackgroundColor3 = THEME.panel
+main.BackgroundColor3 = Color3.fromRGB(164, 93, 39)
 main.BorderSizePixel = 0
 main.Parent = gui
 main.Visible = true
