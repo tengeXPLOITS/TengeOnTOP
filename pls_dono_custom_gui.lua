@@ -1899,12 +1899,22 @@ local function setTabVisualState(btn, active)
     if not btn then
         return
     end
-    btn.BackgroundColor3 = active and THEME.tabActive or THEME.tabIdle
+
+    btn.BackgroundColor3 = active and Color3.fromRGB(77, 81, 88) or THEME.tabIdle
     btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(214, 214, 218)
     btn.Font = UI_FONT_BOLD
+    btn.TextTransparency = active and 0 or 0.04
+    btn.Position = UDim2.new(btn.Position.X.Scale, btn.Position.X.Offset, btn.Position.Y.Scale, active and 1 or 0)
+
     local activeBar = btn:FindFirstChild("ActiveBar")
     if activeBar then
-        activeBar.Visible = false
+        activeBar.Visible = active
+        activeBar.BackgroundColor3 = Color3.fromRGB(255, 175, 92)
+    end
+
+    local pressedInset = btn:FindFirstChild("PressedInset")
+    if pressedInset then
+        pressedInset.BackgroundTransparency = active and 0.55 or 1
     end
 end
 
@@ -1935,9 +1945,28 @@ local function createTab(name, buttonText)
     createCorner(btn, 4)
 
     local btnStroke = Instance.new("UIStroke")
-    btnStroke.Thickness = 0
-    btnStroke.Color = Color3.fromRGB(90, 94, 99)
+    btnStroke.Thickness = 1
+    btnStroke.Color = Color3.fromRGB(94, 98, 104)
     btnStroke.Parent = btn
+
+    local activeBar = Instance.new("Frame")
+    activeBar.Name = "ActiveBar"
+    activeBar.Size = UDim2.new(1, -12, 0, 2)
+    activeBar.Position = UDim2.new(0, 6, 0, 2)
+    activeBar.BackgroundColor3 = Color3.fromRGB(255, 175, 92)
+    activeBar.BorderSizePixel = 0
+    activeBar.Visible = false
+    activeBar.Parent = btn
+
+    local pressedInset = Instance.new("Frame")
+    pressedInset.Name = "PressedInset"
+    pressedInset.Size = UDim2.new(1, 0, 1, 0)
+    pressedInset.Position = UDim2.new(0, 0, 0, 0)
+    pressedInset.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    pressedInset.BackgroundTransparency = 1
+    pressedInset.BorderSizePixel = 0
+    pressedInset.ZIndex = 0
+    pressedInset.Parent = btn
 
     btn.MouseEnter:Connect(function()
         if activeTab ~= name then
@@ -2209,26 +2238,27 @@ local HELICOPTER_PLAZA_ROUTE = {
 
 local function getHelicopterFlightDuration(amount)
     local donation = math.max(1, tonumber(amount) or 1)
+    local lapBoost = 1 + math.min(3.5, math.sqrt(donation) * 0.6)
     if donation >= 100 then
         local clamped = math.min(10000, donation)
         local normalized = math.clamp((math.log10(clamped) - 2) / 2, 0, 1)
-        return 9 + (12 * normalized)
+        return (16 + (18 * normalized)) * lapBoost
     end
 
     local normalized = math.clamp((donation - 1) / 99, 0, 1)
-    return 5.5 + (11 * (normalized ^ 0.8))
+    return (9 + (14 * (normalized ^ 0.8))) * lapBoost
 end
 
 local function getHelicopterRiseHeight(amount, minRiseHeight)
     local donation = math.max(1, tonumber(amount) or 1)
     local minimum = math.max(0, tonumber(minRiseHeight) or 0)
-    local targetHeight = 16 + (math.sqrt(donation) * 5.2)
-    return math.clamp(math.max(minimum, targetHeight), 24, 62)
+    local targetHeight = 18 + (math.sqrt(donation) * 7)
+    return math.clamp(math.max(minimum, targetHeight), 26, 84)
 end
 
 local function getHelicopterSpinSpeedForAmount(amount)
     local donation = math.max(1, tonumber(amount) or 1)
-    return math.min(42, 18 + (math.sqrt(donation) * 1.2))
+    return math.min(48, 20 + (math.sqrt(donation) * 1.5))
 end
 
 local function getHelicopterIdleAngularVelocity()
@@ -2477,7 +2507,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                 end
 
                 local routeStartBase = HELICOPTER_PLAZA_ROUTE[nearestRouteIndex]
-                local routeStartPos = Vector3.new(routeStartBase.X, routeStartBase.Y + riseHeight, routeStartBase.Z)
+                local routeStartPos = Vector3.new(startPos.X, startPos.Y + riseHeight, startPos.Z)
                 local ascentStart = tick()
                 local lastFrameTick = ascentStart
                 local finalTargetPos = startPos
@@ -2488,16 +2518,10 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     lastFrameTick = now
                     local p = math.clamp((now - ascentStart) / ascentDuration, 0, 1)
                     local easedUp = p * p
-                    local sideDrift = math.sin(p * math.pi) * math.min(8, 2 + (amount * 0.08))
-                    local travelPos = startPos:Lerp(routeStartPos, easedUp)
-                    finalTargetPos = travelPos + Vector3.new(sideDrift, 0, 0)
-                    local facingDir = Vector3.new(routeStartPos.X - startPos.X, 0, routeStartPos.Z - startPos.Z)
-                    if facingDir.Magnitude < 0.001 then
-                        facingDir = Vector3.new(0, 0, -1)
-                    else
-                        facingDir = facingDir.Unit
-                    end
-                    local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * easedUp)
+                    local travelPos = Vector3.new(startPos.X, startPos.Y + (riseHeight * easedUp), startPos.Z)
+                    finalTargetPos = travelPos
+                    local facingDir = Vector3.new(0, 1, 0)
+                    local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (0.25 + (easedUp * 0.75)))
                     yaw += spinSpeedAtFrame * dt
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -2577,13 +2601,8 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                         lastFrameTick = now
                         local p = math.clamp((now - landingStart) / landingDuration, 0, 1)
                         local smoothP = p * p * (3 - (2 * p))
-                        finalTargetPos = descentOrigin:Lerp(landingPos, smoothP)
-                        local travelDir = Vector3.new(landingTargetCF.LookVector.X, 0, landingTargetCF.LookVector.Z)
-                        if travelDir.Magnitude < 0.001 then
-                            travelDir = Vector3.new(0, 0, -1)
-                        else
-                            travelDir = travelDir.Unit
-                        end
+                        finalTargetPos = Vector3.new(landingPos.X, descentOrigin.Y + ((landingPos.Y - descentOrigin.Y) * smoothP), landingPos.Z)
+                        local travelDir = Vector3.new(0, -1, 0)
                         local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (1 - smoothP))
                         yaw += spinSpeedAtFrame * dt
                         pcall(function()
@@ -2619,13 +2638,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
-    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 0.8, {
-        registerDelay = 0.05,
-        prepDuration = 0.18,
-        groundedSpinDuration = 0.8,
-        minRiseHeight = 20,
-        ascentDuration = 0.9,
-        landingDuration = 0.8
+    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 1.2, {
+        registerDelay = 0.08,
+        prepDuration = 0.3,
+        groundedSpinDuration = 1.4,
+        minRiseHeight = 24,
+        ascentDuration = 2.1,
+        landingDuration = 1.1
     })
 end
 
