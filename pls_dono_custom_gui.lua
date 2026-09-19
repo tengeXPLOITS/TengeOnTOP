@@ -1246,9 +1246,13 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
     serverHopIsActive = true
     task.spawn(function()
         local placeId = choosePlaceId()
+        local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
+        local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
         local retryTimer = 1.5
+        local attempt = 0
 
         while task.wait(retryTimer) do
+            attempt += 1
             local req = performHttpRequest({
                 Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
                 Method = "GET"
@@ -1266,13 +1270,11 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
             if body and body.data then
                 local servers = {}
-                local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
-                local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
-
                 for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
                     local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
-                    if server.id ~= game.JobId and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers then
+                    local id = tostring(server.id or "")
+                    if id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers then
                         table.insert(servers, server)
                     end
                 end
@@ -1292,7 +1294,13 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                     return
                 end
             end
+
+            if attempt >= 5 then
+                break
+            end
         end
+
+        serverHopIsActive = false
     end)
 
     return true
@@ -1609,7 +1617,7 @@ main.Position = UDim2.fromOffset(0, 0)
 main.BackgroundColor3 = Color3.fromRGB(164, 93, 39)
 main.BorderSizePixel = 0
 main.Parent = gui
-main.Visible = true
+main.Visible = false
 
 local TOP_BAR_HEIGHT = 34
 local expandedWidth = 380
@@ -1736,7 +1744,7 @@ body.Parent = main
 
 local tabHolder = Instance.new("ScrollingFrame")
 tabHolder.Name = "Tabs"
-tabHolder.Size = UDim2.new(1, -12, 0, 28)
+tabHolder.Size = UDim2.new(1, -12, 0, 34)
 tabHolder.Position = UDim2.new(0, 6, 0, 5)
 tabHolder.BackgroundColor3 = THEME.section
 tabHolder.BorderSizePixel = 0
@@ -1914,7 +1922,7 @@ local function createTab(name, buttonText)
     local btn = Instance.new("TextButton")
     btn.Name = name .. "Btn"
     btn.AutomaticSize = Enum.AutomaticSize.None
-    btn.Size = UDim2.new(0, 82, 0, 28)
+    btn.Size = UDim2.new(0, 96, 0, 30)
     btn.BackgroundColor3 = THEME.tabIdle
     btn.TextColor3 = Color3.fromRGB(214, 214, 218)
     btn.Font = UI_FONT_BOLD
@@ -3422,6 +3430,8 @@ end
 
 task.delay(UI_BOOT_DELAY, function()
     buildSettingsTabs()
+    activateTab("Booth")
+    main.Visible = true
 
     do
         local targetPosition = main.Position
@@ -3493,6 +3503,47 @@ task.spawn(function()
 end)
 
 local activeDonationListener = nil
+local activeDonationVfxListener = nil
+
+local function handleDonationDelta(delta, donorInfo)
+    local amount = math.max(0, tonumber(delta) or 0)
+    if amount <= 0 then
+        return
+    end
+
+    lastDonationTick = tick()
+    markDonationForHopTimer(amount)
+    sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
+
+    if settings.spinSet then
+        local spin = getSpinMover()
+        if spin then
+            local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
+            local averageDelta = (amount / 3)
+            local currentSpinVelocity = spin.AngularVelocity.Y
+            spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
+            spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
+        else
+            applySpinState()
+        end
+    end
+
+    if settings.helicopterEnabled then
+        performHelicopterDonationSequence(amount)
+    end
+
+    if settings.webhookToggle then
+        sendDonationWebhook(amount, donorInfo or getNearestPlayerInfo())
+    end
+
+    if settings.autoThanks then
+        task.spawn(function()
+            task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
+            sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
+        end)
+    end
+end
+
 local function bindDonationListener()
     local raisedObj = getRaisedStatObject()
     if not raisedObj then
@@ -3512,44 +3563,39 @@ local function bindDonationListener()
     activeDonationListener = raisedObj.Changed:Connect(function()
         local current = tonumber(raisedObj.Value) or 0
         local delta = current - lastRaised
-        if delta <= 0 then
-            lastRaised = current
-            return
-        end
-
         lastRaised = current
-        lastDonationTick = tick()
-        markDonationForHopTimer(delta)
-        sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
-
-        if settings.spinSet then
-            local spin = getSpinMover()
-            if spin then
-                local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-                local averageDelta = (math.max(0, tonumber(delta) or 0) / 3)
-                local currentSpinVelocity = spin.AngularVelocity.Y
-                spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
-                spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
-            else
-                applySpinState()
-            end
-        end
-
-        if settings.helicopterEnabled then
-            performHelicopterDonationSequence(delta)
-        end
-
-        if settings.webhookToggle then
-            sendDonationWebhook(delta, getNearestPlayerInfo())
-        end
-
-        if settings.autoThanks then
-            task.spawn(function()
-                task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
-                sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
-            end)
+        if delta > 0 then
+            handleDonationDelta(delta, getNearestPlayerInfo())
         end
     end)
+
+    local vfxContainer = ReplicatedStorage:FindFirstChild("VFXObjects")
+    local vfxEvent = vfxContainer and vfxContainer:FindFirstChild("CreateVfx")
+    if activeDonationVfxListener then
+        activeDonationVfxListener:Disconnect()
+        activeDonationVfxListener = nil
+    end
+
+    if vfxEvent and vfxEvent.OnClientEvent then
+        activeDonationVfxListener = vfxEvent.OnClientEvent:Connect(function(...)
+            local args = { ... }
+            if type(args[1]) ~= "string" or args[1] ~= "GiveCurrency" then
+                return
+            end
+
+            local targetCharacter = args[3]
+            if targetCharacter ~= LocalPlayer.Character and targetCharacter ~= (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) then
+                return
+            end
+
+            local donationAmount = tonumber(args[4]) or tonumber(args[5]) or 0
+            if donationAmount <= 0 then
+                return
+            end
+
+            handleDonationDelta(donationAmount, getNearestPlayerInfo())
+        end)
+    end
 end
 
 task.spawn(function()
@@ -3634,8 +3680,6 @@ task.spawn(function()
         end
     end
 end)
-
-activateTab("Main")
 
 RunService.RenderStepped:Connect(function()
     local viewport = getViewportSize()
