@@ -204,6 +204,8 @@ local defaults = {
     serverHopDelay = 15,
     populationHopToggle = false,
     populationHopThreshold = 15,
+    plusHopToggle = false,
+    plusMemberTarget = 1,
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
@@ -359,8 +361,84 @@ SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
 SharedEnv.plsdonoSettings = settings
 saveSettings()
 
+local function humanizeLabel(value)
+    local text = tostring(value or "")
+    text = text:gsub("(%l)(%u)", "%1 %2")
+    text = text:gsub("(%d)(%a)", "%1 %2")
+    text = text:gsub("(%a)(%d)", "%1 %2")
+    text = text:gsub("^tab%w+", function(part)
+        return part:match("^tab(.+)$") or part
+    end)
+    text = text:gsub("^%s+", "")
+    text = text:gsub("%s+", " ")
+    if text ~= "" then
+        text = text:sub(1, 1):upper() .. text:sub(2)
+    end
+    return text
+end
+
+local labelTextMap = {
+    rejoinMessage = "rejoining server, you updated booth text and your buttons were invisible.",
+    webhookTitle = "@%s has gotten tipped %dR$ by %s, check your balance! 🎉",
+    serverHopTitle = "@%s has serverhopped",
+    tabBooth = "Booth",
+    tabMain = "Main",
+    tabChat = "Chat",
+    tabWebhook = "Webhook",
+    tabServerHop = "Server Hop",
+    boothSection = "Booth Settings",
+    mainSection = "Main Settings",
+    chatSection = "Chat Settings",
+    webhookSection = "Webhook Settings",
+    serverSection = "Serverhop Settings",
+    textUpdate = "Text Update",
+    goalBarColor = "Goal Bar Color",
+    goalBarHeader = "Goal Bar Header:",
+    goalBarHint = "Use $G here if you want the current goal amount.",
+    pasteGoalBar = "Paste Goal Bar",
+    customBoothText = "Custom Booth Text:",
+    boothTextPlaceholder = "Write the exact booth text here...",
+    boothTextTokens = "$C = current | $G = goal | $BAR = goal progress",
+    textColors = "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB",
+    font = "Font",
+    update = "Update",
+    standingPosition = "Standing Position",
+    helicopter = "Helicopter On-Donation",
+    spin = "1R$= +1 Spin Speed",
+    testDonationAmount = "Test Donation Amount (R$)",
+    testDonation = "Test Donation",
+    autoThanks = "Auto Thank You",
+    thanksDelay = "Thanks Delay (S)",
+    thanksMessages = "Thank You Messages",
+    autoBeg = "Auto Beg",
+    begDelay = "Beg Delay (S)",
+    begMessages = "Begging Messages",
+    webhookEnabled = "Webhook Enabled",
+    webhookUrl = "Webhook URL",
+    notifyPerHop = "Notify Per Hop",
+    antiAfk = "Anti AFK",
+    autoServerHop = "Auto Server Hop",
+    serverHopDelay = "Server Hop Delay (Minutes)",
+    minPlayers = "Min Players in Server",
+    maxPlayers = "Max Players in Server",
+    smallServer = "Hop When Server Is Small",
+    smallThreshold = "Small Server Threshold",
+    plusHop = "Plus Hop",
+    plusMemberTarget = "Plus Members Target",
+    modEvader = "Mod Evader",
+    serverHopNow = "Server Hop Now",
+    vcServerHop = "VC Server Hop (All Servers)",
+}
+
 localized = function(key, ...)
-    local value = tostring(key or "")
+    local rawKey = tostring(key or "")
+    local value = labelTextMap[rawKey]
+    if value == nil then
+        value = humanizeLabel(rawKey)
+        if rawKey:sub(1, 3) == "tab" then
+            value = humanizeLabel(rawKey:sub(4))
+        end
+    end
     if select("#", ...) > 0 then
         return value:format(...)
     end
@@ -1142,6 +1220,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local placeId = choosePlaceId()
         local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
+        local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 1) or 0
         local retryTimer = 1.5
         local attempt = tonumber(retryAttempt) or 0
 
@@ -1167,8 +1246,11 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
                     local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
+                    local premiumPlayers = tonumber(server.premiumPlayers or server.premium or 0) or 0
                     local id = tostring(server.id or "")
-                    if id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers then
+                    local matchesPlayerRange = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers
+                    local matchesPlusTarget = not settings.plusHopToggle or preferredPlusMembers <= 0 or premiumPlayers >= preferredPlusMembers
+                    if matchesPlayerRange and matchesPlusTarget then
                         table.insert(servers, server)
                     end
                 end
@@ -2749,6 +2831,10 @@ settingHandlers = {
         settings.maxPlayerCount = maxVal
         saveSettings()
     end,
+    plusMemberTarget = function(value)
+        settings.plusMemberTarget = math.max(0, tonumber(value) or 1)
+        saveSettings()
+    end,
     vcServerHopToggle = function(value)
         if value then
             serverHopNow("vc-server-hop-toggle")
@@ -3377,6 +3463,8 @@ do
     createTextBox(serverSection, localized("maxPlayers"), "maxPlayerCount", true)
     createToggle(serverSection, localized("smallServer"), "populationHopToggle")
     createTextBox(serverSection, localized("smallThreshold"), "populationHopThreshold", true)
+    createToggle(serverSection, localized("plusHop"), "plusHopToggle")
+    createTextBox(serverSection, localized("plusMemberTarget"), "plusMemberTarget", true)
     createToggle(serverSection, localized("modEvader"), "modEvader")
     createButton(serverSection, localized("serverHopNow"), function()
         requestServerHop("manual-button")
