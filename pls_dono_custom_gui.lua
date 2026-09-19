@@ -205,7 +205,7 @@ local defaults = {
     populationHopToggle = false,
     populationHopThreshold = 15,
     plusHopToggle = false,
-    plusMemberTarget = 1,
+    plusMemberTarget = 3,
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
@@ -1245,6 +1245,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
         local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
+        local preferPlus = settings.plusHopToggle and preferredPlusMembers > 0
         local retryTimer = 1.5
         local attempt = tonumber(retryAttempt) or 0
 
@@ -1265,8 +1266,8 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
             end
 
+            local servers = {}
             if body and body.data then
-                local servers = {}
                 for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
                     local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
@@ -1278,69 +1279,58 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                         effectivePremiumCount = math.max(0, premiumPlayers - 1)
                     end
                     local matchesPlayerRange = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers
-                    local matchesPlusTarget = not settings.plusHopToggle or preferredPlusMembers <= 0 or effectivePremiumCount >= preferredPlusMembers
-                    if matchesPlayerRange and matchesPlusTarget then
-                        if settings.plusHopToggle and effectivePremiumCount <= 0 then
-                            -- immediate retry when no premium/plus players are present on this server (excluding the local user)
-                            table.insert(servers, server)
-                        else
+                    if matchesPlayerRange then
+                        if not preferPlus or effectivePremiumCount >= preferredPlusMembers then
                             table.insert(servers, server)
                         end
                     end
                 end
+            end
 
-                -- if Plus Hop is enabled, aggressively reject servers with zero premium users after excluding the local user
-                if settings.plusHopToggle and preferredPlusMembers > 0 then
-                    local validServers = {}
-                    for _, server in ipairs(servers) do
-                        local premiumPlayers = getServerPremiumPlayerCount(server)
-                        local localIsPremium = LocalPlayer and LocalPlayer.MembershipType == Enum.MembershipType.Premium
-                        local effectivePremiumCount = premiumPlayers
-                        if localIsPremium then
-                            effectivePremiumCount = math.max(0, premiumPlayers - 1)
-                        end
-                        if effectivePremiumCount > 0 and effectivePremiumCount >= preferredPlusMembers then
-                            table.insert(validServers, server)
-                        end
+            if preferPlus and #servers == 0 and attempt >= 8 then
+                preferPlus = false
+                servers = {}
+            end
+
+            if #servers > 0 then
+                local selectedServer = servers[math.random(1, #servers)]
+                local selectedServerId = tostring(selectedServer.id or "")
+                local serverFullFailure = false
+                local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                    if player ~= LocalPlayer then
+                        return
                     end
-                    servers = validServers
+                    if tostring(selectedServerId) == tostring(selectedServer.id or "") and (isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure) then
+                        serverFullFailure = true
+                    end
+                end)
+
+                queueScriptOnTeleport()
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                end)
+
+                task.wait(2.5)
+                if failureConnection then
+                    failureConnection:Disconnect()
                 end
 
-                if #servers > 0 then
-                    local selectedServer = servers[math.random(1, #servers)]
-                    local selectedServerId = tostring(selectedServer.id or "")
-                    local serverFullFailure = false
-                    local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-                        if player ~= LocalPlayer then
-                            return
-                        end
-                        if tostring(selectedServerId) == tostring(selectedServer.id or "") and (isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure) then
-                            serverFullFailure = true
-                        end
-                    end)
-
-                    queueScriptOnTeleport()
-                    pcall(function()
-                        TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                    end)
-
-                    task.wait(2.5)
-                    if failureConnection then
-                        failureConnection:Disconnect()
-                    end
-
-                    if serverFullFailure then
-                        task.wait(retryTimer)
-                        continue
-                    end
-
-                    markPendingFarmHop(reason, placeId, selectedServer.id)
-                    if settings.notifyPerHopToggle then
-                        sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
-                    end
-                    serverHopIsActive = false
-                    return
+                if serverFullFailure then
+                    task.wait(retryTimer)
+                    continue
                 end
+
+                markPendingFarmHop(reason, placeId, selectedServer.id)
+                if settings.notifyPerHopToggle then
+                    sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
+                end
+                serverHopIsActive = false
+                return
+            end
+
+            if attempt >= 8 then
+                serverHopIsActive = false
+                return false
             end
 
             task.wait(retryTimer)
@@ -2266,8 +2256,8 @@ end
 
 local currentIdleTask = nil
 local HELICOPTER_IDLE_SPIN_SPEED = 2.7
-local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.02
-local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.02
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.07
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.03
 local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
@@ -2377,27 +2367,33 @@ local function startHelicopterIdleMode()
         end
 
         local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
+        local cycleStart = tick()
+        local currentSpinVelocity = idleSpeed
         while settings.helicopterEnabled and root.Parent do
-            if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, pulseSpeed, 0)
-            end
-            pcall(function()
-                root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            end)
-            task.wait(HELICOPTER_IDLE_PULSE_ACTIVE_DURATION)
+            local elapsed = tick() - cycleStart
+            local cycleDuration = HELICOPTER_IDLE_PULSE_ACTIVE_DURATION + HELICOPTER_IDLE_PULSE_PAUSE_DURATION
+            local cycleTime = elapsed % cycleDuration
 
-            if not settings.helicopterEnabled or not root.Parent then
-                break
+            local targetVelocity
+            if cycleTime < HELICOPTER_IDLE_PULSE_ACTIVE_DURATION then
+                local p = math.clamp(cycleTime / HELICOPTER_IDLE_PULSE_ACTIVE_DURATION, 0, 1)
+                local eased = 0.5 - math.cos(p * math.pi) * 0.5
+                targetVelocity = idleSpeed + ((pulseSpeed - idleSpeed) * eased)
+            else
+                local pauseP = math.clamp((cycleTime - HELICOPTER_IDLE_PULSE_ACTIVE_DURATION) / HELICOPTER_IDLE_PULSE_PAUSE_DURATION, 0, 1)
+                local holdStrength = 1 - pauseP
+                targetVelocity = pulseSpeed * holdStrength
             end
 
+            currentSpinVelocity = currentSpinVelocity + ((targetVelocity - currentSpinVelocity) * 0.28)
             if heliBody and heliBody.Parent then
-                heliBody.AngularVelocity = Vector3.new(0, 0, 0)
+                heliBody.AngularVelocity = Vector3.new(0, currentSpinVelocity, 0)
             end
             pcall(function()
                 root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                 root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
             end)
-            task.wait(HELICOPTER_IDLE_PULSE_PAUSE_DURATION)
+            task.wait()
         end
     end)
 
@@ -2887,10 +2883,8 @@ settingHandlers = {
         saveSettings()
     end,
     plusHopToggle = function(value)
+        settings.plusHopToggle = value == true
         saveSettings()
-        if value then
-            serverHopNow("plus-hop-toggle")
-        end
     end,
     vcServerHopToggle = function(value)
         if value then
