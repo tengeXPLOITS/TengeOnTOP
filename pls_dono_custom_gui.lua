@@ -516,6 +516,45 @@ local function findPreferredRemoteModule()
     return RemoteModules[1]
 end
 
+local function fireSetCustomizationPayload(payload)
+    if type(payload) ~= "table" then
+        return false
+    end
+
+    local tried = false
+
+    if preferredRemoteModule and preferredRemoteModule.Event then
+        local ok = pcall(function()
+            local event = preferredRemoteModule.Event("SetCustomization")
+            if event and type(event.FireServer) == "function" then
+                event:FireServer(payload, "booth")
+                tried = true
+            end
+        end)
+        if ok and tried then
+            return true
+        end
+    end
+
+    for _, remoteModule in ipairs(RemoteModules or {}) do
+        local ok = pcall(function()
+            if remoteModule and remoteModule.Event then
+                local event = remoteModule.Event("SetCustomization")
+                if event and type(event.FireServer) == "function" then
+                    event:FireServer(payload, "booth")
+                    preferredRemoteModule = remoteModule
+                    tried = true
+                end
+            end
+        end)
+        if ok and tried then
+            return true
+        end
+    end
+
+    return false
+end
+
 preferredRemoteModule = findPreferredRemoteModule()
 
 local function getBoothLocation()
@@ -1078,13 +1117,6 @@ end
 
 local function buildBoothText()
     local text = tostring(settings.customBoothText or "")
-
-    local hasGoalBarToken = text:find("%$BAR") ~= nil
-    local hasGoalHeader = tostring(settings.goalBarHeaderText or ""):gsub("^%s+", ""):gsub("%s+$", "") ~= ""
-    if hasGoalBarToken or (hasGoalHeader and text == "") then
-        text = buildGoalBarTemplate()
-    end
-
     local current, goal = getGoalProgressSnapshot()
 
     text = text:gsub("%$C", formatBoothNumber(current))
@@ -1157,64 +1189,7 @@ updateBoothTextNow = function()
         buttonLayout = "",
     }
 
-    local applied = false
-
-    -- old.lua-first path: SetCustomization on a validated remotes module
-    if preferredRemoteModule then
-        local ok = pcall(function()
-            preferredRemoteModule.Event("SetCustomization"):FireServer(payload, "booth")
-        end)
-        if ok then
-            applied = true
-        end
-    end
-
-    if not applied then
-        for _, remoteModule in ipairs(RemoteModules) do
-            local ok = pcall(function()
-                remoteModule.Event("SetCustomization"):FireServer(payload, "booth")
-            end)
-            if ok then
-                preferredRemoteModule = remoteModule
-                applied = true
-                break
-            end
-        end
-    end
-
-    local remoteEventNames = {
-        "SetBoothText",
-        "UpdateBooth",
-        "EditBooth",
-        "ChangeBoothText",
-    }
-
-    if not applied then
-        for _, remoteModule in ipairs(RemoteModules) do
-            for _, eventName in ipairs(remoteEventNames) do
-                local ok1, result1 = pcall(function()
-                    return remoteModule.Event(eventName):InvokeServer(text)
-                end)
-                if ok1 and result1 == true then
-                    applied = true
-                    break
-                end
-
-                if claimedBoothSlot then
-                    local ok2, result2 = pcall(function()
-                        return remoteModule.Event(eventName):InvokeServer(claimedBoothSlot, text)
-                    end)
-                    if ok2 and result2 == true then
-                        applied = true
-                        break
-                    end
-                end
-            end
-            if applied then
-                break
-            end
-        end
-    end
+    local applied = fireSetCustomizationPayload(payload)
 
     if boothUiFolder and claimedBoothSlot then
         local boothFrame = boothUiFolder:FindFirstChild("BoothUI" .. tostring(claimedBoothSlot))
@@ -1245,6 +1220,32 @@ local function choosePlaceId()
     return DEFAULT_PLS_DONATE_PLACE_ID
 end
 
+local function isFullServerTeleportFailure(message)
+    local text = tostring(message or "")
+    local lower = text:lower()
+    return lower:find("server is full", 1, true)
+        or lower:find("error code: 772", 1, true)
+        or lower:find("772", 1, true)
+        or lower:find("full server", 1, true)
+end
+
+local teleportFailureConnection = nil
+if not teleportFailureConnection then
+    teleportFailureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+        if player ~= LocalPlayer then
+            return
+        end
+
+        if isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure then
+            task.delay(1.5, function()
+                if serverHopNow then
+                    serverHopNow("full-server-retry")
+                end
+            end)
+        end
+    end)
+end
+
 serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAttempt)
     if serverHopIsActive then
         return true
@@ -1256,9 +1257,9 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
         local retryTimer = 1.5
-        local attempt = 0
+        local attempt = tonumber(retryAttempt) or 0
 
-        while task.wait(retryTimer) do
+        while true do
             attempt += 1
             local req = performHttpRequest({
                 Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
@@ -1288,10 +1289,31 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
                 if #servers > 0 then
                     local selectedServer = servers[math.random(1, #servers)]
+                    local selectedServerId = tostring(selectedServer.id or "")
+                    local serverFullFailure = false
+                    local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                        if player ~= LocalPlayer then
+                            return
+                        end
+                        if tostring(selectedServerId) == tostring(selectedServer.id or "") and (isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure) then
+                            serverFullFailure = true
+                        end
+                    end)
+
                     queueScriptOnTeleport()
                     pcall(function()
                         TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
                     end)
+
+                    task.wait(2.5)
+                    if failureConnection then
+                        failureConnection:Disconnect()
+                    end
+
+                    if serverFullFailure then
+                        task.wait(retryTimer)
+                        continue
+                    end
 
                     markPendingFarmHop(reason, placeId, selectedServer.id)
                     if settings.notifyPerHopToggle then
@@ -1302,12 +1324,8 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
             end
 
-            if attempt >= 5 then
-                break
-            end
+            task.wait(retryTimer)
         end
-
-        serverHopIsActive = false
     end)
 
     return true
@@ -2273,6 +2291,23 @@ local function getHelicopterIdleAngularVelocity()
     return HELICOPTER_IDLE_SPIN_SPEED
 end
 
+local function getHelicopterBaseYaw(forwardVector)
+    local direction = forwardVector or Vector3.new(0, 0, -1)
+    if direction.Magnitude < 0.001 then
+        direction = Vector3.new(0, 0, -1)
+    end
+    direction = direction.Unit
+    return math.atan2(direction.X, direction.Z)
+end
+
+local function applyHelicopterCFrame(root, position, spinYaw, forwardVector)
+    if not root or not root.Parent then
+        return
+    end
+    local baseYaw = getHelicopterBaseYaw(forwardVector)
+    root.CFrame = CFrame.new(position) * CFrame.Angles(0, baseYaw + spinYaw, 0)
+end
+
 local function stopHelicopterIdleTask()
     if currentIdleTask then
         pcall(function() task.cancel(currentIdleTask) end)
@@ -2477,6 +2512,14 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                 local yaw = 0
                 local lastSpinTick = tick()
 
+                for count = 3, 1, -1 do
+                    if not settings.helicopterEnabled or not char.Parent or not root.Parent then
+                        break
+                    end
+                    sendChatMessage("Takeoff in " .. count .. "...")
+                    task.wait(0.55)
+                end
+
                 local spoolStart = tick()
                 local spoolFromSpeed = math.max(0.35, baseIdleSpeed * 0.7)
                 while tick() - spoolStart < groundedSpinDuration and char.Parent and root.Parent do
@@ -2494,7 +2537,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                     end)
-                    root.CFrame = CFrame.new(startPos) * startRot * CFrame.Angles(0, yaw, 0)
+                    applyHelicopterCFrame(root, startPos, yaw, prepTargetCF.LookVector)
                     task.wait()
                 end
 
@@ -2528,14 +2571,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     local easedUp = p * p
                     local travelPos = Vector3.new(startPos.X, startPos.Y + (riseHeight * easedUp), startPos.Z)
                     finalTargetPos = travelPos
-                    local facingDir = Vector3.new(0, 1, 0)
                     local spinSpeedAtFrame = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (0.25 + (easedUp * 0.75)))
                     yaw += spinSpeedAtFrame * dt
                     pcall(function()
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                     end)
-                    root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + facingDir) * CFrame.Angles(0, yaw, 0)
+                    applyHelicopterCFrame(root, finalTargetPos, yaw, prepTargetCF.LookVector)
                     task.wait()
                 end
 
@@ -2585,7 +2627,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                             root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                             root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                         end)
-                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
+                        applyHelicopterCFrame(root, finalTargetPos, yaw, travelDir)
                         task.wait()
                     end
 
@@ -2617,7 +2659,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                             root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                             root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                         end)
-                        root.CFrame = CFrame.lookAt(finalTargetPos, finalTargetPos + travelDir) * CFrame.Angles(0, yaw, 0)
+                        applyHelicopterCFrame(root, finalTargetPos, yaw, travelDir)
                         task.wait()
                     end
                     root.CFrame = landingTargetCF
