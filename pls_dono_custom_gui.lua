@@ -559,13 +559,13 @@ local modUsernames = {
     ["subsical"] = true,
 }
 
-local hopCooldownSeconds = 1
+local hopCooldownSeconds = 0.35
 local lastHopTick = 0
 local serverHopIsActive = false
 local hopTimerResetTick = tick()
 local donatedSinceHopTimerReset = 0
 local lastDonationTick = 0
-local donationHopBlockSeconds = 3
+local donationHopBlockSeconds = 1.2
 local farmSessionStats = SharedEnv.PLS_DONO_FARM_SESSION
 if type(farmSessionStats) ~= "table" or tonumber(farmSessionStats.playerUserId) ~= tonumber(LocalPlayer.UserId) then
     farmSessionStats = {
@@ -1241,7 +1241,7 @@ if not teleportFailureConnection then
         end
 
         if isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure then
-            task.delay(1.5, function()
+            task.delay(0.6, function()
                 if serverHopNow then
                     serverHopNow("full-server-retry")
                 end
@@ -1286,7 +1286,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
         local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
         local preferPlus = settings.plusHopToggle and preferredPlusMembers > 0
-        local retryTimer = 1.5
+        local retryTimer = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.75 or 1.25
         local attempt = tonumber(retryAttempt) or 0
 
         while true do
@@ -1350,7 +1350,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                     TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
                 end)
 
-                task.wait(2.5)
+                task.wait(1.2)
                 if failureConnection then
                     failureConnection:Disconnect()
                 end
@@ -1377,7 +1377,8 @@ end
 
 requestServerHop = function(reason)
     local now = tick()
-    if now - lastHopTick < hopCooldownSeconds then
+    local activeCooldown = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.2 or hopCooldownSeconds
+    if now - lastHopTick < activeCooldown then
         return false
     end
     if now - lastDonationTick < donationHopBlockSeconds then
@@ -2550,7 +2551,7 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     if not settings.helicopterEnabled or not char.Parent or not root.Parent then
                         break
                     end
-                    sendChatMessage("Takeoff in " .. count .. "...")
+                    sendChatMessage("TAKEOFF IN " .. count .. "...")
                     task.wait(0.55)
                 end
 
