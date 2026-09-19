@@ -646,6 +646,22 @@ local function finalizeSuccessfulPendingFarmHop()
 end
 
 pendingFarmHopNotification = finalizeSuccessfulPendingFarmHop()
+if settings.notifyPerHopToggle and type(pendingFarmHopNotification) == "table" then
+    task.defer(function()
+        sendServerHopWebhook(pendingFarmHopNotification)
+    end)
+end
+
+local function startCompletedHopWebhookWatcher()
+    task.spawn(function()
+        while true do
+            task.wait(2.5)
+            trySendCompletedHopWebhook()
+        end
+    end)
+end
+
+startCompletedHopWebhookWatcher()
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -965,6 +981,25 @@ local function buildPendingHopWebhookInfo(reason)
         count = hopCount,
         reason = tostring(reason or ""),
     }
+end
+
+local function trySendCompletedHopWebhook()
+    if not settings.notifyPerHopToggle then
+        return false
+    end
+
+    local hopReport = finalizeSuccessfulPendingFarmHop()
+    if type(hopReport) ~= "table" then
+        return false
+    end
+
+    local payload = {
+        count = tonumber(hopReport.count) or 0,
+        reason = tostring(hopReport.reason or ""),
+    }
+
+    sendServerHopWebhook(payload)
+    return true
 end
 
 local function resetHopTimer()
