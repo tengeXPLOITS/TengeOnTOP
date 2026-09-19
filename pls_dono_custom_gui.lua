@@ -147,14 +147,14 @@ end
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
-    task.delay(0.2, function()
+    task.delay(5, function()
         if serverHopNow then
             serverHopNow("booth-update", 24, 25, 1)
         end
-    end)
 
-    pcall(function()
-        LocalPlayer:Kick(localized("rejoinMessage"))
+        pcall(function()
+            LocalPlayer:Kick(localized("rejoinMessage"))
+        end)
     end)
 end
 
@@ -1078,6 +1078,13 @@ end
 
 local function buildBoothText()
     local text = tostring(settings.customBoothText or "")
+
+    local hasGoalBarToken = text:find("%$BAR") ~= nil
+    local hasGoalHeader = tostring(settings.goalBarHeaderText or ""):gsub("^%s+", ""):gsub("%s+$", "") ~= ""
+    if hasGoalBarToken or (hasGoalHeader and text == "") then
+        text = buildGoalBarTemplate()
+    end
+
     local current, goal = getGoalProgressSnapshot()
 
     text = text:gsub("%$C", formatBoothNumber(current))
@@ -1900,21 +1907,21 @@ local function setTabVisualState(btn, active)
         return
     end
 
-    btn.BackgroundColor3 = active and Color3.fromRGB(77, 81, 88) or THEME.tabIdle
+    btn.BackgroundColor3 = active and Color3.fromRGB(72, 75, 81) or THEME.tabIdle
     btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(214, 214, 218)
     btn.Font = UI_FONT_BOLD
     btn.TextTransparency = active and 0 or 0.04
-    btn.Position = UDim2.new(btn.Position.X.Scale, btn.Position.X.Offset, btn.Position.Y.Scale, active and 1 or 0)
-
-    local activeBar = btn:FindFirstChild("ActiveBar")
-    if activeBar then
-        activeBar.Visible = active
-        activeBar.BackgroundColor3 = Color3.fromRGB(255, 175, 92)
-    end
+    btn.Position = UDim2.new(btn.Position.X.Scale, btn.Position.X.Offset, btn.Position.Y.Scale, active and 3 or 0)
+    btn.Size = UDim2.new(0, 96, 0, active and 25 or 30)
 
     local pressedInset = btn:FindFirstChild("PressedInset")
     if pressedInset then
-        pressedInset.BackgroundTransparency = active and 0.55 or 1
+        pressedInset.BackgroundTransparency = active and 0.7 or 1
+    end
+
+    local activeBar = btn:FindFirstChild("ActiveBar")
+    if activeBar then
+        activeBar.Visible = false
     end
 end
 
@@ -1951,8 +1958,8 @@ local function createTab(name, buttonText)
 
     local activeBar = Instance.new("Frame")
     activeBar.Name = "ActiveBar"
-    activeBar.Size = UDim2.new(1, -12, 0, 2)
-    activeBar.Position = UDim2.new(0, 6, 0, 2)
+    activeBar.Size = UDim2.new(1, -16, 0, 0)
+    activeBar.Position = UDim2.new(0, 8, 0, 0)
     activeBar.BackgroundColor3 = Color3.fromRGB(255, 175, 92)
     activeBar.BorderSizePixel = 0
     activeBar.Visible = false
@@ -3340,6 +3347,23 @@ local function buildSettingsTabs()
             notify("Goal Bar", "Preview updated, waiting for remote confirmation.", 4, "goal-bar-preview", 2)
         else
             notify("Goal Bar", "Could not paste the goal bar yet.", 4, "goal-bar-fail", 2)
+        end
+        task.defer(rejoinAfterUserBoothUpdate)
+    end)
+
+    createButton(boothSection, "Apply Goal Bar", function()
+        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
+        settings.customBoothText = buildGoalBarTemplate()
+        saveSettings()
+        local ok, mode = updateBoothTextNow()
+        if ok then
+            boothTextBox.Text = settings.customBoothText
+            notify("Goal Bar", "Goal bar applied to booth text.", 4, "goal-bar-apply-ok", 1)
+        elseif mode == "local-preview-only" then
+            boothTextBox.Text = settings.customBoothText
+            notify("Goal Bar", "Goal bar preview applied.", 4, "goal-bar-apply-preview", 2)
+        else
+            notify("Goal Bar", "Goal bar could not be applied.", 4, "goal-bar-apply-fail", 2)
         end
         task.defer(rejoinAfterUserBoothUpdate)
     end)
