@@ -171,7 +171,7 @@ end
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
-local UI_BOOT_DELAY = 0.25
+local UI_BOOT_DELAY = 0
 
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
@@ -2212,23 +2212,23 @@ local function getHelicopterFlightDuration(amount)
     if donation >= 100 then
         local clamped = math.min(10000, donation)
         local normalized = math.clamp((math.log10(clamped) - 2) / 2, 0, 1)
-        return 52 + (28 * normalized)
+        return 9 + (12 * normalized)
     end
 
     local normalized = math.clamp((donation - 1) / 99, 0, 1)
-    return 16 + (36 * (normalized ^ 0.72))
+    return 5.5 + (11 * (normalized ^ 0.8))
 end
 
 local function getHelicopterRiseHeight(amount, minRiseHeight)
     local donation = math.max(1, tonumber(amount) or 1)
     local minimum = math.max(0, tonumber(minRiseHeight) or 0)
-    local targetHeight = 22 + (math.sqrt(donation) * 8)
-    return math.clamp(math.max(minimum, targetHeight), 28, 105)
+    local targetHeight = 16 + (math.sqrt(donation) * 5.2)
+    return math.clamp(math.max(minimum, targetHeight), 24, 62)
 end
 
 local function getHelicopterSpinSpeedForAmount(amount)
     local donation = math.max(1, tonumber(amount) or 1)
-    return math.min(55, 25 + (math.sqrt(donation) * 1.6))
+    return math.min(42, 18 + (math.sqrt(donation) * 1.2))
 end
 
 local function getHelicopterIdleAngularVelocity()
@@ -2524,8 +2524,8 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
                     local nextIndex = (routeIndex % #HELICOPTER_PLAZA_ROUTE) + 1
                     local nextBase = HELICOPTER_PLAZA_ROUTE[nextIndex]
                     local nextPos = Vector3.new(nextBase.X, nextBase.Y + riseHeight, nextBase.Z)
-                    local segmentDistance = (nextPos - routePosition).Magnitude
-                    local segmentDuration = math.clamp(segmentDistance / 18, 3, 6)
+                        local segmentDistance = (nextPos - routePosition).Magnitude
+                    local segmentDuration = math.clamp(segmentDistance / 26, 0.9, 3.4)
                     local segmentStart = tick()
                     local segmentOrigin = routePosition
 
@@ -2619,13 +2619,13 @@ local function performHelicopterBurst(raisedAmount, spinSpeed, spinDuration, bur
 end
 
 local function performHelicopterDonationSequence(raisedAmount)
-    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 0.2, {
-        registerDelay = 0.04,
-        prepDuration = 0.06,
-        groundedSpinDuration = 0.2,
-        minRiseHeight = 110,
-        ascentDuration = 0.2,
-        landingDuration = 0.55
+    performHelicopterBurst(raisedAmount, HELICOPTER_TAKEOFF_SPIN_SPEED, 0.8, {
+        registerDelay = 0.05,
+        prepDuration = 0.18,
+        groundedSpinDuration = 0.8,
+        minRiseHeight = 20,
+        ascentDuration = 0.9,
+        landingDuration = 0.8
     })
 end
 
@@ -3428,32 +3428,30 @@ end
 
 end
 
-task.delay(UI_BOOT_DELAY, function()
-    buildSettingsTabs()
-    activateTab("Booth")
-    main.Visible = true
+buildSettingsTabs()
+activateTab("Booth")
+main.Visible = true
 
-    do
-        local targetPosition = main.Position
-        main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
-        TweenService:Create(
-            main,
-            TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            {Position = targetPosition}
-        ):Play()
+do
+    local targetPosition = main.Position
+    main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
+    TweenService:Create(
+        main,
+        TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        {Position = targetPosition}
+    ):Play()
+end
+
+task.spawn(function()
+    task.wait(2)
+    local claimed, info = claimBoothNow()
+    if claimed then
+        onBoothClaimDetected(info)
     end
+end)
 
-    task.spawn(function()
-        task.wait(2)
-        local claimed, info = claimBoothNow()
-        if claimed then
-            onBoothClaimDetected(info)
-        end
-    end)
-
-    task.defer(function()
-        restoreRuntimeSettings()
-    end)
+task.defer(function()
+    restoreRuntimeSettings()
 end)
 
 task.spawn(function()
