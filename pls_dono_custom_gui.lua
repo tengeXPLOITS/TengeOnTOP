@@ -3630,7 +3630,6 @@ local function handleDonationDelta(delta, donorInfo)
 
     lastDonationTick = tick()
     markDonationForHopTimer(amount)
-    sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
 
     if settings.spinSet then
         local spin = getSpinMover()
@@ -3654,6 +3653,7 @@ local function handleDonationDelta(delta, donorInfo)
     end
 
     if settings.autoThanks then
+        sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
         task.spawn(function()
             task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
             sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
