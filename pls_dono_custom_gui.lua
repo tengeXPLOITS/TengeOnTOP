@@ -1210,6 +1210,30 @@ if not teleportFailureConnection then
     end)
 end
 
+local function getServerPremiumPlayerCount(server)
+    if type(server) ~= "table" then
+        return 0
+    end
+
+    local candidates = {
+        server.premiumPlayers,
+        server.premium,
+        server.plusPlayers,
+        server.plusMembers,
+        server.premiumMembers,
+        server.memberCount,
+    }
+
+    for _, value in ipairs(candidates) do
+        local count = tonumber(value)
+        if count then
+            return math.max(0, count)
+        end
+    end
+
+    return 0
+end
+
 serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAttempt)
     if serverHopIsActive then
         return true
@@ -1220,7 +1244,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local placeId = choosePlaceId()
         local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
-        local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 1) or 0
+        local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
         local retryTimer = 1.5
         local attempt = tonumber(retryAttempt) or 0
 
@@ -1246,13 +1270,40 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
                     local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
-                    local premiumPlayers = tonumber(server.premiumPlayers or server.premium or 0) or 0
+                    local premiumPlayers = getServerPremiumPlayerCount(server)
                     local id = tostring(server.id or "")
-                    local matchesPlayerRange = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers
-                    local matchesPlusTarget = not settings.plusHopToggle or preferredPlusMembers <= 0 or premiumPlayers >= preferredPlusMembers
-                    if matchesPlayerRange and matchesPlusTarget then
-                        table.insert(servers, server)
+                    local localIsPremium = LocalPlayer and LocalPlayer.MembershipType == Enum.MembershipType.Premium
+                    local effectivePremiumCount = premiumPlayers
+                    if localIsPremium then
+                        effectivePremiumCount = math.max(0, premiumPlayers - 1)
                     end
+                    local matchesPlayerRange = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers
+                    local matchesPlusTarget = not settings.plusHopToggle or preferredPlusMembers <= 0 or effectivePremiumCount >= preferredPlusMembers
+                    if matchesPlayerRange and matchesPlusTarget then
+                        if settings.plusHopToggle and effectivePremiumCount <= 0 then
+                            -- immediate retry when no premium/plus players are present on this server (excluding the local user)
+                            table.insert(servers, server)
+                        else
+                            table.insert(servers, server)
+                        end
+                    end
+                end
+
+                -- if Plus Hop is enabled, aggressively reject servers with zero premium users after excluding the local user
+                if settings.plusHopToggle and preferredPlusMembers > 0 then
+                    local validServers = {}
+                    for _, server in ipairs(servers) do
+                        local premiumPlayers = getServerPremiumPlayerCount(server)
+                        local localIsPremium = LocalPlayer and LocalPlayer.MembershipType == Enum.MembershipType.Premium
+                        local effectivePremiumCount = premiumPlayers
+                        if localIsPremium then
+                            effectivePremiumCount = math.max(0, premiumPlayers - 1)
+                        end
+                        if effectivePremiumCount > 0 and effectivePremiumCount >= preferredPlusMembers then
+                            table.insert(validServers, server)
+                        end
+                    end
+                    servers = validServers
                 end
 
                 if #servers > 0 then
@@ -2215,8 +2266,8 @@ end
 
 local currentIdleTask = nil
 local HELICOPTER_IDLE_SPIN_SPEED = 2.7
-local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.06
-local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.035
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.02
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.02
 local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
@@ -2832,8 +2883,14 @@ settingHandlers = {
         saveSettings()
     end,
     plusMemberTarget = function(value)
-        settings.plusMemberTarget = math.max(0, tonumber(value) or 1)
+        settings.plusMemberTarget = math.max(0, tonumber(value) or 3)
         saveSettings()
+    end,
+    plusHopToggle = function(value)
+        saveSettings()
+        if value then
+            serverHopNow("plus-hop-toggle")
+        end
     end,
     vcServerHopToggle = function(value)
         if value then
