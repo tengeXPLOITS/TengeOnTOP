@@ -928,7 +928,7 @@ local function sendDonationWebhook(amount, donorInfo)
 end
 
 local function sendServerHopWebhook(hopInfo)
-    if not settings.webhookToggle or not settings.notifyPerHopToggle or type(hopInfo) ~= "table" then
+    if not settings.notifyPerHopToggle or type(hopInfo) ~= "table" then
         return
     end
 
@@ -937,14 +937,19 @@ local function sendServerHopWebhook(hopInfo)
         return
     end
 
+    local hopCount = tonumber(hopInfo.count) or 0
+    local reason = tostring(hopInfo.reason or "")
+    local reasonText = reason ~= "" and (" | Reason: **%s**"):format(reason) or ""
+
     postWebhookJson(url, {
         username = "PLS DONATE",
         embeds = {{
             color = 0x3498DB,
             title = localized("serverHopTitle", tostring(LocalPlayer.Name or "Unknown")),
             description = string.format(
-                "Server hops this session: **%d**",
-                tonumber(hopInfo.count) or 0
+                "Server hops this session: **%d**%s",
+                hopCount,
+                reasonText
             ),
             timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
         }},
@@ -2256,9 +2261,9 @@ end
 
 local currentIdleTask = nil
 local HELICOPTER_IDLE_SPIN_SPEED = 2.7
-local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.07
-local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.03
-local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.6
+local HELICOPTER_IDLE_PULSE_ACTIVE_DURATION = 0.0
+local HELICOPTER_IDLE_PULSE_PAUSE_DURATION = 0.0
+local HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER = 1.0
 local HELICOPTER_TAKEOFF_SPIN_SPEED = 14
 local SPIN_DONATION_BASE_SPEED = 0.25
 local HELICOPTER_PLAZA_ROUTE = {
@@ -2366,26 +2371,10 @@ local function startHelicopterIdleMode()
             heliBody.AngularVelocity = Vector3.new(0, idleSpeed, 0)
         end
 
-        local pulseSpeed = idleSpeed * HELICOPTER_IDLE_PULSE_SPEED_MULTIPLIER
-        local cycleStart = tick()
         local currentSpinVelocity = idleSpeed
         while settings.helicopterEnabled and root.Parent do
-            local elapsed = tick() - cycleStart
-            local cycleDuration = HELICOPTER_IDLE_PULSE_ACTIVE_DURATION + HELICOPTER_IDLE_PULSE_PAUSE_DURATION
-            local cycleTime = elapsed % cycleDuration
-
-            local targetVelocity
-            if cycleTime < HELICOPTER_IDLE_PULSE_ACTIVE_DURATION then
-                local p = math.clamp(cycleTime / HELICOPTER_IDLE_PULSE_ACTIVE_DURATION, 0, 1)
-                local eased = 0.5 - math.cos(p * math.pi) * 0.5
-                targetVelocity = idleSpeed + ((pulseSpeed - idleSpeed) * eased)
-            else
-                local pauseP = math.clamp((cycleTime - HELICOPTER_IDLE_PULSE_ACTIVE_DURATION) / HELICOPTER_IDLE_PULSE_PAUSE_DURATION, 0, 1)
-                local holdStrength = 1 - pauseP
-                targetVelocity = pulseSpeed * holdStrength
-            end
-
-            currentSpinVelocity = currentSpinVelocity + ((targetVelocity - currentSpinVelocity) * 0.28)
+            local targetVelocity = idleSpeed
+            currentSpinVelocity = currentSpinVelocity + ((targetVelocity - currentSpinVelocity) * 0.18)
             if heliBody and heliBody.Parent then
                 heliBody.AngularVelocity = Vector3.new(0, currentSpinVelocity, 0)
             end
