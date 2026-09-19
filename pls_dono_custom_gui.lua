@@ -198,7 +198,7 @@ local defaults = {
     webhookBox = "",
     notifyPerHopToggle = false,
     antiAfkToggle = false,
-    spinSpeedMultiplier = 0.35,
+    spinSpeedMultiplier = 0.22,
 
     serverHopToggle = true,
     serverHopDelay = 15,
