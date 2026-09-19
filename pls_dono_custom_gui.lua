@@ -1327,7 +1327,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
             end
 
-            if preferPlus and #servers == 0 and attempt >= 8 then
+            if preferPlus and #servers == 0 then
                 preferPlus = false
                 servers = {}
             end
@@ -1366,11 +1366,6 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
                 serverHopIsActive = false
                 return
-            end
-
-            if attempt >= 8 then
-                serverHopIsActive = false
-                return false
             end
 
             task.wait(retryTimer)
