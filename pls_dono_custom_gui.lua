@@ -3350,23 +3350,6 @@ local function buildSettingsTabs()
         end
         task.defer(rejoinAfterUserBoothUpdate)
     end)
-
-    createButton(boothSection, "Apply Goal Bar", function()
-        settings.goalBarHeaderText = tostring(goalBarHeaderBox.Text or settings.goalBarHeaderText or "GOAL $G")
-        settings.customBoothText = buildGoalBarTemplate()
-        saveSettings()
-        local ok, mode = updateBoothTextNow()
-        if ok then
-            boothTextBox.Text = settings.customBoothText
-            notify("Goal Bar", "Goal bar applied to booth text.", 4, "goal-bar-apply-ok", 1)
-        elseif mode == "local-preview-only" then
-            boothTextBox.Text = settings.customBoothText
-            notify("Goal Bar", "Goal bar preview applied.", 4, "goal-bar-apply-preview", 2)
-        else
-            notify("Goal Bar", "Goal bar could not be applied.", 4, "goal-bar-apply-fail", 2)
-        end
-        task.defer(rejoinAfterUserBoothUpdate)
-    end)
     createInfoLabel(boothSection, localized("customBoothText"))
     boothTextBox = createPlainTextBox(boothSection, localized("boothTextPlaceholder"), "customBoothText", 56, true)
     createInfoLabel(boothSection, localized("boothTextTokens"))
