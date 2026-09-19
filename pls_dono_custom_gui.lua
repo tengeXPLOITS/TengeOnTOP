@@ -1526,9 +1526,10 @@ do
 end
 
 do
-    local existing = GuiParent:FindFirstChild("PlsDonoCustomGui")
-    if existing then
-        existing:Destroy()
+    for _, existing in ipairs(GuiParent:GetChildren()) do
+        if existing:IsA("ScreenGui") and existing.Name == "PlsDonoCustomGui" then
+            existing:Destroy()
+        end
     end
 end
 
@@ -2704,6 +2705,19 @@ local function applySpinState()
 end
 
 
+local function applyGoalBarTemplateIfActive()
+    local currentText = tostring(settings.customBoothText or "")
+    if currentText == "" or currentText:find("%$BAR") ~= nil or currentText:find("GOAL") ~= nil or currentText:find("goal") ~= nil then
+        local generated = buildGoalBarTemplate()
+        if generated ~= currentText then
+            settings.customBoothText = generated
+            saveSettings()
+            return true
+        end
+    end
+    return false
+end
+
 local function restoreRuntimeSettings()
     if type(settingHandlers) ~= "table" then
         return
@@ -2753,13 +2767,17 @@ settingHandlers = {
         }
         settings.goalBarColor = allowed[lower] and lower or defaults.goalBarColor
         saveSettings()
-        if updateBoothTextNow then
+        if applyGoalBarTemplateIfActive() and updateBoothTextNow then
+            updateBoothTextNow()
+        elseif updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
     goalBarHeaderText = function()
         saveSettings()
-        if updateBoothTextNow then
+        if applyGoalBarTemplateIfActive() and updateBoothTextNow then
+            updateBoothTextNow()
+        elseif updateBoothTextNow then
             updateBoothTextNow()
         end
     end,
