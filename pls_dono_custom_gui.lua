@@ -179,7 +179,6 @@ local LEGACY_SETTINGS_FILE = "plsdonatesettings.txt"
 local LEGACY_SETTINGS_BACKUP_FILE = "plsdonatesettingsbackup.txt"
 
 local defaults = {
-    language = "English",
     textUpdateToggle = true,
     customBoothText = "Please help me reach my goal! Goal: $G",
     goalBarHeaderText = "GOAL $G",
@@ -360,123 +359,8 @@ SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT = deepCopy(settings)
 SharedEnv.plsdonoSettings = settings
 saveSettings()
 
-local languageOptions = {"English", "Spanish"}
-local translations = {
-    English = {
-        webhookTitle = "@%s has gotten tipped %dR$ by %s, check your balance! 🎉",
-        serverHopTitle = "@%s has serverhopped",
-        rejoinMessage = "rejoining server, you updated booth text and your buttons were invis.",
-        languageSection = "Language Settings",
-        languageLabel = "Language",
-        languageSaved = "Language saved. Rejoin to apply it to the full UI.",
-        tabBooth = "Booth",
-        tabMain = "Main",
-        tabChat = "Chat",
-        tabWebhook = "Webhook",
-        tabServerHop = "Server Hop",
-        tabLanguage = "Language",
-        boothSection = "Booth Settings",
-        mainSection = "Main Settings",
-        chatSection = "Chat Settings",
-        webhookSection = "Webhook Settings",
-        serverSection = "Serverhop Settings",
-        textUpdate = "Text Update",
-        goalBarColor = "Goal Bar Color",
-        goalBarHeader = "Goal Bar Header:",
-        goalBarHint = "Use $G here if you want the current goal amount.",
-        pasteGoalBar = "Paste Goal Bar",
-        customBoothText = "Custom Booth Text:",
-        boothTextPlaceholder = "Write the exact booth text here...",
-        boothTextTokens = "$C = current | $G = goal | $BAR = goal progress",
-        textColors = "Text colors: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey, or #RRGGBB",
-        font = "Font",
-        update = "Update",
-        standingPosition = "Standing Position",
-        helicopter = "Helicopter On-Donation",
-        spin = "1R$= +1 Spin Speed",
-        testDonationAmount = "Test Donation Amount (R$)",
-        testDonation = "Test Donation",
-        autoThanks = "Auto Thank You",
-        thanksDelay = "Thanks Delay (S)",
-        thanksMessages = "Thank You Messages",
-        autoBeg = "Auto Beg",
-        begDelay = "Beg Delay (S)",
-        begMessages = "Begging Messages",
-        webhookEnabled = "Webhook Enabled",
-        webhookUrl = "Webhook URL",
-        notifyPerHop = "Notify Per Hop",
-        antiAfk = "Anti AFK",
-        autoServerHop = "Auto Server Hop",
-        serverHopDelay = "Server Hop Delay (Minutes)",
-        minPlayers = "Min Players in Server",
-        maxPlayers = "Max Players in Server",
-        smallServer = "Hop When Server Is Small",
-        smallThreshold = "Small Server Threshold",
-        modEvader = "Mod Evader",
-        serverHopNow = "Server Hop Now",
-        vcServerHop = "VC Server Hop (All Servers)",
-        languageNotice = "Language saved. Rejoin to apply it to the full UI.",
-    },
-    Spanish = {
-        webhookTitle = "@%s ha recibido una propina de %dR$ de %s, revisa tu saldo! 🎉",
-        serverHopTitle = "@%s ha cambiado de servidor",
-        rejoinMessage = "reuniendo el servidor, actualizaste el texto del puesto y tus botones no se veian.",
-        languageSection = "Configuracion de idioma",
-        languageLabel = "Idioma",
-        languageSaved = "Idioma guardado. Vuelve a entrar para aplicarlo a toda la interfaz.",
-        tabBooth = "Puesto",
-        tabMain = "Principal",
-        tabChat = "Chat",
-        tabWebhook = "Webhook",
-        tabServerHop = "Cambiar servidor",
-        tabLanguage = "Idioma",
-        boothSection = "Configuracion del puesto",
-        mainSection = "Configuracion principal",
-        chatSection = "Configuracion del chat",
-        webhookSection = "Configuracion del webhook",
-        serverSection = "Configuracion de cambio de servidor",
-        textUpdate = "Actualizar texto",
-        goalBarColor = "Color de la barra de meta",
-        goalBarHeader = "Encabezado de la barra de meta:",
-        goalBarHint = "Usa $G aqui para mostrar la meta actual.",
-        pasteGoalBar = "Pegar barra de meta",
-        customBoothText = "Texto personalizado del puesto:",
-        boothTextPlaceholder = "Escribe aqui el texto exacto del puesto...",
-        boothTextTokens = "$C = actual | $G = meta | $BAR = progreso de meta",
-        textColors = "Colores: green, blue, yellow, black, white, red, orange, pink, purple, gray/grey o #RRGGBB",
-        font = "Fuente",
-        update = "Actualizar",
-        standingPosition = "Posicion para estar de pie",
-        helicopter = "Helicoptero al recibir donacion",
-        spin = "1R$= +1 velocidad de giro",
-        testDonationAmount = "Cantidad de donacion de prueba (R$)",
-        testDonation = "Donacion de prueba",
-        autoThanks = "Agradecimiento automatico",
-        thanksDelay = "Retraso del agradecimiento (S)",
-        thanksMessages = "Mensajes de agradecimiento",
-        autoBeg = "Pedir automaticamente",
-        begDelay = "Retraso para pedir (S)",
-        begMessages = "Mensajes para pedir",
-        webhookEnabled = "Webhook activado",
-        webhookUrl = "URL del webhook",
-        notifyPerHop = "Notificar por cada cambio",
-        antiAfk = "Anti AFK",
-        autoServerHop = "Cambio automatico de servidor",
-        serverHopDelay = "Retraso del cambio (minutos)",
-        minPlayers = "Minimo de jugadores",
-        maxPlayers = "Maximo de jugadores",
-        smallServer = "Cambiar si el servidor es pequeno",
-        smallThreshold = "Limite de servidor pequeno",
-        modEvader = "Evitar moderadores",
-        serverHopNow = "Cambiar de servidor ahora",
-        vcServerHop = "Cambio a servidores VC",
-        languageNotice = "Idioma guardado. Vuelve a entrar para aplicar toda la interfaz.",
-    },
-}
-
 localized = function(key, ...)
-    local language = translations[settings.language] and settings.language or "English"
-    local value = translations[language][key] or translations.English[key] or key
+    local value = tostring(key or "")
     if select("#", ...) > 0 then
         return value:format(...)
     end
@@ -1051,7 +935,7 @@ end
 
 local function getGoalProgressSnapshot()
     local current = tonumber(getCurrentRaisedAmount()) or 0
-    local goal = 5
+    local goal = math.max(250, current + 250)
     local safeGoal = math.max(goal, 1)
     local ratio = math.clamp(current / safeGoal, 0, 1)
     return current, goal, ratio
@@ -1127,7 +1011,9 @@ local function buildBoothText()
 end
 
 local function buildGoalBarTemplate()
-    local headerText = escapeRichTextText(settings.goalBarHeaderText or "GOAL $G")
+    local current, goal = getGoalProgressSnapshot()
+    local raisedText = string.format("Raised: %s / %s", formatBoothNumber(current), formatBoothNumber(goal))
+    local headerText = escapeRichTextText(raisedText)
 
     return table.concat({
         "<font size=\"22\"><b>",
@@ -2774,13 +2660,6 @@ local function restoreRuntimeSettings()
 end
 
 settingHandlers = {
-    language = function(value)
-        if not translations[value] then
-            settings.language = defaults.language
-        end
-        saveSettings()
-        notify(localized("languageLabel"), localized("languageSaved"), 4, "language-saved", 1)
-    end,
     helicopterEnabled = function(value)
         if value then
             startHelicopterIdleMode()
@@ -3380,7 +3259,6 @@ local function buildSettingsTabs()
     local chatTab = createTab("Chat", localized("tabChat"))
     local webhookTab = createTab("Webhook", localized("tabWebhook"))
     local serverTab = createTab("Server Hop", localized("tabServerHop"))
-    local languageTab = createTab("Language", localized("tabLanguage"))
 
     local boothSection = createSection(boothTab, localized("boothSection"))
     createToggle(boothSection, localized("textUpdate"), "textUpdateToggle")
@@ -3506,10 +3384,6 @@ do
 
     -- VC Server Hop
     createToggle(serverSection, localized("vcServerHop"), "vcServerHopToggle")
-
-    local languageSection = createSection(languageTab, localized("languageSection"))
-    createDropdown(languageSection, localized("languageLabel"), "language", languageOptions)
-    createInfoLabel(languageSection, localized("languageNotice"))
 end
 
 end
