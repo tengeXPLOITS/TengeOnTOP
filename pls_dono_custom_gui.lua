@@ -180,7 +180,7 @@ local LEGACY_SETTINGS_BACKUP_FILE = "plsdonatesettingsbackup.txt"
 
 local defaults = {
     textUpdateToggle = true,
-    customBoothText = "Please help me reach my goal! Goal: $G",
+    customBoothText = "Please help me reach my goal! || Goal: $G",
     goalBarHeaderText = "GOAL $G",
     goalBarColor = "blue",
     fontFace = "SciFi",
@@ -198,7 +198,7 @@ local defaults = {
     webhookBox = "",
     notifyPerHopToggle = false,
     antiAfkToggle = false,
-    spinSpeedMultiplier = 0.22,
+    spinSpeedMultiplier = 0.25,
 
     serverHopToggle = true,
     serverHopDelay = 15,
@@ -1241,6 +1241,7 @@ if not teleportFailureConnection then
         end
 
         if isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure then
+            serverHopIsActive = false
             task.delay(0.6, function()
                 if serverHopNow then
                     serverHopNow("full-server-retry")
@@ -1356,6 +1357,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
 
                 if serverFullFailure then
+                    serverHopIsActive = false
                     task.wait(retryTimer)
                     continue
                 end
