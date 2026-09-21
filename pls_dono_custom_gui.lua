@@ -1233,6 +1233,13 @@ local function isFullServerTeleportFailure(message)
         or lower:find("full server", 1, true)
 end
 
+local function shouldRetryTeleportFailure(result, errorMessage)
+    if result == Enum.TeleportResult.Failure then
+        return true
+    end
+    return isFullServerTeleportFailure(errorMessage)
+end
+
 local teleportFailureConnection = nil
 if not teleportFailureConnection then
     teleportFailureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
@@ -1240,9 +1247,9 @@ if not teleportFailureConnection then
             return
         end
 
-        if isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure then
+        if shouldRetryTeleportFailure(result, errorMessage) then
             serverHopIsActive = false
-            task.delay(0.6, function()
+            task.delay(0.25, function()
                 if serverHopNow then
                     serverHopNow("full-server-retry")
                 end
@@ -1341,7 +1348,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                     if player ~= LocalPlayer then
                         return
                     end
-                    if tostring(selectedServerId) == tostring(selectedServer.id or "") and (isFullServerTeleportFailure(errorMessage) or result == Enum.TeleportResult.Failure) then
+                    if tostring(selectedServerId) == tostring(selectedServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
                         serverFullFailure = true
                     end
                 end)
