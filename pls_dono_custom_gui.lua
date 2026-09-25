@@ -111,6 +111,7 @@ end
 
 local sendChatMessage
 local serverHopNow
+local suppressBoothTextAutoApply = (type(SharedEnv.PLS_DONO_BOOTH_TEXT_SUPPRESS) == "boolean" and SharedEnv.PLS_DONO_BOOTH_TEXT_SUPPRESS) or false
 
 local function queueScriptOnTeleport()
     local queueOnTeleport = (syn and syn.queue_on_teleport)
@@ -145,6 +146,8 @@ local function queueScriptOnTeleport()
 end
 
 local function rejoinAfterUserBoothUpdate()
+    suppressBoothTextAutoApply = true
+    SharedEnv.PLS_DONO_BOOTH_TEXT_SUPPRESS = true
     queueScriptOnTeleport()
 
     task.delay(5, function()
@@ -1188,7 +1191,11 @@ local function hexToColor3(hex)
     return Color3.fromRGB(r, g, b)
 end
 
-updateBoothTextNow = function()
+updateBoothTextNow = function(forceApply)
+    if not forceApply and suppressBoothTextAutoApply then
+        return false, "suppressed"
+    end
+
     local text = buildBoothText()
     if text == "" then
         return false, "empty-text"
@@ -3070,7 +3077,7 @@ local function onBoothClaimDetected(slot)
     handledClaimSlot = slot
     moveToClaimedBooth(slot)
 
-    if settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
+    if not suppressBoothTextAutoApply and settings.textUpdateToggle and settings.customBoothText and tostring(settings.customBoothText) ~= "" and updateBoothTextNow then
         task.delay(0.35, function()
             pcall(function()
                 updateBoothTextNow()
@@ -3180,7 +3187,7 @@ local function createPlainTextBox(parent, placeholder, key, height, multiline)
                     return
                 end
 
-                if settings.textUpdateToggle and tostring(settings[key]) ~= "" and updateBoothTextNow then
+                if not suppressBoothTextAutoApply and settings.textUpdateToggle and tostring(settings[key]) ~= "" and updateBoothTextNow then
                     pcall(function()
                         updateBoothTextNow()
                     end)
@@ -3575,7 +3582,9 @@ local function buildSettingsTabs()
         end
         settings.customBoothText = nextText
         saveSettings()
-        local ok, mode = updateBoothTextNow()
+        suppressBoothTextAutoApply = false
+        SharedEnv.PLS_DONO_BOOTH_TEXT_SUPPRESS = false
+        local ok, mode = updateBoothTextNow(true)
         if ok then
             boothTextBox.Text = nextText
             notify("Goal Bar", "Goal bar pasted onto the booth.", 4, "goal-bar-ok", 1)
@@ -3601,7 +3610,9 @@ local function buildSettingsTabs()
 
         settings.customBoothText = nextText
         saveSettings()
-        local ok, mode = updateBoothTextNow()
+        suppressBoothTextAutoApply = false
+        SharedEnv.PLS_DONO_BOOTH_TEXT_SUPPRESS = false
+        local ok, mode = updateBoothTextNow(true)
         if ok then
             notify("Booth Text", "Booth text updated.", 4, "booth-text-ok", 1)
         elseif mode == "local-preview-only" then
