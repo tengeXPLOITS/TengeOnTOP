@@ -144,13 +144,29 @@ local function queueScriptOnTeleport()
     return false
 end
 
+local function rejoinCurrentPlace()
+    local ok = pcall(function()
+        if TeleportService and type(TeleportService.Teleport) == "function" then
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            return true
+        end
+        return false
+    end)
+
+    if ok then
+        return
+    end
+
+    pcall(function()
+        LocalPlayer:Kick(localized("rejoinMessage"))
+    end)
+end
+
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
     task.delay(5, function()
-        pcall(function()
-            LocalPlayer:Kick(localized("rejoinMessage"))
-        end)
+        rejoinCurrentPlace()
     end)
 end
 
