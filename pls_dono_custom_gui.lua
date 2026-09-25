@@ -144,30 +144,32 @@ local function queueScriptOnTeleport()
     return false
 end
 
-local function rejoinCurrentPlace()
-    local ok = pcall(function()
-        if TeleportService and type(TeleportService.Teleport) == "function" then
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-            return true
-        end
-        return false
-    end)
-
-    if ok then
-        return
-    end
-
-    pcall(function()
-        LocalPlayer:Kick(localized("rejoinMessage"))
-    end)
-end
-
 local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
     task.delay(5, function()
-        rejoinCurrentPlace()
+        if serverHopNow then
+            serverHopNow("booth-update", 24, 25, 1)
+        end
+
+        pcall(function()
+            LocalPlayer:Kick(localized("rejoinMessage"))
+        end)
     end)
+end
+
+local function cleanupWorkspaceCollisionModels()
+    local names = {
+        "Bench",
+        "WaterFountain",
+    }
+
+    for _, name in ipairs(names) do
+        local model = Workspace:FindFirstChild(name)
+        if model and model:IsA("Model") then
+            model:Destroy()
+        end
+    end
 end
 
 local GuiParent = resolveGuiParent()
@@ -194,6 +196,7 @@ local defaults = {
     goalBarHeaderText = "GOAL $G",
     goalBarColor = "blue",
     standingPosition = "Front",
+    boothMovementMode = "Teleport",
 
     autoThanks = true,
     thanksDelay = 3,
@@ -410,6 +413,7 @@ local labelTextMap = {
     font = "Font",
     update = "Update",
     standingPosition = "Standing Position",
+    boothMovementMode = "Booth Move Mode",
     helicopter = "Helicopter On-Donation",
     spin = "1R$= +1 Spin Speed",
     testDonationAmount = "Test Donation Amount (R$)",
@@ -1557,16 +1561,45 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
-    local function applyFacing()
-        hrp.CFrame = targetCF
-        task.delay(0.15, function()
-            if hrp and hrp.Parent then
-                hrp.CFrame = targetCF
+    local mode = tostring(settings.boothMovementMode or "Teleport")
+    if mode == "Walk" then
+        local goalPos = targetCF.Position
+        local currentPos = hrp.Position
+        local distance = (goalPos - currentPos).Magnitude
+        if distance <= 2 then
+            local lookAt = Vector3.new(goalPos.X, currentPos.Y, goalPos.Z)
+            hrp.CFrame = CFrame.new(currentPos, lookAt)
+            return true, "walk"
+        end
+
+        local finalLook = Vector3.new(goalPos.X, currentPos.Y, goalPos.Z)
+        hrp.CFrame = CFrame.new(currentPos, finalLook)
+        humanoid:MoveTo(goalPos)
+
+        task.spawn(function()
+            local deadline = tick() + 2.5
+            while tick() < deadline do
+                if not hrp or not hrp.Parent or not humanoid or humanoid.Health <= 0 then
+                    return
+                end
+                local dist = (hrp.Position - goalPos).Magnitude
+                if dist <= 1.5 then
+                    humanoid:MoveTo(goalPos)
+                    return
+                end
+                humanoid:MoveTo(goalPos)
+                task.wait(0.2)
             end
         end)
+        return true, "walk"
     end
 
-    applyFacing()
+    hrp.CFrame = targetCF
+    task.delay(0.15, function()
+        if hrp and hrp.Parent then
+            hrp.CFrame = targetCF
+        end
+    end)
     return true, "teleport"
 end
 
@@ -2924,6 +2957,14 @@ settingHandlers = {
         settings.boothPosition = positionMap[tostring(value)] or 3
         saveSettings()
     end,
+    boothMovementMode = function(value)
+        local mode = tostring(value or "Teleport")
+        if mode ~= "Walk" then
+            mode = "Teleport"
+        end
+        settings.boothMovementMode = mode
+        saveSettings()
+    end,
     spinSet = function()
         if not settings.spinSet then
             spinVelocityAccumulator = 0
@@ -3522,6 +3563,7 @@ local function buildSettingsTabs()
         task.defer(rejoinAfterUserBoothUpdate)
     end)
     createDropdown(boothSection, localized("standingPosition"), "standingPosition", {"Front", "Left", "Right", "Behind"})
+    createDropdown(boothSection, localized("boothMovementMode"), "boothMovementMode", {"Teleport", "Walk"})
 
     do
         local mainSection = createSection(mainTab, localized("mainSection"))
@@ -3597,6 +3639,8 @@ do
 end
 
 end
+
+cleanupWorkspaceCollisionModels()
 
 buildSettingsTabs()
 activateTab("Booth")
