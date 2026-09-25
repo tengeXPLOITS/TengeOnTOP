@@ -164,12 +164,28 @@ local function cleanupWorkspaceCollisionModels()
         "WaterFountain",
     }
 
+    local lookup = {}
     for _, name in ipairs(names) do
-        local model = Workspace:FindFirstChild(name)
-        if model and model:IsA("Model") then
-            model:Destroy()
+        lookup[name] = true
+    end
+
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("Model") and lookup[descendant.Name] then
+            descendant:Destroy()
         end
     end
+end
+
+local function watchWorkspaceCollisionModelCleanup()
+    Workspace.ChildAdded:Connect(function(child)
+        if child:IsA("Model") and (child.Name == "Bench" or child.Name == "WaterFountain") then
+            task.delay(0.1, function()
+                if child.Parent then
+                    child:Destroy()
+                end
+            end)
+        end
+    end)
 end
 
 local GuiParent = resolveGuiParent()
@@ -3641,6 +3657,7 @@ end
 end
 
 cleanupWorkspaceCollisionModels()
+watchWorkspaceCollisionModelCleanup()
 
 buildSettingsTabs()
 activateTab("Booth")
