@@ -148,10 +148,6 @@ local function rejoinAfterUserBoothUpdate()
     queueScriptOnTeleport()
 
     task.delay(5, function()
-        if serverHopNow then
-            serverHopNow("booth-update", 24, 25, 1)
-        end
-
         pcall(function()
             LocalPlayer:Kick(localized("rejoinMessage"))
         end)
@@ -171,8 +167,6 @@ end
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = nil
 SharedEnv.PLS_DONO_CUSTOM_GUI_LOADED = true
 
-local UI_BOOT_DELAY = 0
-
 local SETTINGS_FILE = "plsdono_custom_settings.json"
 local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local LEGACY_SETTINGS_FILE = "plsdonatesettings.txt"
@@ -183,9 +177,7 @@ local defaults = {
     customBoothText = "Please help me reach my goal! || Goal: $G",
     goalBarHeaderText = "GOAL $G",
     goalBarColor = "blue",
-    fontFace = "SciFi",
     standingPosition = "Front",
-    boothPosition = 3,
 
     autoThanks = true,
     thanksDelay = 3,
@@ -209,7 +201,6 @@ local defaults = {
     modEvader = false,
     minPlayerCount = 23,
     maxPlayerCount = 24,
-    AnonymousMode = false,
     vcServerHopToggle = false,
     helicopterEnabled = false,
     testDonationAmount = 6,
@@ -661,21 +652,33 @@ sendChatMessage = function(message)
         return
     end
 
-    local ok = pcall(function()
-        local channels = TextChatService:FindFirstChild("TextChannels")
-        local general = channels and channels:FindFirstChild("RBXGeneral")
-        if general and general.SendAsync then
-            general:SendAsync(text)
-            return
+    local ok, sent = pcall(function()
+        if TextChatService then
+            local channels = TextChatService:FindFirstChild("TextChannels")
+            local general = channels and channels:FindFirstChild("RBXGeneral")
+            if general and general.SendAsync then
+                general:SendAsync(text)
+                return true
+            end
         end
-        Players:Chat(text)
+
+        if Players and type(Players.Chat) == "function" then
+            Players:Chat(text)
+            return true
+        end
+
+        return false
     end)
 
-    if not ok then
-        pcall(function()
-            Players:Chat(text)
-        end)
+    if ok and sent == true then
+        return
     end
+
+    pcall(function()
+        if Players and type(Players.Chat) == "function" then
+            Players:Chat(text)
+        end
+    end)
 end
 
 local function performHttpRequest(options)
@@ -1161,11 +1164,9 @@ updateBoothTextNow = function()
         claimedBoothSlot = findOwnedBoothSlot(boothUiFolder)
     end
 
-    local fontName = tostring(settings.fontFace or "SciFi")
-    local chosenFont = Enum.Font[fontName] or Enum.Font.SciFi
     local payload = {
         text = text,
-        textFont = chosenFont,
+        textFont = Enum.Font.BuilderSansExtraBold,
         richText = true,
         strokeColor = Color3.new(0, 0, 0),
         strokeOpacity = 0,
@@ -1280,6 +1281,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         local preferPlus = settings.plusHopToggle and preferredPlusMembers > 0
         local retryTimer = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.75 or 1.25
         local attempt = tonumber(retryAttempt) or 0
+        local rangeDeadline = tick() + 10
 
         while true do
             attempt += 1
@@ -1299,6 +1301,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
             end
 
             local servers = {}
+            local fallbackServers = {}
             if body and body.data then
                 for _, server in pairs(body.data) do
                     local playing = tonumber(server.playing or 0) or 0
@@ -1310,7 +1313,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                     if localIsPremium then
                         effectivePremiumCount = math.max(0, premiumPlayers - 1)
                     end
-                    local matchesPlayerRange = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers and playing >= minPlayers and playing <= maxPlayers
+                    local isAvailable = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers
+                    if isAvailable then
+                        table.insert(fallbackServers, server)
+                    end
+
+                    local matchesPlayerRange = isAvailable and playing >= minPlayers and playing <= maxPlayers
                     if matchesPlayerRange then
                         if not preferPlus or effectivePremiumCount >= preferredPlusMembers then
                             table.insert(servers, server)
@@ -1354,6 +1362,52 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
 
                 markPendingFarmHop(reason, placeId, selectedServer.id)
+                if reason == "manual-button" and settings.notifyPerHopToggle then
+                    sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
+                end
+                serverHopIsActive = false
+                return
+            end
+
+            local fallbackServer = nil
+            if #fallbackServers > 0 and tick() >= rangeDeadline then
+                table.sort(fallbackServers, function(a, b)
+                    local ap = tonumber(a.playing or 0) or 0
+                    local bp = tonumber(b.playing or 0) or 0
+                    return ap > bp
+                end)
+                fallbackServer = fallbackServers[1]
+            end
+
+            if fallbackServer then
+                local selectedServerId = tostring(fallbackServer.id or "")
+                local serverFullFailure = false
+                local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                    if player ~= LocalPlayer then
+                        return
+                    end
+                    if tostring(selectedServerId) == tostring(fallbackServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
+                        serverFullFailure = true
+                    end
+                end)
+
+                queueScriptOnTeleport()
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, fallbackServer.id, LocalPlayer)
+                end)
+
+                task.wait(1.2)
+                if failureConnection then
+                    failureConnection:Disconnect()
+                end
+
+                if serverFullFailure then
+                    serverHopIsActive = false
+                    task.wait(retryTimer)
+                    continue
+                end
+
+                markPendingFarmHop(reason, placeId, fallbackServer.id)
                 if reason == "manual-button" and settings.notifyPerHopToggle then
                     sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
                 end
@@ -1760,7 +1814,7 @@ do
     title.TextColor3 = THEME.topBarText
     title.Font = UI_FONT_BOLD
     title.TextSize = 15
-    title.Text = "PLS DONATE 🍁 | @ii.matty"
+    title.Text = "PLS DONATE 🥳 | brought back"
     title.Parent = topBar
     applyTextGlow(title, GLOW_COLOR, 0.78)
 
@@ -1786,7 +1840,7 @@ minimizeBtn.BackgroundTransparency = 1
 minimizeBtn.BorderSizePixel = 0
 minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 minimizeBtn.Font = UI_FONT_BOLD
-minimizeBtn.TextSize = 13
+minimizeBtn.TextSize = 15
 minimizeBtn.Text = "▼"
 minimizeBtn.AutoButtonColor = false
 minimizeBtn.Parent = topBar
@@ -2844,17 +2898,6 @@ settingHandlers = {
             updateBoothTextNow()
         end
     end,
-    fontFace = function(value)
-        local fontName = tostring(value or defaults.fontFace)
-        if not Enum.Font[fontName] then
-            settings.fontFace = defaults.fontFace
-            saveSettings()
-            return
-        end
-        if updateBoothTextNow then
-            updateBoothTextNow()
-        end
-    end,
     standingPosition = function(value)
         local positionMap = {
             Front = 3,
@@ -3442,7 +3485,6 @@ local function buildSettingsTabs()
     boothTextBox = createPlainTextBox(boothSection, localized("boothTextPlaceholder"), "customBoothText", 56, true)
     createInfoLabel(boothSection, localized("boothTextTokens"))
     createInfoLabel(boothSection, localized("textColors"))
-    createDropdown(boothSection, localized("font"), "fontFace", boothFontOptions)
     createButton(boothSection, localized("update"), function()
         local nextText = tostring(boothTextBox.Text or "")
         if #nextText > 221 then
@@ -3649,7 +3691,12 @@ local function handleDonationDelta(delta, donorInfo)
         sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
         task.spawn(function()
             task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
-            sendChatMessage(pickRandomMessage(settings.thanksMessage, "Thank you"))
+            local thankYouText = pickRandomMessage(settings.thanksMessage, "Thank you")
+            if thankYouText ~= "" then
+                sendChatMessage(thankYouText)
+            else
+                sendChatMessage("Thank you")
+            end
         end)
     end
 end
@@ -3727,8 +3774,6 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.delay(1.5, function()
         local character = LocalPlayer.Character
         if character then
-            task.spawn(function()
-            end)
         end
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
