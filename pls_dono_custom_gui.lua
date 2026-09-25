@@ -646,22 +646,6 @@ local function finalizeSuccessfulPendingFarmHop()
 end
 
 pendingFarmHopNotification = finalizeSuccessfulPendingFarmHop()
-if settings.notifyPerHopToggle and type(pendingFarmHopNotification) == "table" then
-    task.defer(function()
-        sendServerHopWebhook(pendingFarmHopNotification)
-    end)
-end
-
-local function startCompletedHopWebhookWatcher()
-    task.spawn(function()
-        while true do
-            task.wait(2.5)
-            trySendCompletedHopWebhook()
-        end
-    end)
-end
-
-startCompletedHopWebhookWatcher()
 
 local function parseIdFromTemplate(tmpl)
     if not tmpl then
@@ -1370,7 +1354,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 end
 
                 markPendingFarmHop(reason, placeId, selectedServer.id)
-                if settings.notifyPerHopToggle then
+                if reason == "manual-button" and settings.notifyPerHopToggle then
                     sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
                 end
                 serverHopIsActive = false
@@ -1614,7 +1598,7 @@ gui.DisplayOrder = 50
 gui.Parent = GuiParent
 
 local THEME = {
-    topBar = Color3.fromRGB(191, 104, 41),
+    topBar = Color3.fromRGB(46, 173, 83),
     topBarText = Color3.fromRGB(255, 247, 235),
     panel = Color3.fromRGB(28, 29, 33),
     tabIdle = Color3.fromRGB(52, 55, 60),
@@ -1747,11 +1731,11 @@ do
     createCorner(main, SHELL_CORNER_RADIUS)
 
     local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(220, 132, 58)
+    stroke.Color = Color3.fromRGB(120, 210, 145)
     stroke.Thickness = 0
     stroke.Parent = main
 
-    main.BackgroundColor3 = Color3.fromRGB(214, 128, 57)
+    main.BackgroundColor3 = Color3.fromRGB(67, 180, 96)
 end
 
 local topBar = Instance.new("Frame")
@@ -1763,7 +1747,7 @@ topBar.Parent = main
 
 do
     createCorner(topBar, SHELL_CORNER_RADIUS)
-    topBar.BackgroundColor3 = Color3.fromRGB(210, 122, 51)
+    topBar.BackgroundColor3 = Color3.fromRGB(38, 160, 73)
 end
 
 do
@@ -1786,12 +1770,12 @@ do
     subtitle.Size = UDim2.new(1, -48, 0, 11)
     subtitle.Position = UDim2.new(0, 32, 0, 18)
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
-    subtitle.TextColor3 = THEME.subtleText
+    subtitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     subtitle.Font = UI_FONT
     subtitle.TextSize = 11
-    subtitle.Text = "annoying ass beggars, LMAO"
+    subtitle.Text = "new features, anyone?"
     subtitle.Parent = topBar
-    applyTextGlow(subtitle, SUBTLE_GLOW_COLOR, SUBTLE_GLOW_TRANSPARENCY)
+    applyTextGlow(subtitle, Color3.fromRGB(255, 255, 255), 0.7)
 end
 
 local minimizeBtn = Instance.new("TextButton")
@@ -3560,16 +3544,6 @@ buildSettingsTabs()
 activateTab("Booth")
 main.Visible = true
 
-do
-    local targetPosition = main.Position
-    main.Position = UDim2.fromOffset(targetPosition.X.Offset - 42, targetPosition.Y.Offset)
-    TweenService:Create(
-        main,
-        TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        {Position = targetPosition}
-    ):Play()
-end
-
 task.spawn(function()
     task.wait(2)
     local claimed, info = claimBoothNow()
@@ -3630,12 +3604,22 @@ end)
 
 local activeDonationListener = nil
 local activeDonationVfxListener = nil
+local lastDonationWebhookSignature = ""
+local lastDonationWebhookAt = 0
 
 local function handleDonationDelta(delta, donorInfo)
     local amount = math.max(0, tonumber(delta) or 0)
     if amount <= 0 then
         return
     end
+
+    local donorName = tostring((donorInfo and donorInfo.name) or (donorInfo and donorInfo.displayName) or LocalPlayer.Name or "Unknown")
+    local signature = donorName .. ":" .. tostring(amount) .. ":" .. tostring(math.floor(tick() / 0.25))
+    if signature == lastDonationWebhookSignature and tick() - lastDonationWebhookAt < 0.5 then
+        return
+    end
+    lastDonationWebhookSignature = signature
+    lastDonationWebhookAt = tick()
 
     lastDonationTick = tick()
     markDonationForHopTimer(amount)
