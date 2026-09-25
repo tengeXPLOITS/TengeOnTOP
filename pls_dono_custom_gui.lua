@@ -1577,6 +1577,9 @@ local function moveToClaimedBooth(slot)
         return false, "missing-character"
     end
 
+    humanoid.Sit = false
+    humanoid.AutoRotate = true
+
     local mode = tostring(settings.boothMovementMode or "Teleport")
     if mode == "Walk" then
         local goalPos = targetCF.Position
@@ -1588,8 +1591,10 @@ local function moveToClaimedBooth(slot)
             return true, "walk"
         end
 
-        local finalLook = Vector3.new(goalPos.X, currentPos.Y, goalPos.Z)
-        hrp.CFrame = CFrame.new(currentPos, finalLook)
+        local lookTarget = Vector3.new(goalPos.X, currentPos.Y, goalPos.Z)
+        local direction = (goalPos - currentPos)
+        local desiredLook = direction.Magnitude > 0.01 and (currentPos + direction.Unit) or lookTarget
+        hrp.CFrame = CFrame.new(currentPos, desiredLook)
         humanoid:MoveTo(goalPos)
 
         task.spawn(function()
@@ -1597,6 +1602,9 @@ local function moveToClaimedBooth(slot)
             while tick() < deadline do
                 if not hrp or not hrp.Parent or not humanoid or humanoid.Health <= 0 then
                     return
+                end
+                if humanoid.Sit then
+                    humanoid.Sit = false
                 end
                 local dist = (hrp.Position - goalPos).Magnitude
                 if dist <= 1.5 then
@@ -2199,6 +2207,7 @@ local function createTab(name, buttonText)
 end
 
 local antiAfkConnection
+local antiSitConnection
 local function setAntiAfkEnabled(enabled)
     if antiAfkConnection then
         antiAfkConnection:Disconnect()
@@ -2217,6 +2226,30 @@ local function setAntiAfkEnabled(enabled)
         end)
     end)
 end
+
+local function setAntiSitEnabled(enabled)
+    if antiSitConnection then
+        antiSitConnection:Disconnect()
+        antiSitConnection = nil
+    end
+
+    if not enabled then
+        return
+    end
+
+    antiSitConnection = RunService.Heartbeat:Connect(function()
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.AutoRotate = true
+            if humanoid.Sit then
+                humanoid.Sit = false
+            end
+        end
+    end)
+end
+
+setAntiSitEnabled(true)
 
 local function createSection(parent, titleText)
     local section = Instance.new("Frame")
