@@ -17,7 +17,7 @@ local GroupService = game:GetService("GroupService")
 local httprequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 
 -- Run only for games associated with this community (X-Stud-os)
-local COMMUNITY_ID = 32815300
+local COMMUNITY_ID = 16290792
 local PLACE_ID = tonumber(game.PlaceId) or 0
 
 local function IsInCommunity()
