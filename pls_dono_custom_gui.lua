@@ -37,7 +37,7 @@ local configModuleOk, ConfigModule = pcall(function()
     local chunk, compileError = loadstring(source)
     assert(chunk, compileError)
     local module = chunk()
-    assert(type(module) == "table" and type(module.defaults) == "table" and type(module.create) == "function", "config module has an invalid interface")
+        assert(type(module) == "table" and type(module.defaults) == "table" and type(module.create) == "function" and type(module.emoteOptions) == "table", "config module has an invalid interface")
     return module
 end)
 if not configModuleOk then
@@ -412,6 +412,10 @@ local labelTextMap = {
     boothMovementMode = "Booth Move Mode",
     helicopter = "Helicopter On-Donation",
     spin = "1R$= +1 Spin Speed",
+        catalogEmote = "Catalog Emote",
+        animSpeed = "Anim Speed",
+        animSpeedMultiplier = "Anim Speed Multiplier",
+        animSpeedPerRobux = "1R$= +1 Anim Speed",
     testDonationAmount = "Test Donation Amount (R$)",
     testDonation = "Test Donation",
     autoThanks = "Auto Thank You",
@@ -2053,6 +2057,7 @@ local tabButtons = {}
 local tabPages = {}
 local activeTab
 local settingHandlers
+local animSpeedSliderUpdate
 
 local function setTabVisualState(btn, active)
     if not btn then
@@ -2310,13 +2315,18 @@ end
 
 local requiredFeatureMethods = {
     "applySpinDonation",
+    "addDonationAnimSpeed",
+    "applyCurrentAnimSpeed",
     "applySpinState",
     "isHelicopterBusy",
     "performHelicopterDonationSequence",
     "resetSpinAccumulator",
+    "resetDonationAnimSpeedBoost",
     "setAntiAfkEnabled",
+        "playCatalogEmoteByName",
     "startHelicopterIdleMode",
     "stopAstronautIdle",
+        "stopCatalogEmoteTrack",
     "stopHelicopterIdleTask",
     "stopHelicopterSpin",
 }
@@ -2374,6 +2384,29 @@ settingHandlers = {
     end,
     antiAfkToggle = function(value)
         features.setAntiAfkEnabled(value == true)
+    end,
+    catalogEmote = function(value)
+        local played, status = features.playCatalogEmoteByName(value)
+        if not played and status ~= "disabled" then
+            warn("[PLS DONATE] Could not play catalog emote:", status)
+        end
+    end,
+    animSpeedSetting = function()
+        features.applyCurrentAnimSpeed()
+    end,
+    animSpeedMultiplier = function(value)
+        settings.animSpeedMultiplier = math.max(0, tonumber(value) or 1)
+        saveSettings()
+        features.applyCurrentAnimSpeed()
+    end,
+    animSpeedPerRobux = function(value)
+        settings.animSpeedPerRobux = value == true
+        if settings.animSpeedPerRobux then
+            features.applyCurrentAnimSpeed()
+        else
+            features.resetDonationAnimSpeedBoost()
+        end
+        saveSettings()
     end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
@@ -3032,6 +3065,10 @@ local function buildSettingsTabs()
         createToggle(mainSection, localized("helicopter"), "helicopterEnabled")
         createToggle(mainSection, localized("spin"), "spinSet")
         createToggle(mainSection, localized("antiAfk"), "antiAfkToggle")
+        createDropdown(mainSection, localized("catalogEmote"), "catalogEmote", ConfigModule.emoteOptions)
+        animSpeedSliderUpdate = createSlider(mainSection, localized("animSpeed"), "animSpeedSetting", 1, 100)
+        createTextBox(mainSection, localized("animSpeedMultiplier"), "animSpeedMultiplier", true)
+        createToggle(mainSection, localized("animSpeedPerRobux"), "animSpeedPerRobux")
         createTextBox(mainSection, localized("testDonationAmount"), "testDonationAmount", true)
         createButton(mainSection, localized("testDonation"), function()
             local stat = getRaisedStatObject()
@@ -3178,6 +3215,14 @@ local function handleDonationDelta(delta, donorInfo)
 
     lastDonationTick = tick()
     markDonationForHopTimer(amount)
+
+    if features.addDonationAnimSpeed(amount) then
+        if animSpeedSliderUpdate then
+            animSpeedSliderUpdate(settings.animSpeedSetting)
+        end
+        saveSettings()
+        notify("Anim Speed", "Anim speed reset to 1 after reaching the cap.", 4, "anim-speed-reset", 2)
+    end
 
     features.applySpinDonation(amount)
 
