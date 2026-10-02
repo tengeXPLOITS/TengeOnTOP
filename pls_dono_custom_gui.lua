@@ -223,40 +223,7 @@ local SETTINGS_BACKUP_FILE = "plsdono_custom_settings_backup.json"
 local LEGACY_SETTINGS_FILE = "plsdonatesettings.txt"
 local LEGACY_SETTINGS_BACKUP_FILE = "plsdonatesettingsbackup.txt"
 
-local defaults = {
-    textUpdateToggle = true,
-    customBoothText = "Please help me reach my goal! || Goal: $G",
-    goalBarHeaderText = "GOAL $G",
-    goalBarColor = "blue",
-    standingPosition = "Front",
-    boothMovementMode = "Teleport",
-
-    autoThanks = true,
-    thanksDelay = 3,
-    thanksMessage = {"Thank you", "Thankss!", "ty"},
-    autoBeg = true,
-    begDelay = 300,
-    begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
-
-    webhookToggle = false,
-    webhookBox = "",
-    notifyPerHopToggle = false,
-    antiAfkToggle = false,
-    spinSpeedMultiplier = 0.25,
-
-    serverHopToggle = true,
-    serverHopDelay = 15,
-    populationHopToggle = false,
-    populationHopThreshold = 15,
-    plusHopToggle = false,
-    plusMemberTarget = 3,
-    modEvader = false,
-    minPlayerCount = 23,
-    maxPlayerCount = 24,
-    vcServerHopToggle = false,
-    helicopterEnabled = false,
-    testDonationAmount = 6,
-}
+local defaults = ConfigModule.defaults
 
 local boothFontOptions = {"SciFi"}
 do
@@ -748,13 +715,30 @@ local function performHttpRequest(options)
 end
 
 local function httpGetBody(url)
-    local defaults = ConfigModule.defaults
+    local body = nil
+    local okRequest = pcall(function()
+        local response = performHttpRequest({
+            Url = url,
+            Method = "GET",
             Headers = { ["Content-Type"] = "application/json" },
-            Body = payload,
         })
-        sent = response ~= nil or sent
+        if response and type(response.Body) == "string" and response.Body ~= "" then
+            body = response.Body
+        end
     end)
-    return sent
+
+    if okRequest and body then
+        return body
+    end
+
+    local okHttpGet, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if okHttpGet and type(result) == "string" and result ~= "" then
+        return result
+    end
+
+    return nil
 end
 
 local function formatFarmDuration(totalSeconds)
