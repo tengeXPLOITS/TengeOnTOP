@@ -12,6 +12,10 @@ local Config = {
 		autoBeg = true,
 		begDelay = 300,
 		begMessage = {"Grateful for any donation", "Please help me reach my goal!", "Anything helps, thank you!"},
+		catalogEmote = "Disabled",
+		animSpeedSetting = 1,
+		animSpeedMultiplier = 1,
+		animSpeedPerRobux = false,
 		webhookToggle = false,
 		webhookBox = "",
 		notifyPerHopToggle = false,
@@ -31,6 +35,40 @@ local Config = {
 		helicopterEnabled = false,
 		testDonationAmount = 6,
 	},
+}
+
+Config.emoteOptions = {
+	"Disabled",
+	"sturdy",
+	"jumping wave",
+	"wake up call-ksi",
+	"twice the feels",
+	"louder",
+	"low cortisol",
+	"zesty sturdy",
+	"korean greeting",
+	"block party",
+    "quiet waves",
+    "sad",
+    "side to side",
+    "trackmaker",
+
+}
+
+Config.emotes = {
+	["sturdy"] = "102571052202995",
+	["jumping wave"] = "10714378156",
+	["wake up call-ksi"] = "10714168145",
+	["twice the feels"] = "12874447851",
+	["louder"] = "10714385204",
+	["low cortisol"] = "77387643699357",
+	["zesty sturdy"] = "132104757386824",
+	["korean greeting"] = "138591721528570",
+	["block party"] = "10713988674",
+    ["quiet waves"] = "10714390497",
+    ["sad"] = "10714392876",
+    ["side to side"] = "10714366910",
+    ["trackmaker"] = "135924994802775",
 }
 
 function Config.create(dependencies)
@@ -64,7 +102,115 @@ function Config.create(dependencies)
 		end)
 	end
 
-	local function stopAstronautIdle()
+	local currentCatalogEmoteTrack
+	local donationAnimSpeedBoost = 0
+
+	local function getAppliedAnimSpeed()
+		local speed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
+		if settings.animSpeedPerRobux then
+			speed += math.max(0, tonumber(donationAnimSpeedBoost) or 0)
+		end
+		return math.clamp(speed, 1, 1000)
+	end
+
+	local function applyCurrentAnimSpeed()
+		if not currentCatalogEmoteTrack then
+			return
+		end
+		local speed = getAppliedAnimSpeed()
+		pcall(function()
+			if typeof(currentCatalogEmoteTrack.AdjustSpeed) == "function" then
+				currentCatalogEmoteTrack:AdjustSpeed(speed)
+			elseif currentCatalogEmoteTrack.PlaybackSpeed ~= nil then
+				currentCatalogEmoteTrack.PlaybackSpeed = speed
+			end
+		end)
+	end
+
+	local function resetDonationAnimSpeedBoost()
+		donationAnimSpeedBoost = 0
+		applyCurrentAnimSpeed()
+	end
+
+	local function addDonationAnimSpeed(amount)
+		if not settings.animSpeedPerRobux then
+			return false
+		end
+
+		local multiplier = math.max(0, tonumber(settings.animSpeedMultiplier) or 1)
+		local increasedBoost = donationAnimSpeedBoost + (math.max(0, tonumber(amount) or 0) * multiplier)
+		local rawBoost = math.floor((increasedBoost * 100) + 0.5) / 100
+		local baseSpeed = math.clamp(tonumber(settings.animSpeedSetting) or 1, 1, 100)
+		local maxBoost = math.max(0, 1000 - baseSpeed)
+		local reachedCap = rawBoost >= maxBoost and maxBoost > 0
+
+		if reachedCap then
+			donationAnimSpeedBoost = 0
+			settings.animSpeedSetting = 1
+		else
+			donationAnimSpeedBoost = math.clamp(rawBoost, 0, maxBoost)
+		end
+		applyCurrentAnimSpeed()
+		return reachedCap
+	end
+
+			local function stopCatalogEmoteTrack()
+				if currentCatalogEmoteTrack then
+					pcall(function() currentCatalogEmoteTrack:Stop() end)
+					pcall(function() currentCatalogEmoteTrack:Destroy() end)
+					currentCatalogEmoteTrack = nil
+				end
+			end
+
+			local function playCatalogEmoteByName(name)
+				local emoteName = tostring(name or "Disabled")
+				if emoteName == "Disabled" then
+					stopCatalogEmoteTrack()
+					return false, "disabled"
+				end
+
+				local assetId = Config.emotes[emoteName]
+				if not assetId then
+					return false, "missing-emote"
+				end
+
+				local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+				if not humanoid then
+					return false, "missing-humanoid"
+				end
+
+				local animator = humanoid:FindFirstChildOfClass("Animator")
+				if not animator then
+					animator = Instance.new("Animator")
+					animator.Parent = humanoid
+				end
+
+				stopCatalogEmoteTrack()
+				local animation = Instance.new("Animation")
+				animation.AnimationId = "rbxassetid://" .. assetId
+				local loadOk, track = pcall(function()
+					return animator:LoadAnimation(animation)
+				end)
+				animation:Destroy()
+				if not loadOk or not track then
+					return false, "load-failed"
+				end
+
+				currentCatalogEmoteTrack = track
+				track.Priority = Enum.AnimationPriority.Action
+				track.Looped = true
+				local playOk = pcall(function() track:Play() end)
+				if not playOk then
+					stopCatalogEmoteTrack()
+					return false, "play-failed"
+				end
+				applyCurrentAnimSpeed()
+
+				return true, "playing"
+			end
+
+			local function stopAstronautIdle()
 		if currentAstronautIdleTrack then
 			pcall(function() currentAstronautIdleTrack:Stop() end)
 			pcall(function() currentAstronautIdleTrack:Destroy() end)
@@ -560,12 +706,17 @@ function Config.create(dependencies)
 
 			return {
 				applySpinDonation = applySpinDonation,
+				addDonationAnimSpeed = addDonationAnimSpeed,
 				applySpinState = applySpinState,
+				applyCurrentAnimSpeed = applyCurrentAnimSpeed,
 				getSpinMover = getSpinMover,
 				isHelicopterBusy = function() return currentHelicopterSpinTask ~= nil end,
 				performHelicopterDonationSequence = performHelicopterDonationSequence,
 				resetSpinAccumulator = function() spinVelocityAccumulator = 0 end,
+						resetDonationAnimSpeedBoost = resetDonationAnimSpeedBoost,
+				playCatalogEmoteByName = playCatalogEmoteByName,
 				setAntiAfkEnabled = setAntiAfkEnabled,
+				stopCatalogEmoteTrack = stopCatalogEmoteTrack,
 				startHelicopterIdleMode = startHelicopterIdleMode,
 				stopAstronautIdle = stopAstronautIdle,
 				stopHelicopterIdleTask = stopHelicopterIdleTask,
