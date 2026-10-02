@@ -3767,8 +3767,8 @@ end)
 
 local activeDonationListener = nil
 local activeDonationVfxListener = nil
-local lastDonationWebhookSignature = ""
-local lastDonationWebhookAt = 0
+local lastDonationSignature = ""
+local lastDonationHandledAt = 0
 
 local function handleDonationDelta(delta, donorInfo)
     local amount = math.max(0, tonumber(delta) or 0)
@@ -3777,12 +3777,13 @@ local function handleDonationDelta(delta, donorInfo)
     end
 
     local donorName = tostring((donorInfo and donorInfo.name) or (donorInfo and donorInfo.displayName) or LocalPlayer.Name or "Unknown")
-    local signature = donorName .. ":" .. tostring(amount) .. ":" .. tostring(math.floor(tick() / 0.25))
-    if signature == lastDonationWebhookSignature and tick() - lastDonationWebhookAt < 0.5 then
+    local now = tick()
+    local signature = donorName .. ":" .. tostring(amount)
+    if signature == lastDonationSignature and now - lastDonationHandledAt < 1 then
         return
     end
-    lastDonationWebhookSignature = signature
-    lastDonationWebhookAt = tick()
+    lastDonationSignature = signature
+    lastDonationHandledAt = now
 
     lastDonationTick = tick()
     markDonationForHopTimer(amount)
@@ -3811,7 +3812,7 @@ local function handleDonationDelta(delta, donorInfo)
     if settings.autoThanks then
         sendChatMessage(math.random(1, 2) == 1 and "/e wave" or "/e laugh")
         task.spawn(function()
-            task.wait(math.max(0, tonumber(settings.thanksDelay) or 0))
+            task.wait(math.max(4, tonumber(settings.thanksDelay) or 0))
             local thankYouText = pickRandomMessage(settings.thanksMessage, "Thank you")
             if thankYouText ~= "" then
                 sendChatMessage(thankYouText)
