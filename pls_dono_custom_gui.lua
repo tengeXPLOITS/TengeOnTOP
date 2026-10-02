@@ -2311,15 +2311,42 @@ local function escapePattern(str)
     return (str:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 end
 
-local features = ConfigModule.create({
-    LocalPlayer = LocalPlayer,
-    settings = settings,
-    getClaimedBoothSlot = function()
-        return claimedBoothSlot
-    end,
-    getBoothTargetCFrameForStand = getBoothTargetCFrameForStand,
-    sendChatMessage = sendChatMessage,
-})
+local featuresOk, features = pcall(function()
+    return ConfigModule.create({
+        LocalPlayer = LocalPlayer,
+        settings = settings,
+        getClaimedBoothSlot = function()
+            return claimedBoothSlot
+        end,
+        getBoothTargetCFrameForStand = getBoothTargetCFrameForStand,
+        sendChatMessage = sendChatMessage,
+    })
+end)
+if not featuresOk then
+    warn("[PLS DONATE] Config module feature initialization failed:", features)
+    return
+end
+
+local requiredFeatureMethods = {
+    "applySpinDonation",
+    "applySpinState",
+    "isHelicopterBusy",
+    "performHelicopterDonationSequence",
+    "resetSpinAccumulator",
+    "setAntiAfkEnabled",
+    "startHelicopterIdleMode",
+    "stopAstronautIdle",
+    "stopHelicopterIdleTask",
+    "stopHelicopterSpin",
+}
+for _, methodName in ipairs(requiredFeatureMethods) do
+    if type(features) ~= "table" or type(features[methodName]) ~= "function" then
+        warn("[PLS DONATE] Config module is missing feature method:", methodName)
+        return
+    end
+end
+
+print("[PLS DONATE] Config module connected successfully.")
 
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
