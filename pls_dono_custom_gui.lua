@@ -1,7 +1,3 @@
---[[
-    PLS DONATE - Custom GUI Foundation
-]]
-
 repeat
     task.wait()
 until game:IsLoaded()
@@ -329,7 +325,7 @@ local function loadSettings()
     settings = deepCopy(defaults)
 
     if type(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT) == "table" then
-        settings = deepCopy(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT)
+        settings = migrateLegacySettings(deepCopy(SharedEnv.PLS_DONO_SETTINGS_SNAPSHOT))
         mergeDefaults(settings, defaults)
     end
 
