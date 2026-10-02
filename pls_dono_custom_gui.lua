@@ -35,6 +35,20 @@ if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AU
 end
 
 local TextChatService = game:GetService("TextChatService")
+local CONFIG_MODULE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/config.lua"
+local configModuleOk, ConfigModule = pcall(function()
+    local source = game:HttpGet(CONFIG_MODULE_URL)
+    local chunk, compileError = loadstring(source)
+    assert(chunk, compileError)
+    local module = chunk()
+    assert(type(module) == "table" and type(module.defaults) == "table" and type(module.create) == "function", "config module has an invalid interface")
+    return module
+end)
+if not configModuleOk then
+    warn("Could not load PLS DONATE config module:", ConfigModule)
+    return
+end
+
 local notificationTimestamps = {}
 local avatarThumbnailCache = {}
 local getNearestPlayerInfo
@@ -734,40 +748,7 @@ local function performHttpRequest(options)
 end
 
 local function httpGetBody(url)
-    local body = nil
-
-    local okRequest = pcall(function()
-        local response = performHttpRequest({
-            Url = url,
-            Method = "GET",
-            Headers = { ["Content-Type"] = "application/json" },
-        })
-        if response and type(response.Body) == "string" and response.Body ~= "" then
-            body = response.Body
-        end
-    end)
-
-    if okRequest and body then
-        return body
-    end
-
-    local okHttpGet, result = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if okHttpGet and type(result) == "string" and result ~= "" then
-        return result
-    end
-
-    return nil
-end
-
-local function postWebhookJson(url, bodyTable)
-    local payload = HttpService:JSONEncode(bodyTable)
-    local sent = false
-    pcall(function()
-        local response = performHttpRequest({
-            Url = url,
-            Method = "POST",
+    local defaults = ConfigModule.defaults
             Headers = { ["Content-Type"] = "application/json" },
             Body = payload,
         })
@@ -2350,6 +2331,16 @@ local function escapePattern(str)
     return (str:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1"))
 end
 
+local features = ConfigModule.create({
+    LocalPlayer = LocalPlayer,
+    settings = settings,
+    getClaimedBoothSlot = function()
+        return claimedBoothSlot
+    end,
+    getBoothTargetCFrameForStand = getBoothTargetCFrameForStand,
+    sendChatMessage = sendChatMessage,
+})
+
 local currentHelicopterSpinTask = nil
 local currentAstronautIdleTrack = nil
 local pendingHelicopterRaisedAmount = 0
@@ -2963,15 +2954,15 @@ end
 settingHandlers = {
     helicopterEnabled = function(value)
         if value then
-            startHelicopterIdleMode()
+            features.startHelicopterIdleMode()
         else
-            stopHelicopterIdleTask()
-            stopHelicopterSpin()
-            stopAstronautIdle()
+            features.stopHelicopterIdleTask()
+            features.stopHelicopterSpin()
+            features.stopAstronautIdle()
         end
     end,
     antiAfkToggle = function(value)
-        setAntiAfkEnabled(value == true)
+        features.setAntiAfkEnabled(value == true)
     end,
     textUpdateToggle = function(value)
         if value and updateBoothTextNow then
@@ -3023,9 +3014,9 @@ settingHandlers = {
     end,
     spinSet = function()
         if not settings.spinSet then
-            spinVelocityAccumulator = 0
+            features.resetSpinAccumulator()
         end
-        applySpinState()
+        features.applySpinState()
     end,
     serverHopDelay = function(value)
         hopTimerResetTick = tick()
@@ -3641,20 +3632,9 @@ local function buildSettingsTabs()
                     sendDonationWebhook(amount, getNearestPlayerInfo())
                 end
                 notify("Test Donation", ("Simulated +%d R$ donation."):format(amount), 3, "test-dono", 1)
-                if settings.spinSet then
-                    local spin = getSpinMover()
-                    if spin then
-                        local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-                        local averageDelta = (amount / 3)
-                        local currentSpinVelocity = spin.AngularVelocity.Y
-                        spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
-                        spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
-                    else
-                        applySpinState()
-                    end
-                end
+                features.applySpinDonation(amount)
                 if settings.helicopterEnabled then
-                    performHelicopterDonationSequence(amount)
+                    features.performHelicopterDonationSequence(amount)
                 end
             else
                 notify("Test Donation", "Raised stat not found.", 3, "test-dono-missing", 1)
@@ -3788,21 +3768,10 @@ local function handleDonationDelta(delta, donorInfo)
     lastDonationTick = tick()
     markDonationForHopTimer(amount)
 
-    if settings.spinSet then
-        local spin = getSpinMover()
-        if spin then
-            local multiplier = math.max(0, tonumber(settings.spinSpeedMultiplier) or 1)
-            local averageDelta = (amount / 3)
-            local currentSpinVelocity = spin.AngularVelocity.Y
-            spinVelocityAccumulator = ((averageDelta * multiplier) + currentSpinVelocity)
-            spin.AngularVelocity = Vector3.new(0, spinVelocityAccumulator, 0)
-        else
-            applySpinState()
-        end
-    end
+    features.applySpinDonation(amount)
 
     if settings.helicopterEnabled then
-        performHelicopterDonationSequence(amount)
+        features.performHelicopterDonationSequence(amount)
     end
 
     if settings.webhookToggle then
@@ -3888,7 +3857,7 @@ end)
 
 if LocalPlayer.Character then
     if settings.helicopterEnabled then
-        task.delay(1.5, startHelicopterIdleMode)
+        task.delay(1.5, features.startHelicopterIdleMode)
     end
 end
 
@@ -3900,9 +3869,9 @@ LocalPlayer.CharacterAdded:Connect(function()
         if claimedBoothSlot then
             moveToClaimedBooth(claimedBoothSlot)
         end
-        stopAstronautIdle()
-        stopHelicopterIdleTask()
-        stopHelicopterSpin()
+        features.stopAstronautIdle()
+        features.stopHelicopterIdleTask()
+        features.stopHelicopterSpin()
         restoreRuntimeSettings()
         bindDonationListener()
     end)
@@ -3940,7 +3909,7 @@ end)
 
 task.spawn(function()
     while task.wait(0.4) do
-        if settings.spinSet and claimedBoothSlot and not currentHelicopterSpinTask then
+        if settings.spinSet and claimedBoothSlot and not features.isHelicopterBusy() then
             local _, _, root = getCharacterHumanoidRoot()
             local targetCF = getClaimedBoothTargetCFrame(claimedBoothSlot)
             if root and targetCF then
