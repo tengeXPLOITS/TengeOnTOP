@@ -23,21 +23,32 @@ local VC_PLS_DONATE_PLACE_ID = 8943844393
 local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
+local DEFAULT_CONFIG_MODULE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/config.lua"
+
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
     SharedEnv.PLS_DONO_AUTOEXEC_URL = DEFAULT_AUTOEXEC_URL
 end
 if type(SharedEnv.PLS_DONO_AUTOEXEC_SOURCE) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_SOURCE == "" then
     SharedEnv.PLS_DONO_AUTOEXEC_SOURCE = "loadstring(game:HttpGet('" .. SharedEnv.PLS_DONO_AUTOEXEC_URL .. "'))()"
 end
+if type(SharedEnv.PLS_DONO_CONFIG_URL) ~= "string" or SharedEnv.PLS_DONO_CONFIG_URL == "" then
+    SharedEnv.PLS_DONO_CONFIG_URL = DEFAULT_CONFIG_MODULE_URL
+end
 
 local TextChatService = game:GetService("TextChatService")
-local CONFIG_MODULE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/config.lua"
+local CONFIG_MODULE_URL = SharedEnv.PLS_DONO_CONFIG_URL or DEFAULT_CONFIG_MODULE_URL
 local configModuleOk, ConfigModule = pcall(function()
-    local source = game:HttpGet(CONFIG_MODULE_URL)
+    local source
+    if type(SharedEnv.PLS_DONO_CONFIG_SOURCE) == "string" and SharedEnv.PLS_DONO_CONFIG_SOURCE ~= "" then
+        source = SharedEnv.PLS_DONO_CONFIG_SOURCE
+    else
+        source = game:HttpGet(CONFIG_MODULE_URL)
+    end
+
     local chunk, compileError = loadstring(source)
     assert(chunk, compileError)
     local module = chunk()
-        assert(type(module) == "table" and type(module.defaults) == "table" and type(module.create) == "function" and type(module.emoteOptions) == "table", "config module has an invalid interface")
+    assert(type(module) == "table" and type(module.defaults) == "table" and type(module.create) == "function" and type(module.emoteOptions) == "table", "config module has an invalid interface")
     return module
 end)
 if not configModuleOk then
