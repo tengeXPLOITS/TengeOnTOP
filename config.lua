@@ -23,7 +23,6 @@ local Config = {
 		spinSet = false,
 		spinSpeedMultiplier = 0.25,
 		serverHopToggle = true,
-		serverQueueBeta = false,
 		serverHopDelay = 15,
 		populationHopToggle = false,
 		populationHopThreshold = 15,
