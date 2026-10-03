@@ -438,7 +438,6 @@ local labelTextMap = {
     plusMemberTarget = "Plus Members Target",
     modEvader = "Mod Evader",
     serverHopNow = "Server Hop Now",
-    serverQueueBeta = "Try Full Servers (Beta)",
     vcServerHop = "VC Server Hop (All Servers)",
 }
 
@@ -557,7 +556,6 @@ end
 
 local requestServerHop
 local updateBoothTextNow
-local setHopStatus
 
 local modUsernames = {
     ["haz3mn"] = true,
@@ -1243,16 +1241,12 @@ if not teleportFailureConnection then
         end
 
         if shouldRetryTeleportFailure(result, errorMessage) then
-            if setHopStatus then
-                setHopStatus("Teleport failed. Continuing search...", 4)
-            end
-            if not serverHopIsActive then
-                task.delay(0.25, function()
-                    if serverHopNow then
-                        serverHopNow("full-server-retry")
-                    end
-                end)
-            end
+            serverHopIsActive = false
+            task.delay(0.25, function()
+                if serverHopNow then
+                    serverHopNow("full-server-retry")
+                end
+            end)
         end
     end)
 end
@@ -1282,259 +1276,154 @@ local function getServerPremiumPlayerCount(server)
 end
 
 serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAttempt)
-    if not LocalPlayer or not TeleportService or type(TeleportService.TeleportInitFailed) ~= "function" then
-        return false
-    end
     if serverHopIsActive then
         return true
     end
 
     serverHopIsActive = true
-    if setHopStatus then
-        setHopStatus("Searching for servers...", nil)
-    end
-
     task.spawn(function()
-        local function safeSetStatus(message, duration)
-            if type(setHopStatus) == "function" then
-                setHopStatus(message, duration)
+        local placeId = choosePlaceId()
+        local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
+        local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
+        local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
+        local preferPlus = settings.plusHopToggle and preferredPlusMembers > 0
+        local retryTimer = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.75 or 1.25
+        local attempt = tonumber(retryAttempt) or 0
+        local rangeDeadline = tick() + 10
+
+        while true do
+            attempt += 1
+            local req = performHttpRequest({
+                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
+                Method = "GET"
+            })
+
+            local body = nil
+            if req and type(req.Body) == "string" and req.Body ~= "" then
+                local ok, decoded = pcall(function()
+                    return HttpService:JSONDecode(req.Body)
+                end)
+                if ok and decoded and type(decoded.data) == "table" then
+                    body = decoded
+                end
             end
-        end
 
-        local ok, errorMessage = xpcall(function()
-            local placeId = choosePlaceId()
-            local includeFullServers = settings.serverQueueBeta == true
-            local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
-            local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
-            local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
-            local preferPlus = settings.plusHopToggle and preferredPlusMembers > 0
-            local retryTimer = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.75 or 1.25
-            local attempt = tonumber(retryAttempt) or 0
-            local rangeDeadline = tick() + 10
-
-            while true do
-                attempt += 1
-                local req = performHttpRequest({
-                    Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=%s"):format(placeId, tostring(not includeFullServers)),
-                    Method = "GET",
-                })
-
-                local body = nil
-                if req and type(req.Body) == "string" and req.Body ~= "" then
-                    local okDecode, decoded = pcall(function()
-                        return HttpService:JSONDecode(req.Body)
-                    end)
-                    if okDecode and decoded and type(decoded.data) == "table" then
-                        body = decoded
+            local servers = {}
+            local fallbackServers = {}
+            if body and body.data then
+                for _, server in pairs(body.data) do
+                    local playing = tonumber(server.playing or 0) or 0
+                    local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
+                    local premiumPlayers = getServerPremiumPlayerCount(server)
+                    local id = tostring(server.id or "")
+                    local localIsPremium = LocalPlayer and LocalPlayer.MembershipType == Enum.MembershipType.Premium
+                    local effectivePremiumCount = premiumPlayers
+                    if localIsPremium then
+                        effectivePremiumCount = math.max(0, premiumPlayers - 1)
                     end
-                end
+                    local isAvailable = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers
+                    if isAvailable then
+                        table.insert(fallbackServers, server)
+                    end
 
-                local servers = {}
-                local fullServers = {}
-                local fallbackServers = {}
-                if body and type(body.data) == "table" then
-                    for _, server in pairs(body.data) do
-                        if type(server) == "table" then
-                            local playing = tonumber(server.playing or 0) or 0
-                            local maxServerPlayers = tonumber(server.maxPlayers or 0) or 0
-                            local premiumPlayers = getServerPremiumPlayerCount(server)
-                            local id = tostring(server.id or "")
-                            local localIsPremium = LocalPlayer and LocalPlayer.MembershipType == Enum.MembershipType.Premium
-                            local effectivePremiumCount = premiumPlayers
-                            if localIsPremium then
-                                effectivePremiumCount = math.max(0, premiumPlayers - 1)
-                            end
-                            local isAvailable = id ~= tostring(game.JobId or "") and maxServerPlayers > 0 and playing < maxServerPlayers
-                            if isAvailable then
-                                table.insert(fallbackServers, server)
-                            end
-
-                            local matchesPlayerRange = playing >= minPlayers and playing <= maxPlayers
-                            if matchesPlayerRange and (not preferPlus or effectivePremiumCount >= preferredPlusMembers) then
-                                if isAvailable then
-                                    table.insert(servers, server)
-                                elseif includeFullServers and id ~= tostring(game.JobId or "") and maxServerPlayers > 0 then
-                                    table.insert(fullServers, server)
-                                end
-                            end
+                    local matchesPlayerRange = isAvailable and playing >= minPlayers and playing <= maxPlayers
+                    if matchesPlayerRange then
+                        if not preferPlus or effectivePremiumCount >= preferredPlusMembers then
+                            table.insert(servers, server)
                         end
                     end
                 end
+            end
 
-                if preferPlus and #servers == 0 then
-                    preferPlus = false
-                    servers = {}
-                end
+            if preferPlus and #servers == 0 then
+                preferPlus = false
+                servers = {}
+            end
 
-                if #servers > 0 then
-                    local selectedServer = servers[math.random(1, #servers)]
-                    if not selectedServer then
-                        safeSetStatus("No matching server found. Continuing search...", nil)
-                        task.wait(retryTimer)
-                        if serverHopIsActive == false then
-                            return
-                        end
-                    else
-                        safeSetStatus(("Attempting server (%d/%d players)..."):format(
-                            tonumber(selectedServer.playing) or 0,
-                            tonumber(selectedServer.maxPlayers) or 0
-                        ), nil)
-
-                        local selectedServerId = tostring(selectedServer.id or "")
-                        local serverFullFailure = false
-                        local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-                            if player ~= LocalPlayer then
-                                return
-                            end
-                            if tostring(selectedServerId) == tostring(selectedServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
-                                serverFullFailure = true
-                            end
-                        end)
-
-                        queueScriptOnTeleport()
-                        pcall(function()
-                            if selectedServer and selectedServer.id then
-                                TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                            end
-                        end)
-
-                        task.wait(1.2)
-                        if failureConnection then
-                            failureConnection:Disconnect()
-                        end
-
-                        if serverFullFailure then
-                            serverHopIsActive = false
-                            safeSetStatus("Server filled before join. Continuing search...", 4)
-                            task.wait(retryTimer)
-                            if serverHopIsActive == false then
-                                return
-                            end
-                            -- continue the outer loop safely
-                        else
-                            markPendingFarmHop(reason, placeId, selectedServer.id)
-                            safeSetStatus(includeFullServers and "Teleport requested. Queue position unavailable." or "Teleport requested.", nil)
-                            if reason == "manual-button" and settings.notifyPerHopToggle then
-                                sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
-                            end
-                            serverHopIsActive = false
-                            return
-                        end
-                    end
-                end
-
-                if includeFullServers and #fullServers > 0 then
-                    local selectedServer = fullServers[math.random(1, #fullServers)]
-                    if selectedServer then
-                        local selectedServerId = tostring(selectedServer.id or "")
-                        safeSetStatus(("Trying full server (%d/%d players). Queue position unavailable."):format(
-                            tonumber(selectedServer.playing) or 0,
-                            tonumber(selectedServer.maxPlayers) or 0
-                        ), nil)
-
-                        local joinFailed = false
-                        local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-                            if player == LocalPlayer and shouldRetryTeleportFailure(result, errorMessage) then
-                                joinFailed = true
-                            end
-                        end)
-
-                        queueScriptOnTeleport()
-                        pcall(function()
-                            if selectedServer and selectedServer.id then
-                                TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
-                            end
-                        end)
-                        task.wait(1.2)
-                        if failureConnection then
-                            failureConnection:Disconnect()
-                        end
-
-                        if joinFailed then
-                            serverHopIsActive = false
-                            safeSetStatus("Full server join failed. Continuing search...", 4)
-                            task.wait(retryTimer)
-                            if serverHopIsActive == false then
-                                return
-                            end
-                        else
-                            markPendingFarmHop(reason, placeId, selectedServer.id)
-                            serverHopIsActive = false
-                            safeSetStatus("Full server join requested. Queue position unavailable.", nil)
-                            return
-                        end
-                    end
-                end
-
-                local fallbackServer = nil
-                if #fallbackServers > 0 and tick() >= rangeDeadline then
-                    table.sort(fallbackServers, function(a, b)
-                        local ap = tonumber(a and a.playing or 0) or 0
-                        local bp = tonumber(b and b.playing or 0) or 0
-                        return ap > bp
-                    end)
-                    fallbackServer = fallbackServers[1]
-                end
-
-                if fallbackServer then
-                    local selectedServerId = tostring(fallbackServer.id or "")
-                    safeSetStatus(("Attempting fallback server (%d/%d players)..."):format(
-                        tonumber(fallbackServer.playing) or 0,
-                        tonumber(fallbackServer.maxPlayers) or 0
-                    ), nil)
-
-                    local serverFullFailure = false
-                    local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-                        if player ~= LocalPlayer then
-                            return
-                        end
-                        if tostring(selectedServerId) == tostring(fallbackServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
-                            serverFullFailure = true
-                        end
-                    end)
-
-                    queueScriptOnTeleport()
-                    pcall(function()
-                        if fallbackServer and fallbackServer.id then
-                            TeleportService:TeleportToPlaceInstance(placeId, fallbackServer.id, LocalPlayer)
-                        end
-                    end)
-
-                    task.wait(1.2)
-                    if failureConnection then
-                        failureConnection:Disconnect()
-                    end
-
-                    if serverFullFailure then
-                        serverHopIsActive = false
-                        safeSetStatus("Server filled before join. Continuing search...", 4)
-                        task.wait(retryTimer)
-                        if serverHopIsActive == false then
-                            return
-                        end
-                    else
-                        markPendingFarmHop(reason, placeId, fallbackServer.id)
-                        safeSetStatus(includeFullServers and "Teleport requested. Queue position unavailable." or "Teleport requested.", nil)
-                        if reason == "manual-button" and settings.notifyPerHopToggle then
-                            sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
-                        end
-                        serverHopIsActive = false
+            if #servers > 0 then
+                local selectedServer = servers[math.random(1, #servers)]
+                local selectedServerId = tostring(selectedServer.id or "")
+                local serverFullFailure = false
+                local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                    if player ~= LocalPlayer then
                         return
                     end
+                    if tostring(selectedServerId) == tostring(selectedServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
+                        serverFullFailure = true
+                    end
+                end)
+
+                queueScriptOnTeleport()
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                end)
+
+                task.wait(1.2)
+                if failureConnection then
+                    failureConnection:Disconnect()
                 end
 
-                safeSetStatus("No matching server found. Continuing search...", nil)
-                task.wait(retryTimer)
-            end
-        end, function(message)
-            serverHopIsActive = false
-            warn("[PLS DONATE] serverHopNow crashed:", tostring(message or "unknown"))
-            safeSetStatus("Server search hit an error. Retrying...", 4)
-            task.wait(0.75)
-        end)
+                if serverFullFailure then
+                    serverHopIsActive = false
+                    task.wait(retryTimer)
+                    continue
+                end
 
-        if errorMessage and type(errorMessage) == "string" and errorMessage ~= "" then
-            warn("[PLS DONATE] serverHopNow resume error:", errorMessage)
+                markPendingFarmHop(reason, placeId, selectedServer.id)
+                if reason == "manual-button" and settings.notifyPerHopToggle then
+                    sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
+                end
+                serverHopIsActive = false
+                return
+            end
+
+            local fallbackServer = nil
+            if #fallbackServers > 0 and tick() >= rangeDeadline then
+                table.sort(fallbackServers, function(a, b)
+                    local ap = tonumber(a.playing or 0) or 0
+                    local bp = tonumber(b.playing or 0) or 0
+                    return ap > bp
+                end)
+                fallbackServer = fallbackServers[1]
+            end
+
+            if fallbackServer then
+                local selectedServerId = tostring(fallbackServer.id or "")
+                local serverFullFailure = false
+                local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                    if player ~= LocalPlayer then
+                        return
+                    end
+                    if tostring(selectedServerId) == tostring(fallbackServer.id or "") and shouldRetryTeleportFailure(result, errorMessage) then
+                        serverFullFailure = true
+                    end
+                end)
+
+                queueScriptOnTeleport()
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(placeId, fallbackServer.id, LocalPlayer)
+                end)
+
+                task.wait(1.2)
+                if failureConnection then
+                    failureConnection:Disconnect()
+                end
+
+                if serverFullFailure then
+                    serverHopIsActive = false
+                    task.wait(retryTimer)
+                    continue
+                end
+
+                markPendingFarmHop(reason, placeId, fallbackServer.id)
+                if reason == "manual-button" and settings.notifyPerHopToggle then
+                    sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
+                end
+                serverHopIsActive = false
+                return
+            end
+
+            task.wait(retryTimer)
         end
     end)
 
@@ -1543,16 +1432,13 @@ end
 
 requestServerHop = function(reason)
     local now = tick()
-    local isManual = reason == "manual-button"
     local activeCooldown = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.2 or hopCooldownSeconds
-
-    if not isManual and now - lastHopTick < activeCooldown then
+    if now - lastHopTick < activeCooldown then
         return false
     end
-    if not isManual and now - lastDonationTick < donationHopBlockSeconds then
+    if now - lastDonationTick < donationHopBlockSeconds then
         return false
     end
-
     lastHopTick = now
     return serverHopNow(reason)
 end
@@ -1839,53 +1725,6 @@ local function createCorner(target, radius)
     corner.CornerRadius = UDim.new(0, radius or CONTROL_CORNER_RADIUS)
     corner.Parent = target
     return corner
-end
-
-local hopStatusFrame = Instance.new("Frame")
-hopStatusFrame.Name = "HopStatus"
-hopStatusFrame.AnchorPoint = Vector2.new(0.5, 1)
-hopStatusFrame.Position = UDim2.new(0.5, 0, 1, -16)
-local initialHopStatusViewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X or 412
-hopStatusFrame.Size = UDim2.new(0, math.clamp(initialHopStatusViewport - 32, 280, 380), 0, 34)
-hopStatusFrame.BackgroundColor3 = THEME.panel
-hopStatusFrame.BackgroundTransparency = 0.08
-hopStatusFrame.BorderSizePixel = 0
-hopStatusFrame.Visible = false
-hopStatusFrame.ZIndex = 100
-hopStatusFrame.Parent = gui
-createCorner(hopStatusFrame, CONTROL_CORNER_RADIUS)
-
-local hopStatusStroke = Instance.new("UIStroke")
-hopStatusStroke.Thickness = 1
-hopStatusStroke.Color = THEME.stroke
-hopStatusStroke.Parent = hopStatusFrame
-
-local hopStatusLabel = Instance.new("TextLabel")
-hopStatusLabel.BackgroundTransparency = 1
-hopStatusLabel.Size = UDim2.new(1, -16, 1, 0)
-hopStatusLabel.Position = UDim2.new(0, 8, 0, 0)
-hopStatusLabel.Font = UI_FONT
-hopStatusLabel.TextSize = 12
-hopStatusLabel.TextColor3 = THEME.controlText
-hopStatusLabel.TextWrapped = true
-hopStatusLabel.Text = ""
-hopStatusLabel.ZIndex = 101
-hopStatusLabel.Parent = hopStatusFrame
-
-local hopStatusRevision = 0
-setHopStatus = function(text, duration)
-    hopStatusRevision += 1
-    local revision = hopStatusRevision
-    hopStatusLabel.Text = tostring(text or "")
-    hopStatusFrame.Visible = hopStatusLabel.Text ~= ""
-
-    if duration and duration > 0 then
-        task.delay(duration, function()
-            if revision == hopStatusRevision then
-                hopStatusFrame.Visible = false
-            end
-        end)
-    end
 end
 
 local function applyTextGlow(target, color, transparency)
@@ -3271,7 +3110,6 @@ end
 do
     local serverSection = createSection(serverTab, localized("serverSection"))
     createToggle(serverSection, localized("autoServerHop"), "serverHopToggle")
-    createToggle(serverSection, localized("serverQueueBeta"), "serverQueueBeta")
     createTextBox(serverSection, localized("serverHopDelay"), "serverHopDelay", true)
     createTextBox(serverSection, localized("minPlayers"), "minPlayerCount", true)
     createTextBox(serverSection, localized("maxPlayers"), "maxPlayerCount", true)
@@ -3560,7 +3398,6 @@ RunService.Heartbeat:Connect(function()
     local viewport = getViewportSize()
     if viewport ~= lastViewport then
         lastViewport = viewport
-        hopStatusFrame.Size = UDim2.new(0, math.clamp(viewport.X - 32, 280, 380), 0, 34)
         if minimized then
             main.Position = getBottomRightPosition(46)
         else
