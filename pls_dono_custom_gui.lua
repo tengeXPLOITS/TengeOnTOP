@@ -1577,11 +1577,25 @@ local function getBoothTargetCFrameForStand(slot, standOverride)
     end
 
     if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
+        if typeof(boothPart) ~= "Instance" then
+            return nil, "invalid-booth-part"
+        end
+
         local boothCenter = boothPart.Position
-        local boothLook = boothPart.CFrame.LookVector
-        if boothPart:IsA("Model") and boothPart.PrimaryPart then
-            boothCenter = boothPart.PrimaryPart.Position
-            boothLook = boothPart.PrimaryPart.CFrame.LookVector
+        local boothLook = (boothPart.CFrame and boothPart.CFrame.LookVector) or Vector3.new(0, 0, -1)
+        if boothPart:IsA("Model") then
+            local primaryPart = boothPart.PrimaryPart
+            if primaryPart and primaryPart:IsA("BasePart") then
+                boothCenter = primaryPart.Position
+                boothLook = primaryPart.CFrame.LookVector
+            elseif boothPart.GetPivot and typeof(boothPart.GetPivot) == "function" then
+                local pivot = boothPart:GetPivot()
+                boothCenter = pivot.Position
+                boothLook = pivot.LookVector
+            else
+                boothCenter = boothCenter or Vector3.zero
+                boothLook = Vector3.new(0, 0, -1)
+            end
         end
 
         local forwardDistance = tonumber(EXTRA_BOOTH_PLACEMENT.forwardDistance) or 4
