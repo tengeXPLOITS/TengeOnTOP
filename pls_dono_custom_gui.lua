@@ -1543,13 +1543,16 @@ end
 
 requestServerHop = function(reason)
     local now = tick()
+    local isManual = reason == "manual-button"
     local activeCooldown = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.2 or hopCooldownSeconds
-    if now - lastHopTick < activeCooldown then
+
+    if not isManual and now - lastHopTick < activeCooldown then
         return false
     end
-    if now - lastDonationTick < donationHopBlockSeconds then
+    if not isManual and now - lastDonationTick < donationHopBlockSeconds then
         return false
     end
+
     lastHopTick = now
     return serverHopNow(reason)
 end
