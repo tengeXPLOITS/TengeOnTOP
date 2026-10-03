@@ -714,6 +714,57 @@ local function performHttpRequest(options)
     return nil
 end
 
+local function postWebhookJson(url, payload)
+    local webhookUrl = tostring(url or ""):match("%S+")
+    if not webhookUrl or webhookUrl == "" then
+        return false
+    end
+
+    local encodedBody = HttpService:JSONEncode(payload or {})
+    local requestOptions = {
+        Url = webhookUrl,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json",
+            ["User-Agent"] = "PLS-DONATE/1.0",
+        },
+        Body = encodedBody,
+    }
+
+    local ok, result = pcall(function()
+        local httpResult = performHttpRequest(requestOptions)
+        if httpResult and type(httpResult.StatusCode) == "number" then
+            return httpResult
+        end
+
+        if type(game.HttpPost) == "function" then
+            game:HttpPost(webhookUrl, encodedBody)
+            return { StatusCode = 204 }
+        end
+
+        return nil
+    end)
+
+    if not ok then
+        return false
+    end
+
+    if not result then
+        return false
+    end
+
+    local statusCode = tonumber(result.StatusCode) or tonumber(result.statusCode) or 0
+    if statusCode >= 200 and statusCode < 300 then
+        return true
+    end
+
+    if type(result.Body) == "string" and result.Body ~= "" then
+        return true
+    end
+
+    return statusCode == 0
+end
+
 local function httpGetBody(url)
     local body = nil
     local okRequest = pcall(function()
