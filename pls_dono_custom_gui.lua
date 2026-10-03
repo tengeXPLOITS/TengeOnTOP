@@ -438,6 +438,7 @@ local labelTextMap = {
     plusMemberTarget = "Plus Members Target",
     modEvader = "Mod Evader",
     serverHopNow = "Server Hop Now",
+    serverQueueBeta = "Try Full Servers (Beta)",
     vcServerHop = "VC Server Hop (All Servers)",
 }
 
@@ -556,6 +557,7 @@ end
 
 local requestServerHop
 local updateBoothTextNow
+local setHopStatus
 
 local modUsernames = {
     ["haz3mn"] = true,
@@ -1241,12 +1243,16 @@ if not teleportFailureConnection then
         end
 
         if shouldRetryTeleportFailure(result, errorMessage) then
-            serverHopIsActive = false
-            task.delay(0.25, function()
-                if serverHopNow then
-                    serverHopNow("full-server-retry")
-                end
-            end)
+            if setHopStatus then
+                setHopStatus("Teleport failed. Continuing search...", 4)
+            end
+            if not serverHopIsActive then
+                task.delay(0.25, function()
+                    if serverHopNow then
+                        serverHopNow("full-server-retry")
+                    end
+                end)
+            end
         end
     end)
 end
@@ -1281,8 +1287,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
     end
 
     serverHopIsActive = true
+    if setHopStatus then
+        setHopStatus("Searching for servers...", nil)
+    end
     task.spawn(function()
         local placeId = choosePlaceId()
+        local includeFullServers = settings.serverQueueBeta == true
         local minPlayers = tonumber(minPlayersOverride) or tonumber(settings.minPlayerCount) or 13
         local maxPlayers = tonumber(maxPlayersOverride) or tonumber(settings.maxPlayerCount) or 24
         local preferredPlusMembers = settings.plusHopToggle and math.max(0, tonumber(settings.plusMemberTarget) or 3) or 0
@@ -1294,7 +1304,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
         while true do
             attempt += 1
             local req = performHttpRequest({
-                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(placeId),
+                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=%s"):format(placeId, tostring(not includeFullServers)),
                 Method = "GET"
             })
 
@@ -1309,6 +1319,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
             end
 
             local servers = {}
+            local fullServers = {}
             local fallbackServers = {}
             if body and body.data then
                 for _, server in pairs(body.data) do
@@ -1326,11 +1337,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                         table.insert(fallbackServers, server)
                     end
 
-                    local matchesPlayerRange = isAvailable and playing >= minPlayers and playing <= maxPlayers
-                    if matchesPlayerRange then
-                        if not preferPlus or effectivePremiumCount >= preferredPlusMembers then
+                    local matchesPlayerRange = playing >= minPlayers and playing <= maxPlayers
+                    if matchesPlayerRange and (not preferPlus or effectivePremiumCount >= preferredPlusMembers) then
+                        if isAvailable then
                             table.insert(servers, server)
-                        end
+                        elseif includeFullServers and id ~= tostring(game.JobId or "") and maxServerPlayers > 0 then
+                            table.insert(fullServers, server)
                     end
                 end
             end
@@ -1342,6 +1354,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
             if #servers > 0 then
                 local selectedServer = servers[math.random(1, #servers)]
+                if setHopStatus then
+                    setHopStatus(("Attempting server (%d/%d players)..."):format(
+                        tonumber(selectedServer.playing) or 0,
+                        tonumber(selectedServer.maxPlayers) or 0
+                    ), nil)
+                end
                 local selectedServerId = tostring(selectedServer.id or "")
                 local serverFullFailure = false
                 local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
@@ -1365,17 +1383,66 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
                 if serverFullFailure then
                     serverHopIsActive = false
+                    if setHopStatus then
+                        setHopStatus("Server filled before join. Continuing search...", 4)
+                    end
                     task.wait(retryTimer)
                     continue
                 end
 
                 markPendingFarmHop(reason, placeId, selectedServer.id)
+                if setHopStatus then
+                    setHopStatus(includeFullServers and "Teleport requested. Queue position unavailable." or "Teleport requested.", nil)
+                end
                 if reason == "manual-button" and settings.notifyPerHopToggle then
                     sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
                 end
                 serverHopIsActive = false
                 return
             end
+
+                        if includeFullServers and #fullServers > 0 then
+                            local selectedServer = fullServers[math.random(1, #fullServers)]
+                            local selectedServerId = tostring(selectedServer.id or "")
+                            if setHopStatus then
+                                setHopStatus(("Trying full server (%d/%d players). Queue position unavailable."):format(
+                                    tonumber(selectedServer.playing) or 0,
+                                    tonumber(selectedServer.maxPlayers) or 0
+                                ), nil)
+                            end
+
+                            local joinFailed = false
+                            local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+                                if player == LocalPlayer and shouldRetryTeleportFailure(result, errorMessage) then
+                                    joinFailed = true
+                                end
+                            end)
+
+                            queueScriptOnTeleport()
+                            pcall(function()
+                                TeleportService:TeleportToPlaceInstance(placeId, selectedServer.id, LocalPlayer)
+                            end)
+                            task.wait(1.2)
+                            if failureConnection then
+                                failureConnection:Disconnect()
+                            end
+
+                            if joinFailed then
+                                serverHopIsActive = false
+                                if setHopStatus then
+                                    setHopStatus("Full server join failed. Continuing search...", 4)
+                                end
+                                task.wait(retryTimer)
+                                continue
+                            end
+
+                            markPendingFarmHop(reason, placeId, selectedServer.id)
+                            serverHopIsActive = false
+                            if setHopStatus then
+                                setHopStatus("Full server join requested. Queue position unavailable.", nil)
+                            end
+                            return
+                        end
 
             local fallbackServer = nil
             if #fallbackServers > 0 and tick() >= rangeDeadline then
@@ -1389,6 +1456,12 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
             if fallbackServer then
                 local selectedServerId = tostring(fallbackServer.id or "")
+                if setHopStatus then
+                    setHopStatus(("Attempting fallback server (%d/%d players)..."):format(
+                        tonumber(fallbackServer.playing) or 0,
+                        tonumber(fallbackServer.maxPlayers) or 0
+                    ), nil)
+                end
                 local serverFullFailure = false
                 local failureConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
                     if player ~= LocalPlayer then
@@ -1411,11 +1484,17 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
 
                 if serverFullFailure then
                     serverHopIsActive = false
+                    if setHopStatus then
+                        setHopStatus("Server filled before join. Continuing search...", 4)
+                    end
                     task.wait(retryTimer)
                     continue
                 end
 
                 markPendingFarmHop(reason, placeId, fallbackServer.id)
+                if setHopStatus then
+                    setHopStatus(includeFullServers and "Teleport requested. Queue position unavailable." or "Teleport requested.", nil)
+                end
                 if reason == "manual-button" and settings.notifyPerHopToggle then
                     sendServerHopWebhook(buildPendingHopWebhookInfo(reason))
                 end
@@ -1423,6 +1502,9 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                 return
             end
 
+            if setHopStatus then
+                setHopStatus("No matching server found. Continuing search...", nil)
+            end
             task.wait(retryTimer)
         end
     end)
@@ -1725,6 +1807,53 @@ local function createCorner(target, radius)
     corner.CornerRadius = UDim.new(0, radius or CONTROL_CORNER_RADIUS)
     corner.Parent = target
     return corner
+end
+
+local hopStatusFrame = Instance.new("Frame")
+hopStatusFrame.Name = "HopStatus"
+hopStatusFrame.AnchorPoint = Vector2.new(0.5, 1)
+hopStatusFrame.Position = UDim2.new(0.5, 0, 1, -16)
+local initialHopStatusViewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X or 412
+hopStatusFrame.Size = UDim2.new(0, math.clamp(initialHopStatusViewport - 32, 280, 380), 0, 34)
+hopStatusFrame.BackgroundColor3 = THEME.panel
+hopStatusFrame.BackgroundTransparency = 0.08
+hopStatusFrame.BorderSizePixel = 0
+hopStatusFrame.Visible = false
+hopStatusFrame.ZIndex = 100
+hopStatusFrame.Parent = gui
+createCorner(hopStatusFrame, CONTROL_CORNER_RADIUS)
+
+local hopStatusStroke = Instance.new("UIStroke")
+hopStatusStroke.Thickness = 1
+hopStatusStroke.Color = THEME.stroke
+hopStatusStroke.Parent = hopStatusFrame
+
+local hopStatusLabel = Instance.new("TextLabel")
+hopStatusLabel.BackgroundTransparency = 1
+hopStatusLabel.Size = UDim2.new(1, -16, 1, 0)
+hopStatusLabel.Position = UDim2.new(0, 8, 0, 0)
+hopStatusLabel.Font = UI_FONT
+hopStatusLabel.TextSize = 12
+hopStatusLabel.TextColor3 = THEME.controlText
+hopStatusLabel.TextWrapped = true
+hopStatusLabel.Text = ""
+hopStatusLabel.ZIndex = 101
+hopStatusLabel.Parent = hopStatusFrame
+
+local hopStatusRevision = 0
+setHopStatus = function(text, duration)
+    hopStatusRevision += 1
+    local revision = hopStatusRevision
+    hopStatusLabel.Text = tostring(text or "")
+    hopStatusFrame.Visible = hopStatusLabel.Text ~= ""
+
+    if duration and duration > 0 then
+        task.delay(duration, function()
+            if revision == hopStatusRevision then
+                hopStatusFrame.Visible = false
+            end
+        end)
+    end
 end
 
 local function applyTextGlow(target, color, transparency)
@@ -3110,6 +3239,7 @@ end
 do
     local serverSection = createSection(serverTab, localized("serverSection"))
     createToggle(serverSection, localized("autoServerHop"), "serverHopToggle")
+    createToggle(serverSection, localized("serverQueueBeta"), "serverQueueBeta")
     createTextBox(serverSection, localized("serverHopDelay"), "serverHopDelay", true)
     createTextBox(serverSection, localized("minPlayers"), "minPlayerCount", true)
     createTextBox(serverSection, localized("maxPlayers"), "maxPlayerCount", true)
@@ -3398,6 +3528,7 @@ RunService.Heartbeat:Connect(function()
     local viewport = getViewportSize()
     if viewport ~= lastViewport then
         lastViewport = viewport
+        hopStatusFrame.Size = UDim2.new(0, math.clamp(viewport.X - 32, 280, 380), 0, 34)
         if minimized then
             main.Position = getBottomRightPosition(46)
         else
