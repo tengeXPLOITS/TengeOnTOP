@@ -37,6 +37,16 @@ local Config = {
 	},
 }
 
+Config.placeProfiles = {
+	defaultPlaceId = 8737602449,
+	vcPlaceId = 8943844393,
+	extraPlaceId = 127213917680436,
+	extraBoothPlacement = {
+		forwardDistance = 4,
+		heightOffset = 2,
+	},
+}
+
 Config.emoteOptions = {
 	"Disabled",
 	"sturdy",
