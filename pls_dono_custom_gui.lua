@@ -18,14 +18,9 @@ if not LocalPlayer then
 end
 
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-local placeProfiles = ConfigModule.placeProfiles or {}
-local DEFAULT_PLS_DONATE_PLACE_ID = tonumber(placeProfiles.defaultPlaceId) or 8737602449
-local VC_PLS_DONATE_PLACE_ID = tonumber(placeProfiles.vcPlaceId) or 8943844393
-local EXTRA_PLS_DONATE_PLACE_ID = tonumber(placeProfiles.extraPlaceId) or 127213917680436
-local EXTRA_BOOTH_PLACEMENT = type(placeProfiles.extraBoothPlacement) == "table" and placeProfiles.extraBoothPlacement or {
-    forwardDistance = 4,
-    heightOffset = 2,
-}
+local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
+local VC_PLS_DONATE_PLACE_ID = 8943844393
+local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 if type(SharedEnv.PLS_DONO_AUTOEXEC_URL) ~= "string" or SharedEnv.PLS_DONO_AUTOEXEC_URL == "" then
@@ -746,43 +741,6 @@ local function httpGetBody(url)
     return nil
 end
 
-local function postWebhookJson(url, payload)
-    if type(url) ~= "string" or url == "" then
-        return false
-    end
-
-    if not HttpService or type(HttpService.JSONEncode) ~= "function" then
-        return false
-    end
-
-    local encoded = HttpService:JSONEncode(payload or {})
-    if type(encoded) ~= "string" or encoded == "" then
-        return false
-    end
-
-    local ok, result = pcall(function()
-        local response = performHttpRequest({
-            Url = url,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["User-Agent"] = "PLS-DONATE",
-            },
-            Body = encoded,
-        })
-        if response and response.Success == false then
-            return false
-        end
-        return true
-    end)
-
-    if ok and result == true then
-        return true
-    end
-
-    return false
-end
-
 local function formatFarmDuration(totalSeconds)
     local seconds = math.max(0, math.floor(tonumber(totalSeconds) or 0))
     local days = math.floor(seconds / 86400)
@@ -1474,20 +1432,14 @@ end
 
 requestServerHop = function(reason)
     local now = tick()
-    local isManual = reason == "manual-button"
     local activeCooldown = (reason == "manual-button" or reason == "auto-timer" or reason == "full-server-retry") and 0.2 or hopCooldownSeconds
-
-    if not isManual and now - lastHopTick < activeCooldown then
+    if now - lastHopTick < activeCooldown then
         return false
     end
-    if not isManual and now - lastDonationTick < donationHopBlockSeconds then
+    if now - lastDonationTick < donationHopBlockSeconds then
         return false
     end
-
     lastHopTick = now
-    if type(serverHopNow) ~= "function" then
-        return false
-    end
     return serverHopNow(reason)
 end
 
@@ -1553,56 +1505,8 @@ end
 
 local function getBoothTargetCFrameForStand(slot, standOverride)
     local boothPart = findBoothPartBySlot(slot)
-    if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID and not boothPart then
-        local searchRoots = {
-            Workspace,
-            Workspace:FindFirstChild("BoothInteractions"),
-        }
-        for _, root in ipairs(searchRoots) do
-            if root and root:GetDescendants then
-                for _, descendant in ipairs(root:GetDescendants()) do
-                    if descendant and descendant.GetAttribute and descendant:GetAttribute("BoothSlot") == slot then
-                        boothPart = descendant
-                        break
-                    end
-                end
-            end
-            if boothPart then
-                break
-            end
-        end
-    end
     if not boothPart then
         return nil, "missing-booth-part"
-    end
-
-    if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
-        if typeof(boothPart) ~= "Instance" then
-            return nil, "invalid-booth-part"
-        end
-
-        local boothCenter = boothPart.Position
-        local boothLook = (boothPart.CFrame and boothPart.CFrame.LookVector) or Vector3.new(0, 0, -1)
-        if boothPart:IsA("Model") then
-            local primaryPart = boothPart.PrimaryPart
-            if primaryPart and primaryPart:IsA("BasePart") then
-                boothCenter = primaryPart.Position
-                boothLook = primaryPart.CFrame.LookVector
-            elseif boothPart.GetPivot and typeof(boothPart.GetPivot) == "function" then
-                local pivot = boothPart:GetPivot()
-                boothCenter = pivot.Position
-                boothLook = pivot.LookVector
-            else
-                boothCenter = boothCenter or Vector3.zero
-                boothLook = Vector3.new(0, 0, -1)
-            end
-        end
-
-        local forwardDistance = tonumber(EXTRA_BOOTH_PLACEMENT.forwardDistance) or 4
-        local heightOffset = tonumber(EXTRA_BOOTH_PLACEMENT.heightOffset) or 2
-        local targetPos = boothCenter + boothLook * forwardDistance + Vector3.new(0, heightOffset, 0)
-        local lookAway = -boothLook
-        return CFrame.new(targetPos, targetPos + lookAway)
     end
 
     local stand = tostring(standOverride or settings.standingPosition or "Front")
@@ -1612,11 +1516,10 @@ local function getBoothTargetCFrameForStand(slot, standOverride)
     elseif stand == "Right" then
         sideOffset, forwardOffset = 6, 0
     elseif stand == "Behind" then
-        sideOffset, forwardOffset = 0, -4
+        sideOffset, forwardOffset = 0, 6
     else
-        sideOffset, forwardOffset = 0, 4
+        sideOffset, forwardOffset = 0, -4
     end
-
     local targetPos = boothPart.Position
         + boothPart.CFrame.RightVector * sideOffset
         + boothPart.CFrame.LookVector * forwardOffset
