@@ -1343,6 +1343,7 @@ serverHopNow = function(reason, minPlayersOverride, maxPlayersOverride, retryAtt
                             table.insert(servers, server)
                         elseif includeFullServers and id ~= tostring(game.JobId or "") and maxServerPlayers > 0 then
                             table.insert(fullServers, server)
+                        end
                     end
                 end
             end
