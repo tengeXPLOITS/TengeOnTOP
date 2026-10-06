@@ -21,6 +21,7 @@ local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 local DEFAULT_PLS_DONATE_PLACE_ID = 8737602449
 local VC_PLS_DONATE_PLACE_ID = 8943844393
 local EXTRA_PLS_DONATE_PLACE_ID = 127213917680436
+local ADDITIONAL_PLS_DONATE_PLACE_ID = 18852429314
 
 local DEFAULT_AUTOEXEC_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_dono_custom_gui.lua"
 local DEFAULT_CONFIG_MODULE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/config.lua"
@@ -1268,8 +1269,8 @@ updateBoothTextNow = function(forceApply)
 end
 
 local function choosePlaceId()
-    if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID then
-        return EXTRA_PLS_DONATE_PLACE_ID
+    if game.PlaceId == EXTRA_PLS_DONATE_PLACE_ID or game.PlaceId == ADDITIONAL_PLS_DONATE_PLACE_ID then
+        return game.PlaceId
     end
 
     if settings.vcServerHopToggle then
