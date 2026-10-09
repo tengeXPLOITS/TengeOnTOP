@@ -797,7 +797,9 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     persistToggles = SETTINGS.persistToggles,
                         populationHopper = SETTINGS.populationHopper,
                         populationThreshold = SETTINGS.populationThreshold,
-                    emoteId = SETTINGS.emoteId,
+                        boothGoalAmount = SETTINGS.boothGoalAmount,
+                        boothGoalTarget = SETTINGS.boothGoalTarget,
+                        emoteId = SETTINGS.emoteId,
                     emotePlaying = SETTINGS.emotePlaying and true or false,
                     autoServerHop = autoServerHopEnabled,
                 })
@@ -1530,6 +1532,8 @@ do
                     hopRange = hopRangeText,
                     serverStayTime = serverStayTime,
                     autoServerHop = autoServerHopEnabled,
+                    boothGoalAmount = SETTINGS.boothGoalAmount,
+                    boothGoalTarget = SETTINGS.boothGoalTarget,
                 }
             end,
             applyRuntimeState = function(decoded)
@@ -1538,6 +1542,8 @@ do
                 if decoded.autoServerHop ~= nil then
                     autoServerHopEnabled = decoded.autoServerHop
                 end
+                SETTINGS.boothGoalAmount = tonumber(decoded.boothGoalAmount) or SETTINGS.boothGoalAmount
+                SETTINGS.boothGoalTarget = tonumber(decoded.boothGoalTarget) or SETTINGS.boothGoalTarget
             end,
         })
 
@@ -1574,6 +1580,8 @@ do
                 if cfg.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = cfg.spinSpeedMultiplier end
                 if cfg.populationHopper ~= nil then SETTINGS.populationHopper = cfg.populationHopper end
                 if cfg.populationThreshold ~= nil then SETTINGS.populationThreshold = cfg.populationThreshold end
+                if cfg.boothGoalAmount ~= nil then SETTINGS.boothGoalAmount = tonumber(cfg.boothGoalAmount) end
+                if cfg.boothGoalTarget ~= nil then SETTINGS.boothGoalTarget = tonumber(cfg.boothGoalTarget) end
                 -- follow-on-donation setting removed from queued config
                 hopRangeText = cfg.hopRange or hopRangeText
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
@@ -1967,6 +1975,25 @@ do
             return true
         end
 
+        local function getLocalRaisedValue()
+            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+            local raised = leaderstats and (leaderstats:FindFirstChild("Raised") or leaderstats:FindFirstChild("raised"))
+            if not raised and currentDonationStat and currentDonationStat.Parent then
+                raised = currentDonationStat
+            end
+            if not raised or raised.Value == nil then
+                return nil
+            end
+            return parseAmount(raised.Value)
+        end
+
+        local function formatBoothGoalText(baseText, raisedValue, target)
+            local progressText = ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(target))
+            local text = tostring(baseText or "")
+            if text == "" then return progressText end
+            return text .. "\n" .. progressText
+        end
+
         -- Booth tab
         do
             local boothFrame = tabFrames.Booth
@@ -2018,8 +2045,126 @@ do
                 local text = tostring(boothTextBox.Text or "")
                 SETTINGS.boothText = text
                 pcall(SaveSettings)
-                pcall(updateBoothText, text)
+                local target = tonumber(SETTINGS.boothGoalTarget)
+                local raisedValue = target and getLocalRaisedValue()
+                if target and raisedValue ~= nil then
+                    pcall(updateBoothText, formatBoothGoalText(text, raisedValue, target))
+                else
+                    pcall(updateBoothText, text)
+                end
             end)
+
+            local goalLabel = Instance.new("TextLabel")
+            goalLabel.Size = UDim2.new(1, -20, 0, 20)
+            goalLabel.Position = UDim2.new(0, 10, 0, 218)
+            goalLabel.Text = "Additional Robux Goal"
+            goalLabel.BackgroundTransparency = 1
+            goalLabel.TextColor3 = Color3.new(1,1,1)
+            goalLabel.Font = Enum.Font.GothamBold
+            goalLabel.TextXAlignment = Enum.TextXAlignment.Left
+            goalLabel.Parent = boothFrame
+
+            local goalBox = Instance.new("TextBox")
+            goalBox.Size = UDim2.new(0, 130, 0, 26)
+            goalBox.Position = UDim2.new(0, 10, 0, 244)
+            goalBox.Text = tostring(SETTINGS.boothGoalAmount or "")
+            goalBox.PlaceholderText = "e.g. 500"
+            goalBox.ClearTextOnFocus = false
+            goalBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            goalBox.TextColor3 = Color3.fromRGB(255,255,255)
+            goalBox.Parent = boothFrame
+            local goalBoxCorner = Instance.new("UICorner")
+            goalBoxCorner.Parent = goalBox
+
+            local setGoalButton = Instance.new("TextButton")
+            setGoalButton.Size = UDim2.new(0, 120, 0, 26)
+            setGoalButton.Position = UDim2.new(0, 150, 0, 244)
+            setGoalButton.Text = "Set Goal"
+            setGoalButton.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            setGoalButton.TextColor3 = Color3.new(1,1,1)
+            setGoalButton.Font = Enum.Font.Gotham
+            setGoalButton.TextSize = 14
+            setGoalButton.Parent = boothFrame
+            styleButton(setGoalButton)
+
+            local goalStatus = Instance.new("TextLabel")
+            goalStatus.Size = UDim2.new(1, -20, 0, 38)
+            goalStatus.Position = UDim2.new(0, 10, 0, 278)
+            goalStatus.BackgroundTransparency = 1
+            goalStatus.TextColor3 = Color3.fromRGB(210,210,210)
+            goalStatus.TextWrapped = true
+            goalStatus.TextXAlignment = Enum.TextXAlignment.Left
+            goalStatus.TextYAlignment = Enum.TextYAlignment.Top
+            goalStatus.Font = Enum.Font.Gotham
+            goalStatus.TextSize = 13
+            goalStatus.Parent = boothFrame
+
+            local goalMonitorRunning = false
+            local lastGoalRaised = nil
+
+            local function publishGoalProgress(raisedValue)
+                local target = tonumber(SETTINGS.boothGoalTarget)
+                if not target then return false end
+                local baseText = tostring(SETTINGS.boothText or "")
+                local progressText = ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(target))
+                local finalText = formatBoothGoalText(baseText, raisedValue, target)
+                local updated = updateBoothText(finalText)
+                if updated then
+                    goalStatus.Text = progressText
+                    lastGoalRaised = raisedValue
+                end
+                return updated
+            end
+
+            local function startGoalMonitor()
+                if goalMonitorRunning or not tonumber(SETTINGS.boothGoalTarget) then return end
+                goalMonitorRunning = true
+                task.spawn(function()
+                    while tonumber(SETTINGS.boothGoalTarget) do
+                        task.wait(1)
+                        local raisedValue = getLocalRaisedValue()
+                        if raisedValue ~= nil and raisedValue ~= lastGoalRaised then
+                            publishGoalProgress(raisedValue)
+                        end
+                    end
+                    goalMonitorRunning = false
+                end)
+            end
+
+            setGoalButton.MouseButton1Click:Connect(function()
+                local amount = tonumber(goalBox.Text)
+                if not amount or amount <= 0 or amount % 1 ~= 0 then
+                    notify("Booth Goal", "Enter a positive whole-number Robux goal.", 5)
+                    return
+                end
+
+                local raisedValue = getLocalRaisedValue()
+                if raisedValue == nil then
+                    notify("Booth Goal", "Could not find your Raised value in leaderstats.", 5)
+                    return
+                end
+
+                SETTINGS.boothGoalAmount = amount
+                SETTINGS.boothGoalTarget = raisedValue + amount
+                lastGoalRaised = nil
+                goalBox.Text = tostring(amount)
+                pcall(SaveSettings)
+                publishGoalProgress(raisedValue)
+                startGoalMonitor()
+            end)
+
+            if tonumber(SETTINGS.boothGoalTarget) then
+                local raisedValue = getLocalRaisedValue()
+                if raisedValue ~= nil then
+                    goalStatus.Text = ("CURRENT GOAL: %s / %s"):format(
+                        tostring(raisedValue),
+                        tostring(SETTINGS.boothGoalTarget)
+                    )
+                else
+                    goalStatus.Text = "Waiting for your Raised value..."
+                end
+                startGoalMonitor()
+            end
         end
 
         -- Main tab
@@ -2679,7 +2824,7 @@ do
 
             local friendHopLabel = Instance.new("TextLabel")
             friendHopLabel.Size = UDim2.new(0,120,0,20)
-            friendHopLabel.Position = UDim2.new(0,10,0,224)
+            friendHopLabel.Position = UDim2.new(0,10,0,292)
             friendHopLabel.Text = "Friend Hop"
             friendHopLabel.BackgroundTransparency = 1
             friendHopLabel.TextColor3 = Color3.new(1,1,1)
@@ -2687,7 +2832,7 @@ do
 
             local friendHopToggle = Instance.new("TextButton")
             friendHopToggle.Size = UDim2.new(0,60,0,20)
-            friendHopToggle.Position = UDim2.new(0,140,0,224)
+            friendHopToggle.Position = UDim2.new(0,140,0,292)
             friendHopToggle.Text = SETTINGS.friendHop and "ON" or "OFF"
             friendHopToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             friendHopToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -2956,6 +3101,8 @@ do
                         spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                         populationHopper = SETTINGS.populationHopper,
                         populationThreshold = SETTINGS.populationThreshold,
+                        boothGoalAmount = SETTINGS.boothGoalAmount,
+                        boothGoalTarget = SETTINGS.boothGoalTarget,
                         emoteId = SETTINGS.emoteId,
                         emotePlaying = SETTINGS.emotePlaying and true or false,
                         autoServerHop = autoServerHopEnabled,
