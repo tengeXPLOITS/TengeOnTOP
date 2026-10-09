@@ -792,6 +792,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     webhookToggle = SETTINGS.webhookToggle,
                     webhookUrl = SETTINGS.webhookUrl,
                     antiAfk = SETTINGS.antiAfk,
+                    friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
                         populationHopper = SETTINGS.populationHopper,
@@ -1578,6 +1579,7 @@ do
                 SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
                 SETTINGS.boothText = cfg.boothText or SETTINGS.boothText
                 if cfg.staffHop ~= nil then SETTINGS.staffHop = cfg.staffHop end
+                if cfg.friendHop ~= nil then SETTINGS.friendHop = cfg.friendHop end
                 if cfg.chatAutoThankYou ~= nil then SETTINGS.chatAutoThankYou = cfg.chatAutoThankYou end
                 if cfg.thankYouMessages ~= nil and type(cfg.thankYouMessages) == "table" then SETTINGS.thankYouMessages = cfg.thankYouMessages end
                 if cfg.autoServerHop ~= nil then autoServerHopEnabled = cfg.autoServerHop end
@@ -1682,8 +1684,8 @@ do
         uiToggle.Visible = true
 
         -- Glassy admin-panel style layout (smaller width for compact UI)
-        local MAIN_W, MAIN_H = 620, 420
-        local LEFT_W = 200
+        local MAIN_W, MAIN_H = 600, 420
+        local LEFT_W = 180
         local GAP = 16
         local mainFrame = Instance.new("Frame")
         mainFrame.Name = "MainFrame"
@@ -1706,10 +1708,10 @@ do
             scale = math.clamp(scale, 0.7, 1)
             uiScale.Scale = scale
         end)
-        -- Title bar (draggable on PC and mobile) - reduced height to avoid covering UI
+        -- Title bar (draggable on PC and mobile)
         local titleBar = Instance.new("Frame")
         titleBar.Name = "TitleBar"
-        titleBar.Size = UDim2.new(1, 0, 0, 28)
+        titleBar.Size = UDim2.new(1, 0, 0, 36)
         titleBar.Position = UDim2.new(0, 0, 0, 0)
         titleBar.BackgroundColor3 = Color3.fromRGB(72, 76, 84)
         titleBar.BackgroundTransparency = 0
@@ -1729,20 +1731,20 @@ do
         titleStroke.Thickness = 1
         titleStroke.Parent = titleBar
         local titleLblTop = Instance.new("TextLabel")
-        titleLblTop.Size = UDim2.new(1, -48, 0, 28)
-        titleLblTop.Position = UDim2.new(0, 12, 0, 0)
+        titleLblTop.Size = UDim2.new(1, -56, 0, 36)
+        titleLblTop.Position = UDim2.new(0, 14, 0, 0)
         titleLblTop.BackgroundTransparency = 1
-        titleLblTop.Text = "Pls Wait 💵"
+        titleLblTop.Text = "PLS WAIT 🥳 / 📧 p9sn"
         titleLblTop.Font = Enum.Font.GothamBold
-        titleLblTop.TextSize = 14
+        titleLblTop.TextSize = 16
         titleLblTop.TextColor3 = Color3.fromRGB(240,240,240)
         titleLblTop.TextXAlignment = Enum.TextXAlignment.Left
         titleLblTop.Parent = titleBar
 
         -- Add a close/minimize button in the title bar
         local closeBtn = Instance.new("TextButton")
-        closeBtn.Size = UDim2.new(0, 32, 0, 20)
-        closeBtn.Position = UDim2.new(1, -44, 0, 4)
+        closeBtn.Size = UDim2.new(0, 32, 0, 22)
+        closeBtn.Position = UDim2.new(1, -44, 0, 7)
         closeBtn.Text = "−"
         closeBtn.BackgroundColor3 = Color3.fromRGB(64, 68, 76)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
@@ -1814,7 +1816,7 @@ do
                     BackgroundTransparency = isMinimizing and 0.18 or 0,
                 })
                 TweenService:Create(titleBar, transitionInfo, {
-                    Size = isMinimizing and UDim2.new(1, 0, 0, 0) or UDim2.new(1, 0, 0, 28),
+                    Size = isMinimizing and UDim2.new(1, 0, 0, 0) or UDim2.new(1, 0, 0, 36),
                     BackgroundTransparency = isMinimizing and 1 or 0,
                 }):Play()
                 TweenService:Create(titleLblTop, transitionInfo, {
@@ -1862,7 +1864,7 @@ do
         leftCol.Name = "LeftCol"
         leftCol.Size = UDim2.new(0, LEFT_W, 1, -20)
         -- lower left column so the titlebar doesn't overlap the first button
-        leftCol.Position = UDim2.new(0, GAP, 0, 40)
+        leftCol.Position = UDim2.new(0, GAP, 0, 48)
         leftCol.BackgroundTransparency = 1
         leftCol.Parent = mainFrame
         -- old left-column title removed (we use the draggable title bar)
@@ -1898,7 +1900,7 @@ do
             local rightW = MAIN_W - LEFT_W - (GAP * 2)
             frame.Size = UDim2.new(0, rightW, 1, -24)
             -- right-side frames aligned below titlebar
-            frame.Position = UDim2.new(0, LEFT_W + GAP, 0, 40)
+            frame.Position = UDim2.new(0, LEFT_W + GAP, 0, 48)
             frame.BackgroundTransparency = 1
             frame.Visible = (item.key == "Main")
             frame.Parent = mainFrame
@@ -2674,6 +2676,79 @@ do
                 staffToggle.Text = SETTINGS.staffHop and "ON" or "OFF"
                 pcall(SaveSettings)
             end)
+
+            local friendHopLabel = Instance.new("TextLabel")
+            friendHopLabel.Size = UDim2.new(0,120,0,20)
+            friendHopLabel.Position = UDim2.new(0,10,0,224)
+            friendHopLabel.Text = "Friend Hop"
+            friendHopLabel.BackgroundTransparency = 1
+            friendHopLabel.TextColor3 = Color3.new(1,1,1)
+            friendHopLabel.Parent = frame
+
+            local friendHopToggle = Instance.new("TextButton")
+            friendHopToggle.Size = UDim2.new(0,60,0,20)
+            friendHopToggle.Position = UDim2.new(0,140,0,224)
+            friendHopToggle.Text = SETTINGS.friendHop and "ON" or "OFF"
+            friendHopToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            friendHopToggle.TextColor3 = Color3.fromRGB(255,255,255)
+            friendHopToggle.Parent = frame
+            local friendHopCorner = Instance.new("UICorner")
+            friendHopCorner.Parent = friendHopToggle
+            styleButton(friendHopToggle)
+
+            local friendHopBusy = false
+            local friendChecks = {}
+            local function checkFriendAndHop(player)
+                if not SETTINGS.friendHop or not player or player == LocalPlayer then return end
+                local userId = player.UserId
+                if friendChecks[userId] or friendHopBusy then return end
+                friendChecks[userId] = true
+
+                task.spawn(function()
+                    local ok, isFriend = pcall(function()
+                        return LocalPlayer:IsFriendsWith(userId)
+                    end)
+                    friendChecks[userId] = nil
+
+                    if not ok then
+                        warn("[PLS WAIT] Could not check friend status for " .. tostring(player.Name) .. ": " .. tostring(isFriend))
+                        return
+                    end
+                    if not isFriend or not SETTINGS.friendHop or friendHopBusy then return end
+
+                    friendHopBusy = true
+                    task.spawn(function()
+                        local minPlayers, maxPlayers = parseRange(hopRangeText)
+                        while SETTINGS.friendHop do
+                            local searchOk, hopped = pcall(serverSearchAttempt, minPlayers, maxPlayers, false)
+                            if not searchOk then
+                                warn("[PLS WAIT] Friend hop search failed:", hopped)
+                            elseif hopped then
+                                break
+                            end
+                            task.wait(1)
+                        end
+                        friendHopBusy = false
+                    end)
+                end)
+            end
+
+            Players.PlayerAdded:Connect(checkFriendAndHop)
+            friendHopToggle.MouseButton1Click:Connect(function()
+                SETTINGS.friendHop = not SETTINGS.friendHop
+                friendHopToggle.Text = SETTINGS.friendHop and "ON" or "OFF"
+                pcall(SaveSettings)
+                if SETTINGS.friendHop then
+                    for _, player in ipairs(Players:GetPlayers()) do
+                        checkFriendAndHop(player)
+                    end
+                end
+            end)
+            if SETTINGS.friendHop then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    checkFriendAndHop(player)
+                end
+            end
         end
 
         -- Settings tab removed per user request
@@ -2873,6 +2948,7 @@ do
                         webhookToggle = SETTINGS.webhookToggle,
                         webhookUrl = SETTINGS.webhookUrl,
                         antiAfk = SETTINGS.antiAfk,
+                        friendHop = SETTINGS.friendHop,
                         serverStayTime = SETTINGS.serverStayTime,
                         persistToggles = SETTINGS.persistToggles,
                         spinOnDonation = SETTINGS.spinSet,
