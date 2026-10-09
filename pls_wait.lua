@@ -49,21 +49,50 @@ if not IsInCommunity() then
     return
 end
 
+local MODULE_BASE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/"
+
+local function loadRemoteModule(fileName)
+    local moduleUrl = MODULE_BASE_URL .. fileName
+    local source = game:HttpGet(moduleUrl)
+    assert(type(source) == "string" and source ~= "", "module source was empty")
+    local chunk, compileError = loadstring(source)
+    assert(chunk, compileError)
+    local module = chunk()
+    assert(type(module) == "table", "module must return a table")
+    return module
+end
+
+local configModuleOk, ConfigModule = pcall(loadRemoteModule, "pls_wait_config.lua")
+if not configModuleOk then
+    warn("[PLS WAIT] Could not load config module:", ConfigModule)
+    return
+end
+if type(ConfigModule.initializeSettings) ~= "function" or type(ConfigModule.create) ~= "function" then
+    warn("[PLS WAIT] Config module has an invalid interface.")
+    return
+end
+print("[PLS WAIT] Config module loaded successfully.")
+
+local spinModuleOk, SpinModule = pcall(loadRemoteModule, "pls_wait_spin.lua")
+if not spinModuleOk then
+    warn("[PLS WAIT] Could not load spin module:", SpinModule)
+    return
+end
+if type(SpinModule.create) ~= "function" then
+    warn("[PLS WAIT] Spin module has an invalid interface.")
+    return
+end
+print("[PLS WAIT] Spin module loaded successfully.")
+
 SETTINGS = SETTINGS or {}
 -- Webhook / donation helpers
-SETTINGS.antiAfk = SETTINGS.antiAfk or false
-SETTINGS.serverStayTime = SETTINGS.serverStayTime or 30
-SETTINGS.persistToggles = SETTINGS.persistToggles or false
+local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
-SETTINGS.touchPreventAFK = SETTINGS.touchPreventAFK or (touchEnabled and true or false)
-SETTINGS.staffHop = SETTINGS.staffHop or false
-SETTINGS.spinOnDonation = SETTINGS.spinOnDonation or false
-SETTINGS.spinSet = SETTINGS.spinSet or SETTINGS.spinOnDonation or false
-SETTINGS.spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier or 1
-SETTINGS.chatAutoThankYou = SETTINGS.chatAutoThankYou or false
-SETTINGS.thankYouMessages = SETTINGS.thankYouMessages or {"thanks!", "thank you", "ty (:"}
+ConfigModule.initializeSettings(SETTINGS, touchEnabled, DEFAULT_BOOTH_TEXT)
 local currentDonationStat = nil
 local currentDonationUid = nil
+local applyDonationSpin
+local SpinFeature
 local function parseAmount(v)
     if type(v) == "number" then return math.floor(v) end
     local s = tostring(v or "")
@@ -76,8 +105,6 @@ local function parseAmount(v)
     return 0
 end
 -- claimEnforceMode option removed; enforcement defaults to teleport
-SETTINGS.emotePlaying = SETTINGS.emotePlaying or false
-local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
 SETTINGS.boothText = SETTINGS.boothText or DEFAULT_BOOTH_TEXT
 
 donationConns = donationConns or {}
@@ -293,6 +320,32 @@ end
 -- Webhook / donation helpers
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
 
+local function getLocalUnclaimedRobux()
+    if not LocalPlayer then return nil end
+
+    local deadline = os.clock() + 3
+    local function waitForChild(parent, childName)
+        if not parent then return nil end
+        local child = parent:FindFirstChild(childName)
+        if child then return child end
+        local remaining = deadline - os.clock()
+        if remaining <= 0 then return nil end
+        return parent:WaitForChild(childName, remaining)
+    end
+
+    local stats = waitForChild(LocalPlayer, "stats")
+    local numbers = waitForChild(stats, "Numbers")
+    local unclaimedValue = waitForChild(numbers, "UnclaimedRobux")
+    if not unclaimedValue or not unclaimedValue:IsA("IntValue") then
+        return nil
+    end
+
+    -- Let the donation's replicated stat update land before reading its current balance.
+    task.wait(0.25)
+    if not unclaimedValue.Parent then return nil end
+    return unclaimedValue.Value
+end
+
 local function postWebhookEvent(kind, data)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
     local url = tostring(SETTINGS.webhookUrl or "")
@@ -301,11 +354,9 @@ local function postWebhookEvent(kind, data)
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local pending = math.floor(amount * 0.6)
         local unclaimedRobux = "Unavailable"
-        local stats = LocalPlayer and LocalPlayer:FindFirstChild("stats")
-        local numbers = stats and stats:FindFirstChild("Numbers")
-        local unclaimedValue = numbers and numbers:FindFirstChild("UnclaimedRobux")
-        if unclaimedValue and unclaimedValue:IsA("IntValue") then
-            unclaimedRobux = tostring(unclaimedValue.Value)
+        local unclaimedValue = getLocalUnclaimedRobux()
+        if unclaimedValue ~= nil then
+            unclaimedRobux = tostring(unclaimedValue)
         end
         -- Determine donor by nearest player to the local player (best-effort)
         local donorName = "Unknown"
@@ -380,30 +431,6 @@ local function postWebhookEvent(kind, data)
             HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson)
         end
     end)
-end
-
-local function applyDonationSpin(delta)
-    if not SETTINGS.spinSet or type(delta) ~= "number" or delta <= 0 then return end
-    local char = LocalPlayer.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-    if not root then return end
-    local spinPart = root:FindFirstChild("Spin")
-    if not spinPart or not spinPart:IsA("BodyAngularVelocity") then
-        spinPart = Instance.new("BodyAngularVelocity")
-        spinPart.Name = "Spin"
-        spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
-        spinPart.Parent = root
-        spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
-    end
-    if spinPart and spinPart:IsA("BodyAngularVelocity") then
-        local currentY = tonumber(spinPart.AngularVelocity.Y) or 0
-        local averageDelta = delta / 3
-        spinPart.AngularVelocity = Vector3.new(0, currentY + averageDelta * (SETTINGS.spinSpeedMultiplier or 1), 0)
-        pcall(function()
-            notify("Donation Debug", ("spin updated +%d -> %0.2f"):format(delta, spinPart.AngularVelocity.Y), 4)
-        end)
-    end
 end
 
 local function getRandomThankYouMessage()
@@ -1428,33 +1455,28 @@ local function claimBooth()
     return ok, res
 end
 
-local SPIN_BOOTH_RETURN_DISTANCE = 50
-
-local function startSpinBoothReturnMonitor()
-    task.spawn(function()
-        while true do
-            task.wait(5)
-            if SETTINGS.spinSet then
-                local character = LocalPlayer.Character
-                local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
-                local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:FindFirstChild("stands")
-                if root and standsFolder then
-                    for _, stand in ipairs(standsFolder:GetChildren()) do
-                        if standOwnedByLocalPlayer(stand) then
-                            local standPosition = tryGetPivotPosition(stand)
-                            if standPosition and (root.Position - standPosition).Magnitude > SPIN_BOOTH_RETURN_DISTANCE then
-                                local returnPosition, awayDirection = computeStandPlacement(stand, root.Position, 4.5)
-                                if returnPosition then
-                                    moveCharacterToPosition(returnPosition, "teleport", awayDirection)
-                                end
-                            end
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end)
+local spinFeatureOk, spinFeatureOrError = pcall(function()
+    return SpinModule.create({
+        LocalPlayer = LocalPlayer,
+        Workspace = Workspace,
+        settings = SETTINGS,
+        isStandOwned = standOwnedByLocalPlayer,
+        getStandPosition = tryGetPivotPosition,
+        computeStandPlacement = computeStandPlacement,
+        moveCharacterToPosition = moveCharacterToPosition,
+        notify = notify,
+    })
+end)
+if not spinFeatureOk then
+    warn("[PLS WAIT] Could not initialize spin module:", spinFeatureOrError)
+    return
+end
+SpinFeature = spinFeatureOrError
+applyDonationSpin = SpinFeature.applyDonationSpin
+if type(applyDonationSpin) ~= "function" or type(SpinFeature.ensureSpinPart) ~= "function"
+    or type(SpinFeature.startBoothReturnMonitor) ~= "function" then
+    warn("[PLS WAIT] Spin module is missing required feature methods.")
+    return
 end
 
 -- Koyg-style ScreenGui UI (simple, file-based save/load)
@@ -1495,77 +1517,46 @@ do
         local autoServerHopTask = nil
         local manualHopRunning = false
         local manualHopTask = nil
-        SETTINGS.persistToggles = SETTINGS.persistToggles or false
+        local ConfigStore = ConfigModule.create({
+            HttpService = Http,
+            settings = SETTINGS,
+            path = CONFIG_PATH,
+            readFile = readfile or (syn and syn.read_file),
+            writeFile = writefile or (syn and syn.write_file),
+            isFile = isfile,
+            getRuntimeState = function()
+                return {
+                    hopRange = hopRangeText,
+                    serverStayTime = serverStayTime,
+                    autoServerHop = autoServerHopEnabled,
+                }
+            end,
+            applyRuntimeState = function(decoded)
+                hopRangeText = decoded.hopRange or hopRangeText
+                serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
+                if decoded.autoServerHop ~= nil then
+                    autoServerHopEnabled = decoded.autoServerHop
+                end
+            end,
+        })
 
         local function SaveSettings()
-            local data = {
-                webhookToggle = SETTINGS.webhookToggle,
-                webhookUrl = SETTINGS.webhookUrl,
-                antiAfk = SETTINGS.antiAfk,
-                touchPreventAFK = SETTINGS.touchPreventAFK,
-                hopRange = hopRangeText,
-                serverStayTime = serverStayTime,
-                persistToggles = SETTINGS.persistToggles,
-                spinOnDonation = SETTINGS.spinSet,
-                spinSet = SETTINGS.spinSet,
-                spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
-                populationHopper = SETTINGS.populationHopper,
-                populationThreshold = SETTINGS.populationThreshold,
-                -- follow-on-donation removed
-                emoteId = SETTINGS.emoteId,
-                boothText = SETTINGS.boothText,
-                staffHop = SETTINGS.staffHop,
-                emotePlaying = SETTINGS.emotePlaying and true or false,
-                chatAutoThankYou = SETTINGS.chatAutoThankYou,
-                thankYouMessages = SETTINGS.thankYouMessages,
-                autoServerHop = autoServerHopEnabled,
-            }
             SETTINGS.hopRange = hopRangeText
-            local ok, encoded = pcall(function() return Http:JSONEncode(data) end)
-            if not ok then return end
-            pcall(function()
-                if writefile then
-                    writefile(CONFIG_PATH, encoded)
-                elseif syn and syn.write_file then
-                    syn.write_file(CONFIG_PATH, encoded)
-                end
-            end)
+            local saved, saveError = ConfigStore.save()
+            if not saved then
+                warn("[PLS WAIT] Could not save settings:", saveError)
+            end
         end
 
         local function LoadSettings()
-            local content = nil
-            pcall(function()
-                if readfile then
-                    content = readfile(CONFIG_PATH)
-                elseif syn and syn.read_file then
-                    content = syn.read_file(CONFIG_PATH)
-                end
-            end)
-            if not content or content == "" then return end
-            local ok, decoded = pcall(function() return Http:JSONDecode(content) end)
-            if not ok or type(decoded) ~= "table" then return end
-            if decoded.webhookToggle ~= nil then SETTINGS.webhookToggle = decoded.webhookToggle end
-            SETTINGS.webhookUrl = decoded.webhookUrl or SETTINGS.webhookUrl
-            if decoded.antiAfk ~= nil then SETTINGS.antiAfk = decoded.antiAfk end
-            -- legacy spin/periodic settings removed
-            if decoded.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = decoded.touchPreventAFK end
-            -- enforce mode option removed; always use teleport
-            hopRangeText = decoded.hopRange or hopRangeText
-            serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
-            if decoded.persistToggles ~= nil then SETTINGS.persistToggles = decoded.persistToggles end
-            if decoded.spinSet ~= nil then SETTINGS.spinSet = decoded.spinSet end
-            if decoded.spinOnDonation ~= nil then SETTINGS.spinSet = decoded.spinOnDonation end
-            if decoded.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
-            if decoded.populationHopper ~= nil then SETTINGS.populationHopper = decoded.populationHopper end
-            if decoded.populationThreshold ~= nil then SETTINGS.populationThreshold = decoded.populationThreshold end
-            -- follow-on-donation setting removed
-            SETTINGS.emoteId = decoded.emoteId or SETTINGS.emoteId
-            SETTINGS.boothText = decoded.boothText or SETTINGS.boothText
-            if decoded.staffHop ~= nil then SETTINGS.staffHop = decoded.staffHop end
-            if decoded.emotePlaying ~= nil then SETTINGS.emotePlaying = decoded.emotePlaying end
-            if decoded.chatAutoThankYou ~= nil then SETTINGS.chatAutoThankYou = decoded.chatAutoThankYou end
-            if decoded.thankYouMessages ~= nil and type(decoded.thankYouMessages) == "table" then SETTINGS.thankYouMessages = decoded.thankYouMessages end
-            if decoded.autoServerHop ~= nil then autoServerHopEnabled = decoded.autoServerHop end
+            local loaded, loadError = ConfigStore.load()
+            if loaded then
+                print("[PLS WAIT] Settings loaded successfully from " .. CONFIG_PATH .. ".")
+            elseif loadError == "not-found" then
+                print("[PLS WAIT] No saved settings found; using defaults.")
+            else
+                warn("[PLS WAIT] Could not load saved settings:", loadError)
+            end
         end
 
         pcall(function()
@@ -1595,7 +1586,7 @@ do
             end
         end)
 
-        pcall(LoadSettings)
+        LoadSettings()
         -- (initialization guard will be checked after SharedEnv is defined)
         local TweenService = game:GetService("TweenService")
         -- Provide a small UI helper used by buttons
@@ -1629,38 +1620,7 @@ do
             end)
         end
 
-        local function ensureSpinLock(root)
-            -- No-op: disable positional freezing when spin is enabled
-            return
-        end
-
-        local function removeSpinLock(root)
-            -- No-op: nothing to remove since ensureSpinLock is disabled
-            return
-        end
-
-        local function ensureSpinPart()
-            if not SETTINGS.spinSet then return end
-            local char = LocalPlayer.Character
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            if not root then return end
-            if root.AssemblyLinearVelocity then
-                root.AssemblyLinearVelocity = Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
-            end
-            local spinPart = root:FindFirstChild("Spin")
-            if spinPart and spinPart:IsA("BodyAngularVelocity") then
-                spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
-                ensureSpinLock(root)
-                return
-            end
-            spinPart = Instance.new("BodyAngularVelocity")
-            spinPart.Name = "Spin"
-            spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
-            spinPart.Parent = root
-            spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
-            ensureSpinLock(root)
-        end
+        local ensureSpinPart = SpinFeature.ensureSpinPart
 
         -- Prevent duplicate UIs across teleports / multiple runs: use a shared env flag
         local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
@@ -1733,6 +1693,7 @@ do
         mainFrame.Position = UDim2.new(0, 12, 1, -12)
         mainFrame.BackgroundColor3 = Color3.fromRGB(24,24,24)
         mainFrame.BackgroundTransparency = 0
+        mainFrame.ClipsDescendants = true
         mainFrame.Parent = screen
         mainFrame.Active = true
         -- adaptive scale for mobile/PC
@@ -1782,7 +1743,7 @@ do
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 32, 0, 20)
         closeBtn.Position = UDim2.new(1, -44, 0, 4)
-        closeBtn.Text = "X"
+        closeBtn.Text = "−"
         closeBtn.BackgroundColor3 = Color3.fromRGB(64, 68, 76)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
         closeBtn.Font = Enum.Font.GothamBold
@@ -1822,37 +1783,67 @@ do
                     pcall(update, input)
                 end
             end)
-            -- store original mainFrame position for restore animations
             local originalMainPos = mainFrame.Position
             local minimized = false
+            local transitioning = false
             local TweenService = game:GetService("TweenService")
+            local dockPosition = UDim2.new(0, 8, 0, 56)
+            local transitionInfo = TweenInfo.new(0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+
+            local function playTransition(isMinimizing)
+                if transitioning or minimized == isMinimizing then return end
+                transitioning = true
+
+                if isMinimizing then
+                    originalMainPos = mainFrame.Position
+                else
+                    mainFrame.Visible = true
+                    mainFrame.Position = dockPosition
+                    mainFrame.Size = UDim2.new(0, 48, 0, 48)
+                    mainFrame.BackgroundTransparency = 0.18
+                    titleBar.Size = UDim2.new(1, 0, 0, 0)
+                    titleBar.BackgroundTransparency = 1
+                    titleLblTop.TextTransparency = 1
+                    closeBtn.BackgroundTransparency = 1
+                    closeBtn.TextTransparency = 1
+                end
+
+                local frameTween = TweenService:Create(mainFrame, transitionInfo, {
+                    Position = isMinimizing and dockPosition or originalMainPos,
+                    Size = isMinimizing and UDim2.new(0, 48, 0, 48) or UDim2.new(0, MAIN_W, 0, MAIN_H),
+                    BackgroundTransparency = isMinimizing and 0.18 or 0,
+                })
+                TweenService:Create(titleBar, transitionInfo, {
+                    Size = isMinimizing and UDim2.new(1, 0, 0, 0) or UDim2.new(1, 0, 0, 28),
+                    BackgroundTransparency = isMinimizing and 1 or 0,
+                }):Play()
+                TweenService:Create(titleLblTop, transitionInfo, {
+                    TextTransparency = isMinimizing and 1 or 0,
+                }):Play()
+                TweenService:Create(closeBtn, transitionInfo, {
+                    BackgroundTransparency = isMinimizing and 1 or 0,
+                    TextTransparency = isMinimizing and 1 or 0,
+                }):Play()
+                frameTween:Play()
+                frameTween.Completed:Connect(function(playbackState)
+                    if playbackState == Enum.PlaybackState.Completed then
+                        minimized = isMinimizing
+                        if isMinimizing then
+                            mainFrame.Visible = false
+                        end
+                    end
+                    transitioning = false
+                end)
+            end
+
             local function minimizeUI()
-                if minimized then return end
-                minimized = true
-                local targetPos = uiToggle.Position
-                local info = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.InOut)
-                pcall(function()
-                    TweenService:Create(mainFrame, info, {
-                        Position = targetPos,
-                        Size = UDim2.new(0, 48, 0, 48),
-                        BackgroundTransparency = 0.16,
-                    }):Play()
-                end)
-                task.delay(0.32, function() mainFrame.Visible = false end)
+                playTransition(true)
             end
+
             local function restoreUI()
-                if not minimized then return end
-                mainFrame.Visible = true
-                local info = TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                pcall(function()
-                    TweenService:Create(mainFrame, info, {
-                        Position = originalMainPos,
-                        Size = UDim2.new(0, MAIN_W, 0, MAIN_H),
-                        BackgroundTransparency = 0,
-                    }):Play()
-                end)
-                task.delay(0.32, function() minimized = false end)
+                playTransition(false)
             end
+
             closeBtn.MouseButton1Click:Connect(function()
                 if minimized then restoreUI() else minimizeUI() end
             end)
@@ -2337,7 +2328,6 @@ do
                             if root:FindFirstChild("Spin") then
                                 root:FindFirstChild("Spin"):Destroy()
                             end
-                            removeSpinLock(root)
                         end
                     end
                     if not SETTINGS.webhookToggle then
@@ -2354,7 +2344,6 @@ do
                                 spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
                                 spinPart.Parent = root
                                 spinPart.AngularVelocity = Vector3.new(0, 0.25 * (SETTINGS.spinSpeedMultiplier or 1), 0)
-                                ensureSpinLock(root)
                             end
                         end
                     end)
@@ -2917,9 +2906,10 @@ do
                 end
             end)
 
-            LocalPlayer.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                pcall(function() ensureSpinPart() end)
+            LocalPlayer.CharacterAdded:Connect(function(character)
+                task.spawn(function()
+                    pcall(function() ensureSpinPart(character) end)
+                end)
                 task.wait(1)
                 notify("Booth Claim", "Character respawned; attempting booth claim...", 3)
                 pcall(function() claimBooth() end)
@@ -2953,7 +2943,7 @@ do
             end)
         end
     end
-    startSpinBoothReturnMonitor()
+    SpinFeature.startBoothReturnMonitor()
 end
 
 -- Script loaded: use functions directly (not returning a module table)
