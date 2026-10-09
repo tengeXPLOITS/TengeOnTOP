@@ -6,6 +6,7 @@ function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.persistToggles = settings.persistToggles or false
     settings.touchPreventAFK = settings.touchPreventAFK or (touchEnabled and true or false)
     settings.staffHop = settings.staffHop or false
+    settings.friendHop = settings.friendHop or false
     settings.spinOnDonation = settings.spinOnDonation or false
     settings.spinSet = settings.spinSet or settings.spinOnDonation or false
     settings.spinSpeedMultiplier = settings.spinSpeedMultiplier or 1
@@ -45,6 +46,7 @@ function Config.create(dependencies)
             emoteId = settings.emoteId,
             boothText = settings.boothText,
             staffHop = settings.staffHop,
+            friendHop = settings.friendHop,
             emotePlaying = settings.emotePlaying and true or false,
             chatAutoThankYou = settings.chatAutoThankYou,
             thankYouMessages = settings.thankYouMessages,
@@ -106,6 +108,7 @@ function Config.create(dependencies)
         settings.emoteId = decoded.emoteId or settings.emoteId
         settings.boothText = decoded.boothText or settings.boothText
         if decoded.staffHop ~= nil then settings.staffHop = decoded.staffHop end
+        if decoded.friendHop ~= nil then settings.friendHop = decoded.friendHop end
         if decoded.emotePlaying ~= nil then settings.emotePlaying = decoded.emotePlaying end
         if decoded.chatAutoThankYou ~= nil then settings.chatAutoThankYou = decoded.chatAutoThankYou end
         if type(decoded.thankYouMessages) == "table" then
