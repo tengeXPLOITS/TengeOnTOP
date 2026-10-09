@@ -300,6 +300,13 @@ local function postWebhookEvent(kind, data)
     if kind == "donation" then
         local amount = tonumber(data and data.amount) or tonumber(tostring(data and data.amount or ""):gsub("[^%d]","")) or 0
         local pending = math.floor(amount * 0.6)
+        local unclaimedRobux = "Unavailable"
+        local stats = LocalPlayer and LocalPlayer:FindFirstChild("stats")
+        local numbers = stats and stats:FindFirstChild("Numbers")
+        local unclaimedValue = numbers and numbers:FindFirstChild("UnclaimedRobux")
+        if unclaimedValue and unclaimedValue:IsA("IntValue") then
+            unclaimedRobux = tostring(unclaimedValue.Value)
+        end
         -- Determine donor by nearest player to the local player (best-effort)
         local donorName = "Unknown"
         local donorId = nil
@@ -330,6 +337,7 @@ local function postWebhookEvent(kind, data)
             { name = "Donor", value = donorName, inline = false },
             { name = "Amount Given", value = tostring(amount), inline = true },
             { name = "Pending R$ (60%)", value = tostring(pending), inline = true },
+            { name = "Unclaimed Robux", value = unclaimedRobux, inline = true },
         }
         table.insert(embeds, {
             title = "YOU RECEIVED A DONATION 💰",
@@ -416,29 +424,45 @@ local function getRandomThankYouMessage()
 end
 
 local function sendChatMessage(msg)
-    if not msg or msg == "" then return end
-    pcall(function()
-        local chatService = game:GetService("TextChatService")
-        if chatService and type(chatService.SendSystemMessage) == "function" then
-            chatService:SendSystemMessage(msg, "All")
-            return
+    local text = tostring(msg or "")
+    if text == "" then return false, "The thank-you message is empty." end
+
+    local chatService = game:GetService("TextChatService")
+    if chatService.ChatVersion == Enum.ChatVersion.TextChatService then
+        local textChannels = chatService:FindFirstChild("TextChannels")
+        local channel = textChannels and textChannels:FindFirstChild("RBXGeneral")
+        if not (channel and channel:IsA("TextChannel")) and textChannels then
+            channel = textChannels:FindFirstChildWhichIsA("TextChannel")
+        end
+        if not channel then
+            return false, "No sendable TextChatService channel was found."
         end
 
-        local repStore = game:GetService("ReplicatedStorage")
-        local events = repStore:FindFirstChild("DefaultChatSystemChatEvents")
-        if events then
-            local sayMsg = events:FindFirstChild("SayMessageRequest")
-            if sayMsg and sayMsg.FireServer then
-                sayMsg:FireServer(msg, "All")
-                return
-            end
-        end
+        local ok, err = pcall(function()
+            channel:SendAsync(text)
+        end)
+        if ok then return true end
+        return false, tostring(err)
+    end
 
-        if LocalPlayer and type(LocalPlayer.Chat) == "function" then
-            LocalPlayer:Chat(msg)
-            return
-        end
-    end)
+    local events = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    local sayMessage = events and events:FindFirstChild("SayMessageRequest")
+    if sayMessage and sayMessage:IsA("RemoteEvent") then
+        local ok, err = pcall(function()
+            sayMessage:FireServer(text, "All")
+        end)
+        if ok then return true end
+        return false, tostring(err)
+    end
+
+    if LocalPlayer then
+        local ok, err = pcall(function()
+            LocalPlayer:Chat(text)
+        end)
+        if ok then return true end
+        return false, tostring(err)
+    end
+    return false, "The local player is unavailable."
 end
 
 local function sendThankYouMessage(delta)
@@ -448,9 +472,10 @@ local function sendThankYouMessage(delta)
     if type(delta) ~= "number" then delta = 0 end
     if delta <= 0 then return end
     task.delay(0.8, function()
-        pcall(function()
-            sendChatMessage(msg)
-        end)
+        local sent, err = sendChatMessage(msg)
+        if not sent then
+            notify("Auto Thank You", "Could not send chat message: " .. tostring(err), 5)
+        end
     end)
 end
 
@@ -1403,6 +1428,35 @@ local function claimBooth()
     return ok, res
 end
 
+local SPIN_BOOTH_RETURN_DISTANCE = 50
+
+local function startSpinBoothReturnMonitor()
+    task.spawn(function()
+        while true do
+            task.wait(5)
+            if SETTINGS.spinSet then
+                local character = LocalPlayer.Character
+                local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
+                local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:FindFirstChild("stands")
+                if root and standsFolder then
+                    for _, stand in ipairs(standsFolder:GetChildren()) do
+                        if standOwnedByLocalPlayer(stand) then
+                            local standPosition = tryGetPivotPosition(stand)
+                            if standPosition and (root.Position - standPosition).Magnitude > SPIN_BOOTH_RETURN_DISTANCE then
+                                local returnPosition, awayDirection = computeStandPlacement(stand, root.Position, 4.5)
+                                if returnPosition then
+                                    moveCharacterToPosition(returnPosition, "teleport", awayDirection)
+                                end
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
 -- Koyg-style ScreenGui UI (simple, file-based save/load)
 do
     local ok, playerGui = pcall(function()
@@ -1696,21 +1750,21 @@ do
         titleBar.Name = "TitleBar"
         titleBar.Size = UDim2.new(1, 0, 0, 28)
         titleBar.Position = UDim2.new(0, 0, 0, 0)
-        titleBar.BackgroundColor3 = Color3.fromRGB(36, 132, 78)
+        titleBar.BackgroundColor3 = Color3.fromRGB(72, 76, 84)
         titleBar.BackgroundTransparency = 0
         titleBar.Parent = mainFrame
         titleBar.Active = true
         titleBar.ZIndex = 50
         local titleGradient = Instance.new("UIGradient")
         titleGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 178, 105)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 112, 60)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(92, 96, 104)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(56, 60, 68)),
         }
         titleGradient.Rotation = 90
         titleGradient.Parent = titleBar
         local titleStroke = Instance.new("UIStroke")
         titleStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        titleStroke.Color = Color3.fromRGB(16, 78, 44)
+        titleStroke.Color = Color3.fromRGB(38, 40, 46)
         titleStroke.Thickness = 1
         titleStroke.Parent = titleBar
         local titleLblTop = Instance.new("TextLabel")
@@ -1729,7 +1783,7 @@ do
         closeBtn.Size = UDim2.new(0, 32, 0, 20)
         closeBtn.Position = UDim2.new(1, -44, 0, 4)
         closeBtn.Text = "X"
-        closeBtn.BackgroundColor3 = Color3.fromRGB(46, 116, 72)
+        closeBtn.BackgroundColor3 = Color3.fromRGB(64, 68, 76)
         closeBtn.TextColor3 = Color3.fromRGB(240,240,240)
         closeBtn.Font = Enum.Font.GothamBold
         closeBtn.TextSize = 16
@@ -2000,7 +2054,7 @@ do
 
             local afkToggle = Instance.new("TextButton")
             afkToggle.Size = UDim2.new(0,60,0,20)
-            afkToggle.Position = UDim2.new(0,150,0,10)
+            afkToggle.Position = UDim2.new(0,140,0,10)
             afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
             afkToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             afkToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -2024,7 +2078,7 @@ do
 
             local touchToggle = Instance.new("TextButton")
             touchToggle.Size = UDim2.new(0,60,0,20)
-            touchToggle.Position = UDim2.new(0,150,0,42)
+            touchToggle.Position = UDim2.new(0,140,0,42)
             touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
             touchToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             touchToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -2407,7 +2461,7 @@ do
 
             local rangeBox = Instance.new("TextBox")
             rangeBox.Size = UDim2.new(0,160,0,28)
-            rangeBox.Position = UDim2.new(0,140,0,44)
+            rangeBox.Position = UDim2.new(0,220,0,44)
             rangeBox.Text = hopRangeText or "1-23"
             rangeBox.PlaceholderText = "1-23 or 23"
             rangeBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -2481,7 +2535,7 @@ do
 
             local popToggle = Instance.new("TextButton")
             popToggle.Size = UDim2.new(0,60,0,20)
-            popToggle.Position = UDim2.new(0,140,0,228)
+            popToggle.Position = UDim2.new(0,220,0,228)
             popToggle.Text = SETTINGS.populationHopper and "ON" or "OFF"
             popToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
             popToggle.TextColor3 = Color3.fromRGB(255,255,255)
@@ -2499,7 +2553,7 @@ do
 
             local thresholdBox = Instance.new("TextBox")
             thresholdBox.Size = UDim2.new(0,80,0,20)
-            thresholdBox.Position = UDim2.new(0,180,0,258)
+            thresholdBox.Position = UDim2.new(0,220,0,258)
             thresholdBox.Text = tostring(SETTINGS.populationThreshold or 17)
             thresholdBox.ClearTextOnFocus = false
             thresholdBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -2899,6 +2953,7 @@ do
             end)
         end
     end
+    startSpinBoothReturnMonitor()
 end
 
 -- Script loaded: use functions directly (not returning a module table)
