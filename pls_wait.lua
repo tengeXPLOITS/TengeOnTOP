@@ -597,6 +597,9 @@ local function tryHookPlayerStat(player)
             if delta > 0 then
                 -- Only notify when the local player (script user) receives the donation
                 if player == LocalPlayer then
+                    if applyDonationHelicopter then
+                        applyDonationHelicopter(delta)
+                    end
                     -- find nearest other player as donor (best-effort)
                     local function fetchNearestPlayer()
                         local best, bestDist = nil, math.huge
@@ -634,9 +637,6 @@ local function tryHookPlayerStat(player)
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
                                     sendThankYouMessage(delta)
                                     applyDonationSpin(delta)
-                                    if applyDonationHelicopter then
-                                        applyDonationHelicopter(delta)
-                                    end
                 end
             end
         end
@@ -919,6 +919,9 @@ local function startDonationMonitor()
             local delta = newv - prev
             donationTotals[uid] = newv
             if delta > 0 then
+                if applyDonationHelicopter then
+                    applyDonationHelicopter(delta)
+                end
                 if LocalPlayer == LocalPlayer then
                     pcall(function()
                         notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
@@ -945,9 +948,6 @@ local function startDonationMonitor()
                 notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
                 sendThankYouMessage(delta)
                 applyDonationSpin(delta)
-                if applyDonationHelicopter then
-                    applyDonationHelicopter(delta)
-                end
             end
         end
     end)
