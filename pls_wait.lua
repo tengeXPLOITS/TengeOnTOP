@@ -103,6 +103,7 @@ ConfigModule.initializeSettings(SETTINGS, touchEnabled, DEFAULT_BOOTH_TEXT)
 local currentDonationStat = nil
 local currentDonationUid = nil
 local applyDonationSpin
+local applyDonationHelicopter
 local SpinFeature
 local function parseAmount(v)
     if type(v) == "number" then return math.floor(v) end
@@ -633,6 +634,9 @@ local function tryHookPlayerStat(player)
                                     notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
                                     sendThankYouMessage(delta)
                                     applyDonationSpin(delta)
+                                    if applyDonationHelicopter then
+                                        applyDonationHelicopter(delta)
+                                    end
                 end
             end
         end
@@ -941,6 +945,9 @@ local function startDonationMonitor()
                 notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
                 sendThankYouMessage(delta)
                 applyDonationSpin(delta)
+                if applyDonationHelicopter then
+                    applyDonationHelicopter(delta)
+                end
             end
         end
     end)
@@ -1457,6 +1464,7 @@ local spinFeatureOk, spinFeatureOrError = pcall(function()
     return SpinModule.create({
         LocalPlayer = LocalPlayer,
         Workspace = Workspace,
+        TweenService = TweenService,
         settings = SETTINGS,
         isStandOwned = standOwnedByLocalPlayer,
         getStandPosition = tryGetPivotPosition,
@@ -1472,10 +1480,14 @@ end
 SpinFeature = spinFeatureOrError
 applyDonationSpin = SpinFeature.applyDonationSpin
 if type(applyDonationSpin) ~= "function" or type(SpinFeature.ensureSpinPart) ~= "function"
-    or type(SpinFeature.startBoothReturnMonitor) ~= "function" then
+    or type(SpinFeature.startBoothReturnMonitor) ~= "function"
+    or type(SpinFeature.applyDonationHelicopter) ~= "function"
+    or type(SpinFeature.setHelicopterEnabled) ~= "function"
+    or type(SpinFeature.ensureHelicopter) ~= "function" then
     warn("[PLS WAIT] Spin module is missing required feature methods.")
     return
 end
+applyDonationHelicopter = SpinFeature.applyDonationHelicopter
 
 local uiInitialized, uiError = pcall(function()
     UIModule.create({
