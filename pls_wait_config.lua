@@ -10,6 +10,7 @@ function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.spinOnDonation = settings.spinOnDonation or false
     settings.spinSet = settings.spinSet or settings.spinOnDonation or false
     settings.spinSpeedMultiplier = settings.spinSpeedMultiplier or 1
+    settings.helicopterEnabled = settings.helicopterEnabled or false
     settings.chatAutoThankYou = settings.chatAutoThankYou or false
     settings.thankYouMessages = settings.thankYouMessages or {"thanks!", "thank you", "ty (:"}
     settings.emotePlaying = settings.emotePlaying or false
@@ -41,6 +42,7 @@ function Config.create(dependencies)
             spinOnDonation = settings.spinSet,
             spinSet = settings.spinSet,
             spinSpeedMultiplier = settings.spinSpeedMultiplier,
+            helicopterEnabled = settings.helicopterEnabled,
             populationHopper = settings.populationHopper,
             populationThreshold = settings.populationThreshold,
             emoteId = settings.emoteId,
@@ -105,6 +107,7 @@ function Config.create(dependencies)
         if decoded.spinSet ~= nil then settings.spinSet = decoded.spinSet end
         if decoded.spinOnDonation ~= nil then settings.spinSet = decoded.spinOnDonation end
         if decoded.spinSpeedMultiplier ~= nil then settings.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
+        if decoded.helicopterEnabled ~= nil then settings.helicopterEnabled = decoded.helicopterEnabled end
         if decoded.populationHopper ~= nil then settings.populationHopper = decoded.populationHopper end
         if decoded.populationThreshold ~= nil then settings.populationThreshold = decoded.populationThreshold end
         settings.emoteId = decoded.emoteId or settings.emoteId
