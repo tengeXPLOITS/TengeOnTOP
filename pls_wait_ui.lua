@@ -1754,3 +1754,5 @@ function UI.create(dependencies)
         SpinFeature.startBoothReturnMonitor()
     end
 end
+
+return UI
