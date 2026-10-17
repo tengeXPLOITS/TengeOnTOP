@@ -4,6 +4,7 @@ function Spin.create(dependencies)
     assert(type(dependencies) == "table", "spin dependencies are required")
     local LocalPlayer = assert(dependencies.LocalPlayer, "LocalPlayer is required")
     local Workspace = assert(dependencies.Workspace, "Workspace is required")
+    local TweenService = assert(dependencies.TweenService, "TweenService is required")
     local settings = assert(dependencies.settings, "settings table is required")
     local isStandOwned = assert(dependencies.isStandOwned, "stand ownership helper is required")
     local getStandPosition = assert(dependencies.getStandPosition, "stand-position helper is required")
@@ -12,6 +13,131 @@ function Spin.create(dependencies)
     local notify = assert(dependencies.notify, "notification function is required")
 
     local returnDistance = 12
+    local helicopterPlatform
+    local helicopterRotor
+    local helicopterRoot
+    local helicopterTweens = {}
+    local helicopterGeneration = 0
+    local pendingHelicopterRaise = 0
+    local helicopterAnimationRunning = false
+
+    local function stopHelicopter()
+        helicopterGeneration += 1
+        pendingHelicopterRaise = 0
+        for _, tween in ipairs(helicopterTweens) do
+            tween:Cancel()
+        end
+        table.clear(helicopterTweens)
+        if helicopterRotor then helicopterRotor:Destroy() end
+        if helicopterPlatform then helicopterPlatform:Destroy() end
+        helicopterRotor = nil
+        helicopterPlatform = nil
+        helicopterRoot = nil
+    end
+
+    local function ensureHelicopter()
+        if not settings.helicopterEnabled then
+            stopHelicopter()
+            return false
+        end
+
+        local character = LocalPlayer.Character
+        local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
+        if not root then return false end
+        if helicopterRoot == root and helicopterPlatform and helicopterPlatform.Parent
+            and helicopterRotor and helicopterRotor.Parent then
+            return true
+        end
+
+        stopHelicopter()
+        helicopterGeneration += 1
+        helicopterRoot = root
+
+        local rotor = Instance.new("BodyAngularVelocity")
+        rotor.Name = "DonationHelicopterRotor"
+        rotor.MaxTorque = Vector3.new(0, math.huge, 0)
+        rotor.AngularVelocity = Vector3.new(0, 1, 0)
+        rotor.Parent = root
+        helicopterRotor = rotor
+
+        local platform = Instance.new("Part")
+        platform.Name = "DonationHelicopterPlatform"
+        platform.Size = Vector3.new(12, 1, 12)
+        platform.Anchored = true
+        platform.CanCollide = true
+        platform.CanTouch = false
+        platform.CanQuery = false
+        platform.Material = Enum.Material.Neon
+        platform.Color = Color3.fromRGB(92, 255, 172)
+        platform.Transparency = 0.3
+        platform.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
+        platform.Parent = Workspace
+        helicopterPlatform = platform
+        return true
+    end
+
+    local function setHelicopterEnabled(enabled)
+        settings.helicopterEnabled = enabled == true
+        if settings.helicopterEnabled then
+            ensureHelicopter()
+        else
+            stopHelicopter()
+        end
+    end
+
+    local function applyDonationHelicopter(delta)
+        if not settings.helicopterEnabled or type(delta) ~= "number" or delta <= 0 then return end
+        pendingHelicopterRaise += delta
+        if helicopterAnimationRunning then return end
+        helicopterAnimationRunning = true
+
+        task.spawn(function()
+            while settings.helicopterEnabled and pendingHelicopterRaise > 0 do
+                local raised = pendingHelicopterRaise
+                pendingHelicopterRaise = 0
+                if not ensureHelicopter() then break end
+
+                local generation = helicopterGeneration
+                local platform = helicopterPlatform
+                local rotor = helicopterRotor
+                local root = helicopterRoot
+                if not (platform and rotor and root) then break end
+
+                local baseCFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
+                platform.CFrame = baseCFrame
+                local liftHeight = math.clamp(raised * 2, 3, 24)
+                local rise = TweenService:Create(platform, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    CFrame = baseCFrame + Vector3.new(0, liftHeight, 0),
+                })
+                local speedUp = TweenService:Create(rotor, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    AngularVelocity = Vector3.new(0, 25, 0),
+                })
+                helicopterTweens = { rise, speedUp }
+                rise:Play()
+                speedUp:Play()
+                rise.Completed:Wait()
+
+                if settings.helicopterEnabled and generation == helicopterGeneration
+                    and platform.Parent and rotor.Parent then
+                    local descend = TweenService:Create(platform, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                        CFrame = baseCFrame,
+                    })
+                    local slowDown = TweenService:Create(rotor, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        AngularVelocity = Vector3.new(0, 1, 0),
+                    })
+                    helicopterTweens = { descend, slowDown }
+                    descend:Play()
+                    slowDown:Play()
+                    descend.Completed:Wait()
+                end
+
+                if generation == helicopterGeneration then
+                    table.clear(helicopterTweens)
+                end
+            end
+            helicopterAnimationRunning = false
+        end)
+    end
 
     local function ensureSpinPart(character)
         if not settings.spinSet then return end
@@ -96,6 +222,9 @@ function Spin.create(dependencies)
         ensureSpinPart = ensureSpinPart,
         applyDonationSpin = applyDonationSpin,
         startBoothReturnMonitor = startBoothReturnMonitor,
+        applyDonationHelicopter = applyDonationHelicopter,
+        setHelicopterEnabled = setHelicopterEnabled,
+        ensureHelicopter = ensureHelicopter,
     }
 end
 
