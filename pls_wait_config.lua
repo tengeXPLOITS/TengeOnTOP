@@ -11,6 +11,8 @@ function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.spinSet = settings.spinSet or settings.spinOnDonation or false
     settings.spinSpeedMultiplier = settings.spinSpeedMultiplier or 1
     settings.helicopterEnabled = settings.helicopterEnabled or false
+    settings.goalBarEnabled = settings.goalBarEnabled or false
+    settings.goalBarTarget = tonumber(settings.goalBarTarget) or 40000
     settings.chatAutoThankYou = settings.chatAutoThankYou or false
     settings.thankYouMessages = settings.thankYouMessages or {"thanks!", "thank you", "ty (:"}
     settings.emotePlaying = settings.emotePlaying or false
@@ -51,6 +53,8 @@ function Config.create(dependencies)
             friendHop = settings.friendHop,
             boothGoalAmount = settings.boothGoalAmount,
             boothGoalTarget = settings.boothGoalTarget,
+            goalBarEnabled = settings.goalBarEnabled,
+            goalBarTarget = settings.goalBarTarget,
             emotePlaying = settings.emotePlaying and true or false,
             chatAutoThankYou = settings.chatAutoThankYou,
             thankYouMessages = settings.thankYouMessages,
@@ -116,6 +120,8 @@ function Config.create(dependencies)
         if decoded.friendHop ~= nil then settings.friendHop = decoded.friendHop end
         if decoded.boothGoalAmount ~= nil then settings.boothGoalAmount = decoded.boothGoalAmount end
         if decoded.boothGoalTarget ~= nil then settings.boothGoalTarget = decoded.boothGoalTarget end
+        if decoded.goalBarEnabled ~= nil then settings.goalBarEnabled = decoded.goalBarEnabled end
+        if decoded.goalBarTarget ~= nil then settings.goalBarTarget = tonumber(decoded.goalBarTarget) or settings.goalBarTarget end
         if decoded.emotePlaying ~= nil then settings.emotePlaying = decoded.emotePlaying end
         if decoded.chatAutoThankYou ~= nil then settings.chatAutoThankYou = decoded.chatAutoThankYou end
         if type(decoded.thankYouMessages) == "table" then
