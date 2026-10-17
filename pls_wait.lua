@@ -825,6 +825,8 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                         populationThreshold = SETTINGS.populationThreshold,
                         boothGoalAmount = SETTINGS.boothGoalAmount,
                         boothGoalTarget = SETTINGS.boothGoalTarget,
+                        goalBarEnabled = SETTINGS.goalBarEnabled,
+                        goalBarTarget = SETTINGS.goalBarTarget,
                         emoteId = SETTINGS.emoteId,
                     emotePlaying = SETTINGS.emotePlaying and true or false,
                     autoServerHop = autoServerHopEnabled,
