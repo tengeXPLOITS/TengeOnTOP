@@ -517,10 +517,18 @@ end
 
 local function sendThankYouMessage(delta)
     if not SETTINGS.chatAutoThankYou then return end
-    local msg = getRandomThankYouMessage()
-    if msg == "" then return end
     if type(delta) ~= "number" then delta = 0 end
     if delta <= 0 then return end
+    local msg
+    if SETTINGS.spinSet then
+        local multiplier = tonumber(SETTINGS.spinSpeedMultiplier) or 1
+        local spinIncrease = (delta / 3) * multiplier
+        local increaseText = ("%.6f"):format(spinIncrease):gsub("0+$", ""):gsub("%.$", "")
+        msg = ("Spin speed increased by %s."):format(increaseText)
+    else
+        msg = getRandomThankYouMessage()
+    end
+    if msg == "" then return end
     task.delay(0.8, function()
         local sent, err = sendChatMessage(msg)
         if not sent then
@@ -823,8 +831,6 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     persistToggles = SETTINGS.persistToggles,
                         populationHopper = SETTINGS.populationHopper,
                         populationThreshold = SETTINGS.populationThreshold,
-                        boothGoalAmount = SETTINGS.boothGoalAmount,
-                        boothGoalTarget = SETTINGS.boothGoalTarget,
                         goalBarEnabled = SETTINGS.goalBarEnabled,
                         goalBarTarget = SETTINGS.goalBarTarget,
                         emoteId = SETTINGS.emoteId,
