@@ -1466,6 +1466,7 @@ local spinFeatureOk, spinFeatureOrError = pcall(function()
         Workspace = Workspace,
         TweenService = TweenService,
         settings = SETTINGS,
+        sendChatMessage = sendChatMessage,
         isStandOwned = standOwnedByLocalPlayer,
         getStandPosition = tryGetPivotPosition,
         computeStandPlacement = computeStandPlacement,
