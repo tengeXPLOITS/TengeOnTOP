@@ -51,8 +51,6 @@ function Config.create(dependencies)
             boothText = settings.boothText,
             staffHop = settings.staffHop,
             friendHop = settings.friendHop,
-            boothGoalAmount = settings.boothGoalAmount,
-            boothGoalTarget = settings.boothGoalTarget,
             goalBarEnabled = settings.goalBarEnabled,
             goalBarTarget = settings.goalBarTarget,
             emotePlaying = settings.emotePlaying and true or false,
@@ -118,8 +116,6 @@ function Config.create(dependencies)
         settings.boothText = decoded.boothText or settings.boothText
         if decoded.staffHop ~= nil then settings.staffHop = decoded.staffHop end
         if decoded.friendHop ~= nil then settings.friendHop = decoded.friendHop end
-        if decoded.boothGoalAmount ~= nil then settings.boothGoalAmount = decoded.boothGoalAmount end
-        if decoded.boothGoalTarget ~= nil then settings.boothGoalTarget = decoded.boothGoalTarget end
         if decoded.goalBarEnabled ~= nil then settings.goalBarEnabled = decoded.goalBarEnabled end
         if decoded.goalBarTarget ~= nil then settings.goalBarTarget = tonumber(decoded.goalBarTarget) or settings.goalBarTarget end
         if decoded.emotePlaying ~= nil then settings.emotePlaying = decoded.emotePlaying end
