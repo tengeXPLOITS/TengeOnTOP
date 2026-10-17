@@ -336,19 +336,30 @@ local function getLocalUnclaimedRobux()
     if not LocalPlayer then return nil end
 
     local deadline = os.clock() + 3
-    local function waitForChild(parent, childName)
-        if not parent then return nil end
-        local child = parent:FindFirstChild(childName)
-        if child then return child end
-        local remaining = deadline - os.clock()
-        if remaining <= 0 then return nil end
-        return parent:WaitForChild(childName, remaining)
-    end
+    local unclaimedValue
+    repeat
+        local numbersFolders = {}
+        local directNumbers = LocalPlayer:FindFirstChild("Numbers")
+        local stats = LocalPlayer:FindFirstChild("stats")
+        local statsNumbers = stats and stats:FindFirstChild("Numbers")
+        if directNumbers then table.insert(numbersFolders, directNumbers) end
+        if statsNumbers and statsNumbers ~= directNumbers then
+            table.insert(numbersFolders, statsNumbers)
+        end
 
-    local stats = waitForChild(LocalPlayer, "stats")
-    local numbers = waitForChild(stats, "Numbers")
-    local unclaimedValue = waitForChild(numbers, "UnclaimedRobux")
-    if not unclaimedValue or not unclaimedValue:IsA("IntValue") then
+        for _, numbers in ipairs(numbersFolders) do
+            local candidate = numbers:FindFirstChild("UnclaimedRobux")
+            if candidate and (candidate:IsA("IntValue") or candidate:IsA("NumberValue")) then
+                unclaimedValue = candidate
+                break
+            end
+        end
+        if unclaimedValue or os.clock() >= deadline then break end
+        task.wait(0.1)
+    until false
+
+    if not unclaimedValue then
+        warn("[PLS WAIT] Could not find LocalPlayer.Numbers.UnclaimedRobux or LocalPlayer.stats.Numbers.UnclaimedRobux for the donation webhook.")
         return nil
     end
 
