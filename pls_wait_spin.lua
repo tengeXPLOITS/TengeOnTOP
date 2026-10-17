@@ -6,6 +6,7 @@ function Spin.create(dependencies)
     local Workspace = assert(dependencies.Workspace, "Workspace is required")
     local TweenService = assert(dependencies.TweenService, "TweenService is required")
     local settings = assert(dependencies.settings, "settings table is required")
+    local sendChatMessage = assert(dependencies.sendChatMessage, "chat sender is required")
     local isStandOwned = assert(dependencies.isStandOwned, "stand ownership helper is required")
     local getStandPosition = assert(dependencies.getStandPosition, "stand-position helper is required")
     local computeStandPlacement = assert(dependencies.computeStandPlacement, "stand-placement helper is required")
@@ -62,7 +63,7 @@ function Spin.create(dependencies)
 
         local platform = Instance.new("Part")
         platform.Name = "DonationHelicopterPlatform"
-        platform.Size = Vector3.new(12, 1, 12)
+        platform.Size = Vector3.new(20, 2, 20)
         platform.Anchored = true
         platform.CanCollide = true
         platform.CanTouch = false
@@ -92,50 +93,102 @@ function Spin.create(dependencies)
         helicopterAnimationRunning = true
 
         task.spawn(function()
-            while settings.helicopterEnabled and pendingHelicopterRaise > 0 do
-                local raised = pendingHelicopterRaise
-                pendingHelicopterRaise = 0
-                if not ensureHelicopter() then break end
+            local ok, err = pcall(function()
+                local function isCurrent(generation)
+                    return settings.helicopterEnabled and helicopterGeneration == generation
+                end
 
-                local generation = helicopterGeneration
-                local platform = helicopterPlatform
-                local rotor = helicopterRotor
-                local root = helicopterRoot
-                if not (platform and rotor and root) then break end
+                local function waitWhileEnabled(duration, generation)
+                    local deadline = os.clock() + duration
+                    while isCurrent(generation) and os.clock() < deadline do
+                        task.wait(math.min(0.1, deadline - os.clock()))
+                    end
+                    return isCurrent(generation)
+                end
 
-                local baseCFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
-                platform.CFrame = baseCFrame
-                local liftHeight = math.clamp(raised * 2, 3, 24)
-                local rise = TweenService:Create(platform, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    CFrame = baseCFrame + Vector3.new(0, liftHeight, 0),
-                })
-                local speedUp = TweenService:Create(rotor, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                    AngularVelocity = Vector3.new(0, 25, 0),
-                })
-                helicopterTweens = { rise, speedUp }
-                rise:Play()
-                speedUp:Play()
-                rise.Completed:Wait()
+                local function announce(message)
+                    local sent, sendError = sendChatMessage(message)
+                    if not sent then
+                        notify("Helicopter", "Could not send countdown message: " .. tostring(sendError), 4)
+                    end
+                end
 
-                if settings.helicopterEnabled and generation == helicopterGeneration
-                    and platform.Parent and rotor.Parent then
-                    local descend = TweenService:Create(platform, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                while settings.helicopterEnabled and pendingHelicopterRaise > 0 do
+                    local raised = pendingHelicopterRaise
+                    pendingHelicopterRaise = 0
+                    if not ensureHelicopter() then break end
+
+                    local generation = helicopterGeneration
+                    local platform = helicopterPlatform
+                    local rotor = helicopterRotor
+                    if not (platform and rotor) then break end
+
+                    local character = LocalPlayer.Character
+                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        announce("Enabling engines...")
+                        sendChatMessage("/e dance2")
+                    end
+                    if not waitWhileEnabled(3, generation) then break end
+
+                    local spinUp = TweenService:Create(rotor, TweenInfo.new(6, Enum.EasingStyle.Linear), {
+                        AngularVelocity = Vector3.new(0, 25, 0),
+                    })
+                    helicopterTweens = { spinUp }
+                    spinUp:Play()
+                    if not waitWhileEnabled(4, generation) then break end
+
+                    announce("TAKEOFF IN 3")
+                    if not waitWhileEnabled(1, generation) then break end
+                    announce("2")
+                    if not waitWhileEnabled(1, generation) then break end
+                    announce("1")
+                    if not waitWhileEnabled(1, generation) then break end
+                    if not (platform.Parent and rotor.Parent) then break end
+
+                    local baseCFrame = platform.CFrame
+                    local liftHeight = raised * 5
+                    local rise = TweenService:Create(platform, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                        CFrame = baseCFrame + Vector3.new(0, liftHeight, 0),
+                    })
+                    helicopterTweens = { rise }
+                    rise:Play()
+                    local riseState = rise.Completed:Wait()
+                    if riseState ~= Enum.PlaybackState.Completed or not isCurrent(generation)
+                        or not (platform.Parent and rotor.Parent) then
+                        break
+                    end
+
+                    local descend = TweenService:Create(platform, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                         CFrame = baseCFrame,
                     })
-                    local slowDown = TweenService:Create(rotor, TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    local slowDown = TweenService:Create(rotor, TweenInfo.new(6, Enum.EasingStyle.Linear), {
                         AngularVelocity = Vector3.new(0, 1, 0),
                     })
                     helicopterTweens = { descend, slowDown }
                     descend:Play()
                     slowDown:Play()
-                    descend.Completed:Wait()
-                end
+                    local descendState = descend.Completed:Wait()
+                    if descendState ~= Enum.PlaybackState.Completed or not isCurrent(generation) then
+                        break
+                    end
 
-                if generation == helicopterGeneration then
                     table.clear(helicopterTweens)
+                    if humanoid and character == LocalPlayer.Character then
+                        sendChatMessage("/e wave")
+                    end
                 end
+            end)
+            if not ok then
+                warn("[PLS WAIT] Helicopter sequence failed:", err)
             end
+            table.clear(helicopterTweens)
             helicopterAnimationRunning = false
+            if settings.helicopterEnabled and pendingHelicopterRaise > 0 then
+                local queuedRaise = pendingHelicopterRaise
+                pendingHelicopterRaise = 0
+                applyDonationHelicopter(queuedRaise)
+            end
         end)
     end
 
