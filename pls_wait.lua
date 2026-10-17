@@ -1016,7 +1016,8 @@ local function isStandClaimed(stand)
         return tostring(ownerObj.Value or "") ~= ""
     end
     if ownerObj:IsA("IntValue") or ownerObj:IsA("NumberValue") then
-        return tonumber(ownerObj.Value) ~= nil
+        local ownerId = tonumber(ownerObj.Value)
+        return ownerId ~= nil and ownerId ~= 0
     end
     return true
 end
@@ -1349,107 +1350,90 @@ local function claimEmptyStands()
         return false
     end
 
-    table.sort(candidates, function(a,b)
-        if not playerPos then return true end
-        return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
-    end)
-
-    local target = candidates[1]
-    if not target or not target.stand then
-        notify("Booth Claim", "No valid stand target.", 3)
-        return false
+    if playerPos then
+        table.sort(candidates, function(a, b)
+            return (a.pivot - playerPos).Magnitude < (b.pivot - playerPos).Magnitude
+        end)
     end
 
-    local slot = target.slot or getStandId(target.stand)
-    local distanceAway = 4.5
-    local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
-    local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
-    local dir = awayDir or (playerPos and (Vector3.new(playerPos.X - target.pivot.X, 0, playerPos.Z - target.pivot.Z).Unit) ) or Vector3.new(0, 0, -1)
-    notify("Booth Claim", ("Claiming booth %d now"):format(slot), 3)
-    moveCharacterToPosition(safePos, "teleport", dir)
-    task.wait(0.25)
-
-    if not slot then
-        notify("Booth Claim", ("Could not determine slot for %s"):format(tostring(target.stand.Name or "?")), 4)
-        return false
+    local function isAvailable(target)
+        return target.stand.Parent == standsFolder
+            and getStandId(target.stand) == target.slot
+            and not isStandClaimed(target.stand)
     end
 
-    pcall(function()
-        local promptTriggered = tryFireClaimPrompt(target.stand)
-        if promptTriggered then
-            notify("Booth Claim", ("Moved to booth %d and triggered its Claim prompt"):format(slot), 3)
-        else
-            notify("Booth Claim", ("Moved to booth %d; prompt not found, using fallback claim"):format(slot), 3)
-        end
-    end)
-
-    local args = { slot }
-    local ok, res = pcall(function()
-        return ReplicatedStorage:WaitForChild("ClaimStand"):InvokeServer(unpack(args))
-    end)
-    if ok then
-        notify("Booth Claim", ("Invoked ClaimStand for slot %d (response: %s)"):format(slot, tostring(res)), 4)
-        if tostring(res) == "Success" or res == true then
-            -- place character directly in front of the booth and orient them looking away from it
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and target and target.pivot then
-                        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-                        if hrp then
-                            -- attempt to use stand orientation when available for nicer placement
-                            local standCFrame
-                            pcall(function()
-                                if type(target.stand.GetPivot) == "function" then
-                                    standCFrame = target.stand:GetPivot()
-                                elseif target.stand.PrimaryPart then
-                                    standCFrame = target.stand.PrimaryPart.CFrame
-                                end
-                            end)
-                            local basePos
-                            local frontDir
-                            if hrp then
-                                        local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
-                                        if basePos and awayDir then
-                                            -- move using configured mode and orient to face away from the booth
-                                            pcall(function() moveCharacterToPosition(basePos, "teleport", awayDir) end)
-                                        end
-                            end
-                        end
-                end
-            end)
-            -- after initial success and placement, notify and verify ownership; if not owned, server hop
-            pcall(function()
-                postWebhookEvent("claim", { slot = slot, result = res })
-            end)
-            task.wait(0.35)
-            local owned = false
-            pcall(function()
-                owned = standOwnedByLocalPlayer(target.stand)
-                if not owned then
-                    owned = localPlayerOwnsAnyStand()
-                end
-            end)
-            if not owned then
-                local hopRange = tostring(SETTINGS.hopRange or "19-22")
-                local mn, mx = parseRangeGlobal(hopRange)
-                notify("Booth Claim", "Claim not confirmed; server hopping to find available booth.", 5)
-                if mn then
-                    serverHopNow(mn, mx, true)
-                end
-            else
-                notify("Booth Claim", ("Stand ownership verified for %s on slot %d"):format(tostring(LocalPlayer.Name), slot), 3)
+    local function isOwnedByLocalPlayer(target)
+        local deadline = os.clock() + 2
+        repeat
+            if standOwnedByLocalPlayer(target.stand) then
+                return true
             end
-            return true
-        end
-        return false
-    else
-        notify("Booth Claim", ("Claim remote error for slot %d"):format(slot), 3)
-        return false
+            if isStandClaimed(target.stand) then
+                return false
+            end
+            task.wait(0.1)
+        until os.clock() >= deadline
+        return standOwnedByLocalPlayer(target.stand)
     end
+
+    local initialCFrame = hrp and hrp.CFrame
+    for _, target in ipairs(candidates) do
+        local slot = target.slot
+        if isAvailable(target) then
+            local distanceAway = 4.5
+            local basePos, awayDir = computeStandPlacement(target.stand, playerPos, distanceAway)
+            local safePos = basePos or (target.pivot + Vector3.new(0, 2, 0))
+            local dir = awayDir or Vector3.new(0, 0, -1)
+            notify("Booth Claim", ("Claiming booth %d now"):format(slot), 3)
+            moveCharacterToPosition(safePos, "teleport", dir)
+            task.wait(0.25)
+
+            -- The replicated owner can change after candidate selection or while moving.
+            if isAvailable(target) then
+                local promptOk, promptError = pcall(tryFireClaimPrompt, target.stand)
+                if not promptOk then
+                    warn("[PLS WAIT] Could not trigger stand claim prompt:", promptError)
+                end
+
+                local claimOk, claimResult = true, true
+                if not standOwnedByLocalPlayer(target.stand) and isAvailable(target) then
+                    claimOk, claimResult = pcall(function()
+                        return remote:InvokeServer(slot)
+                    end)
+                end
+
+                if claimOk and isOwnedByLocalPlayer(target) then
+                    pcall(function()
+                        postWebhookEvent("claim", { slot = slot, result = claimResult })
+                    end)
+                    local finalPos, finalDir = computeStandPlacement(target.stand, playerPos, distanceAway)
+                    if finalPos and finalDir then
+                        moveCharacterToPosition(finalPos, "teleport", finalDir)
+                    end
+                    notify("Booth Claim", ("Stand ownership verified for %s on slot %d"):format(tostring(LocalPlayer.Name), slot), 3)
+                    return true
+                end
+
+                if not claimOk then
+                    warn(("[PLS WAIT] ClaimStand failed for slot %d: %s"):format(slot, tostring(claimResult)))
+                end
+            end
+        end
+    end
+
+    if initialCFrame and LocalPlayer.Character then
+        local currentRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart") or LocalPlayer.Character:FindFirstChild("Torso")
+        if currentRoot then
+            currentRoot.CFrame = initialCFrame
+        end
+    end
+    notify("Booth Claim", "Could not confirm an available stand; no booth was claimed.", 4)
+    return false
     end
     local ok, res = pcall(_run)
     claimLock = false
     if ok then return res end
+    warn("[PLS WAIT] Booth claim flow failed:", res)
     return false
 end
 
@@ -3168,9 +3152,3 @@ do
     end
     SpinFeature.startBoothReturnMonitor()
 end
-
--- Script loaded: use functions directly (not returning a module table)
--- Auto-run a single claim on script execution
--- Script loaded: use functions directly (not returning a module table)
--- Auto-run handled by UI initialization above (avoid duplicate claims)
--- brought back by matty on sep 29, 2026!!
