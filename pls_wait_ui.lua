@@ -79,6 +79,8 @@ function UI.create(dependencies)
                         autoServerHop = autoServerHopEnabled,
                         boothGoalAmount = SETTINGS.boothGoalAmount,
                         boothGoalTarget = SETTINGS.boothGoalTarget,
+                        goalBarEnabled = SETTINGS.goalBarEnabled,
+                        goalBarTarget = SETTINGS.goalBarTarget,
                     }
                 end,
                 applyRuntimeState = function(decoded)
@@ -89,6 +91,8 @@ function UI.create(dependencies)
                     end
                     SETTINGS.boothGoalAmount = tonumber(decoded.boothGoalAmount) or SETTINGS.boothGoalAmount
                     SETTINGS.boothGoalTarget = tonumber(decoded.boothGoalTarget) or SETTINGS.boothGoalTarget
+                    if decoded.goalBarEnabled ~= nil then SETTINGS.goalBarEnabled = decoded.goalBarEnabled end
+                    SETTINGS.goalBarTarget = tonumber(decoded.goalBarTarget) or SETTINGS.goalBarTarget
                 end,
             })
 
@@ -128,6 +132,8 @@ function UI.create(dependencies)
                     if cfg.populationThreshold ~= nil then SETTINGS.populationThreshold = cfg.populationThreshold end
                     if cfg.boothGoalAmount ~= nil then SETTINGS.boothGoalAmount = tonumber(cfg.boothGoalAmount) end
                     if cfg.boothGoalTarget ~= nil then SETTINGS.boothGoalTarget = tonumber(cfg.boothGoalTarget) end
+                    if cfg.goalBarEnabled ~= nil then SETTINGS.goalBarEnabled = cfg.goalBarEnabled end
+                    if cfg.goalBarTarget ~= nil then SETTINGS.goalBarTarget = tonumber(cfg.goalBarTarget) end
                     -- follow-on-donation setting removed from queued config
                     hopRangeText = cfg.hopRange or hopRangeText
                     SETTINGS.emoteId = cfg.emoteId or SETTINGS.emoteId
@@ -150,6 +156,8 @@ function UI.create(dependencies)
                 if not btn then return end
                 pcall(function()
                     btn.AutoButtonColor = false
+                    btn.Font = Enum.Font.GothamBold
+                    btn.TextSize = math.max(btn.TextSize, 15)
                     local base = btn.BackgroundColor3
                     local accent = accentColor or Color3.fromRGB(92, 255, 172)
                     local corner = Instance.new("UICorner")
@@ -174,6 +182,13 @@ function UI.create(dependencies)
                         pcall(function() btn.BackgroundColor3 = base end)
                     end)
                 end)
+            end
+
+            local function styleFeatureLabel(label)
+                label.Font = Enum.Font.GothamMedium
+                label.TextSize = 15
+                label.TextWrapped = true
+                label.TextColor3 = Color3.fromRGB(235, 240, 245)
             end
 
             local ensureSpinPart = SpinFeature.ensureSpinPart
@@ -499,7 +514,7 @@ function UI.create(dependencies)
             end
             pcall(function() selectTab("Main") end)
 
-            local function updateBoothText(text)
+            local function updateBoothText(text, quiet)
                 local newText = tostring(text or "")
                 if newText == "" then
                     notify("Booth Text", "Enter booth text before saving.", 4)
@@ -517,7 +532,9 @@ function UI.create(dependencies)
                     notify("Booth Text", "Save failed: " .. tostring(res), 5)
                     return false
                 end
-                notify("Booth Text", "Booth text saved.", 4)
+                if not quiet then
+                    notify("Booth Text", "Booth text saved.", 4)
+                end
                 return true
             end
 
@@ -534,12 +551,53 @@ function UI.create(dependencies)
                 return parseAmount(raised.Value)
             end
 
-            local function formatBoothGoalText(baseText, raisedValue, target)
-                local progressText = ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(target))
-                local text = tostring(baseText or "")
-                if text == "" then return progressText end
-                return text .. "\n" .. progressText
+            local function formatCompactGoal(target)
+                local divisor, suffix
+                if target >= 1000000 then
+                    divisor, suffix = 1000000, "M"
+                elseif target >= 1000 then
+                    divisor, suffix = 1000, "K"
+                else
+                    return tostring(target)
+                end
+                local scaled = target / divisor
+                if scaled % 1 == 0 then
+                    return ("%d%s"):format(scaled, suffix)
+                end
+                return ("%.1f%s"):format(scaled, suffix)
             end
+
+            local function formatGoalBar(raisedValue, target)
+                local barCount = 27
+                local progress = math.clamp(raisedValue / target, 0, 1)
+                local filledCount = math.floor(progress * barCount)
+                return ("<font color='rgb(30,144,255)' face='LuckiestGuy'>GOAL %s</font><br /><stroke thickness='6' color='rgb(0,0,0)'><font size='17' face='GothamBlack'><font color='rgb(0,255,0)'>%s</font><font color='rgb(0,0,0)'>%s</font></font></stroke>"):format(
+                    formatCompactGoal(target),
+                    string.rep("|", filledCount),
+                    string.rep("|", barCount - filledCount)
+                )
+            end
+
+            local function hasGoalBarTarget()
+                local target = tonumber(SETTINGS.goalBarTarget)
+                return SETTINGS.goalBarEnabled and target ~= nil and target > 0
+            end
+
+            local function formatBoothText(baseText, raisedValue)
+                local sections = {}
+                local text = tostring(baseText or "")
+                local additionalTarget = tonumber(SETTINGS.boothGoalTarget)
+                local barTarget = hasGoalBarTarget() and tonumber(SETTINGS.goalBarTarget) or nil
+                if text ~= "" then table.insert(sections, text) end
+                if additionalTarget then
+                    table.insert(sections, ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(additionalTarget)))
+                end
+                if barTarget and barTarget > 0 then
+                    table.insert(sections, formatGoalBar(raisedValue, barTarget))
+                end
+                return table.concat(sections, barTarget and barTarget > 0 and "<br />" or "\n")
+            end
+            local publishBoothProgress
 
             -- Booth tab
             do
@@ -551,7 +609,7 @@ function UI.create(dependencies)
                 title.Text = "Booth"
                 title.TextColor3 = Color3.new(1,1,1)
                 title.Font = Enum.Font.GothamBold
-                title.TextSize = 16
+                title.TextSize = 18
                 title.TextXAlignment = Enum.TextXAlignment.Left
                 title.Parent = boothFrame
 
@@ -561,6 +619,8 @@ function UI.create(dependencies)
                 textLabel.Text = "Booth Text"
                 textLabel.BackgroundTransparency = 1
                 textLabel.TextColor3 = Color3.new(1,1,1)
+                textLabel.Font = Enum.Font.GothamMedium
+                textLabel.TextSize = 15
                 textLabel.Parent = boothFrame
 
                 local boothTextBox = Instance.new("TextBox")
@@ -571,12 +631,20 @@ function UI.create(dependencies)
                 boothTextBox.TextWrapped = true
                 boothTextBox.MultiLine = true
                 boothTextBox.ClearTextOnFocus = false
+                boothTextBox.Font = Enum.Font.GothamMedium
+                boothTextBox.TextSize = 18
                 boothTextBox.TextXAlignment = Enum.TextXAlignment.Left
                 boothTextBox.TextYAlignment = Enum.TextYAlignment.Top
                 boothTextBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
                 boothTextBox.TextColor3 = Color3.fromRGB(255,255,255)
                 local btbCorner = Instance.new("UICorner") btbCorner.Parent = boothTextBox
                 boothTextBox.Parent = boothFrame
+                boothTextBox.Focused:Connect(function()
+                    boothTextBox.TextSize = 20
+                end)
+                boothTextBox.FocusLost:Connect(function()
+                    boothTextBox.TextSize = 18
+                end)
 
                 local saveBtn = Instance.new("TextButton")
                 saveBtn.Size = UDim2.new(0, 120, 0, 28)
@@ -592,10 +660,9 @@ function UI.create(dependencies)
                     local text = tostring(boothTextBox.Text or "")
                     SETTINGS.boothText = text
                     pcall(SaveSettings)
-                    local target = tonumber(SETTINGS.boothGoalTarget)
-                    local raisedValue = target and getLocalRaisedValue()
-                    if target and raisedValue ~= nil then
-                        pcall(updateBoothText, formatBoothGoalText(text, raisedValue, target))
+                    local raisedValue = getLocalRaisedValue()
+                    if raisedValue ~= nil and publishBoothProgress then
+                        publishBoothProgress(raisedValue)
                     else
                         pcall(updateBoothText, text)
                     end
@@ -617,6 +684,8 @@ function UI.create(dependencies)
                 goalBox.Text = tostring(SETTINGS.boothGoalAmount or "")
                 goalBox.PlaceholderText = "e.g. 500"
                 goalBox.ClearTextOnFocus = false
+                goalBox.Font = Enum.Font.GothamMedium
+                goalBox.TextSize = 16
                 goalBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
                 goalBox.TextColor3 = Color3.fromRGB(255,255,255)
                 goalBox.Parent = boothFrame
@@ -643,35 +712,90 @@ function UI.create(dependencies)
                 goalStatus.TextXAlignment = Enum.TextXAlignment.Left
                 goalStatus.TextYAlignment = Enum.TextYAlignment.Top
                 goalStatus.Font = Enum.Font.Gotham
-                goalStatus.TextSize = 13
+                goalStatus.TextSize = 15
                 goalStatus.Parent = boothFrame
+
+                local goalBarLabel = Instance.new("TextLabel")
+                goalBarLabel.Size = UDim2.new(1, -20, 0, 20)
+                goalBarLabel.Position = UDim2.new(0, 10, 0, 320)
+                goalBarLabel.BackgroundTransparency = 1
+                goalBarLabel.TextColor3 = Color3.new(1, 1, 1)
+                goalBarLabel.Font = Enum.Font.GothamBold
+                goalBarLabel.TextSize = 15
+                goalBarLabel.TextXAlignment = Enum.TextXAlignment.Left
+                goalBarLabel.Text = SETTINGS.goalBarEnabled and "Raised Goal Bar" or "Raised Goal Bar (independent)"
+                goalBarLabel.Parent = boothFrame
+
+                local goalBarTargetBox = Instance.new("TextBox")
+                goalBarTargetBox.Size = UDim2.new(0, 120, 0, 26)
+                goalBarTargetBox.Position = UDim2.new(0, 10, 0, 342)
+                goalBarTargetBox.Text = tostring(SETTINGS.goalBarTarget or 40000)
+                goalBarTargetBox.PlaceholderText = "e.g. 40000"
+                goalBarTargetBox.ClearTextOnFocus = false
+                goalBarTargetBox.Font = Enum.Font.GothamMedium
+                goalBarTargetBox.TextSize = 16
+                goalBarTargetBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                goalBarTargetBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+                goalBarTargetBox.Parent = boothFrame
+                local goalBarBoxCorner = Instance.new("UICorner")
+                goalBarBoxCorner.Parent = goalBarTargetBox
+
+                local setGoalBarButton = Instance.new("TextButton")
+                setGoalBarButton.Size = UDim2.new(0, 130, 0, 26)
+                setGoalBarButton.Position = UDim2.new(0, 140, 0, 342)
+                setGoalBarButton.Text = "Set Bar Goal"
+                setGoalBarButton.BackgroundColor3 = Color3.fromRGB(50, 95, 145)
+                setGoalBarButton.TextColor3 = Color3.new(1, 1, 1)
+                setGoalBarButton.Parent = boothFrame
+                styleButton(setGoalBarButton)
+
+                local goalBarToggle = Instance.new("TextButton")
+                goalBarToggle.Size = UDim2.new(0, 90, 0, 26)
+                goalBarToggle.Position = UDim2.new(0, 280, 0, 342)
+                goalBarToggle.Text = SETTINGS.goalBarEnabled and "ON" or "OFF"
+                goalBarToggle.BackgroundColor3 = SETTINGS.goalBarEnabled and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                goalBarToggle.TextColor3 = Color3.new(1, 1, 1)
+                goalBarToggle.Parent = boothFrame
+                styleButton(goalBarToggle)
 
                 local goalMonitorRunning = false
                 local lastGoalRaised = nil
 
-                local function publishGoalProgress(raisedValue)
-                    local target = tonumber(SETTINGS.boothGoalTarget)
-                    if not target then return false end
-                    local baseText = tostring(SETTINGS.boothText or "")
-                    local progressText = ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(target))
-                    local finalText = formatBoothGoalText(baseText, raisedValue, target)
-                    local updated = updateBoothText(finalText)
+                publishBoothProgress = function(raisedValue)
+                    local additionalTarget = tonumber(SETTINGS.boothGoalTarget)
+                    local barTarget = tonumber(SETTINGS.goalBarTarget)
+                    local finalText = formatBoothText(SETTINGS.boothText, raisedValue)
+                    local updated = updateBoothText(finalText, true)
                     if updated then
-                        goalStatus.Text = progressText
+                        if additionalTarget then
+                            goalStatus.Text = ("CURRENT GOAL: %s / %s"):format(tostring(raisedValue), tostring(additionalTarget))
+                        else
+                            goalStatus.Text = ""
+                        end
+                        if hasGoalBarTarget() and barTarget and barTarget > 0 then
+                            goalBarLabel.Text = ("Raised Goal Bar — %s / %s"):format(tostring(raisedValue), tostring(barTarget))
+                        else
+                            goalBarLabel.Text = "Raised Goal Bar (independent)"
+                        end
                         lastGoalRaised = raisedValue
                     end
                     return updated
                 end
 
                 local function startGoalMonitor()
-                    if goalMonitorRunning or not tonumber(SETTINGS.boothGoalTarget) then return end
+                    if goalMonitorRunning
+                        or not (tonumber(SETTINGS.boothGoalTarget)
+                            or hasGoalBarTarget()) then
+                        return
+                    end
                     goalMonitorRunning = true
                     task.spawn(function()
-                        while tonumber(SETTINGS.boothGoalTarget) do
+                        while tonumber(SETTINGS.boothGoalTarget)
+                            or hasGoalBarTarget() do
                             task.wait(1)
                             local raisedValue = getLocalRaisedValue()
                             if raisedValue ~= nil and raisedValue ~= lastGoalRaised then
-                                publishGoalProgress(raisedValue)
+                                publishBoothProgress(raisedValue)
                             end
                         end
                         goalMonitorRunning = false
@@ -696,19 +820,49 @@ function UI.create(dependencies)
                     lastGoalRaised = nil
                     goalBox.Text = tostring(amount)
                     pcall(SaveSettings)
-                    publishGoalProgress(raisedValue)
+                    publishBoothProgress(raisedValue)
                     startGoalMonitor()
                 end)
 
-                if tonumber(SETTINGS.boothGoalTarget) then
+                setGoalBarButton.MouseButton1Click:Connect(function()
+                    local amount = tonumber(goalBarTargetBox.Text)
+                    if not amount or amount <= 0 or amount % 1 ~= 0 then
+                        notify("Raised Goal Bar", "Enter a positive whole-number Robux goal.", 5)
+                        return
+                    end
+
+                    SETTINGS.goalBarTarget = amount
+                    goalBarTargetBox.Text = tostring(amount)
+                    lastGoalRaised = nil
+                    pcall(SaveSettings)
                     local raisedValue = getLocalRaisedValue()
                     if raisedValue ~= nil then
-                        goalStatus.Text = ("CURRENT GOAL: %s / %s"):format(
-                            tostring(raisedValue),
-                            tostring(SETTINGS.boothGoalTarget)
-                        )
+                        publishBoothProgress(raisedValue)
+                    end
+                    startGoalMonitor()
+                end)
+
+                goalBarToggle.MouseButton1Click:Connect(function()
+                    SETTINGS.goalBarEnabled = not SETTINGS.goalBarEnabled
+                    goalBarToggle.Text = SETTINGS.goalBarEnabled and "ON" or "OFF"
+                    goalBarToggle.BackgroundColor3 = SETTINGS.goalBarEnabled and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                    lastGoalRaised = nil
+                    pcall(SaveSettings)
+                    local raisedValue = getLocalRaisedValue()
+                    if raisedValue ~= nil then
+                        publishBoothProgress(raisedValue)
+                    end
+                    startGoalMonitor()
+                end)
+
+                if tonumber(SETTINGS.boothGoalTarget)
+                    or hasGoalBarTarget() then
+                    local raisedValue = getLocalRaisedValue()
+                    if raisedValue ~= nil then
+                        publishBoothProgress(raisedValue)
                     else
                         goalStatus.Text = "Waiting for your Raised value..."
+                        goalBarLabel.Text = "Raised Goal Bar — waiting for Raised value..."
                     end
                     startGoalMonitor()
                 end
@@ -736,9 +890,10 @@ function UI.create(dependencies)
                 afkLabel.TextColor3 = Color3.new(1,1,1)
                 afkLabel.BackgroundTransparency = 1
                 afkLabel.Parent = frame
+                styleFeatureLabel(afkLabel)
 
                 local afkToggle = Instance.new("TextButton")
-                afkToggle.Size = UDim2.new(0,60,0,20)
+                afkToggle.Size = UDim2.new(0,60,0,24)
                 afkToggle.Position = UDim2.new(0,140,0,10)
                 afkToggle.Text = SETTINGS.antiAfk and "ON" or "OFF"
                 afkToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
@@ -760,9 +915,10 @@ function UI.create(dependencies)
                 touchLabel.BackgroundTransparency = 1
                 touchLabel.TextColor3 = Color3.new(1,1,1)
                 touchLabel.Parent = frame
+                styleFeatureLabel(touchLabel)
 
                 local touchToggle = Instance.new("TextButton")
-                touchToggle.Size = UDim2.new(0,60,0,20)
+                touchToggle.Size = UDim2.new(0,60,0,24)
                 touchToggle.Position = UDim2.new(0,140,0,42)
                 touchToggle.Text = SETTINGS.touchPreventAFK and "ON" or "OFF"
                 touchToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
@@ -793,13 +949,14 @@ function UI.create(dependencies)
                 local helicopterLabel = Instance.new("TextLabel")
                 helicopterLabel.Size = UDim2.new(0, 120, 0, 20)
                 helicopterLabel.Position = UDim2.new(0, 10, 0, 78)
-                helicopterLabel.Text = "Helicopter On Donation"
+                helicopterLabel.Text = "Helicopter"
                 helicopterLabel.BackgroundTransparency = 1
                 helicopterLabel.TextColor3 = Color3.new(1, 1, 1)
                 helicopterLabel.Parent = frame
+                styleFeatureLabel(helicopterLabel)
 
                 local helicopterToggle = Instance.new("TextButton")
-                helicopterToggle.Size = UDim2.new(0, 60, 0, 20)
+                helicopterToggle.Size = UDim2.new(0, 60, 0, 24)
                 helicopterToggle.Position = UDim2.new(0, 140, 0, 78)
                 helicopterToggle.Text = SETTINGS.helicopterEnabled and "ON" or "OFF"
                 helicopterToggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
@@ -808,6 +965,17 @@ function UI.create(dependencies)
                 local helicopterCorner = Instance.new("UICorner")
                 helicopterCorner.Parent = helicopterToggle
                 styleButton(helicopterToggle)
+
+                local helicopterStatus = Instance.new("TextLabel")
+                helicopterStatus.Size = UDim2.new(0, 172, 0, 24)
+                helicopterStatus.Position = UDim2.new(0, 208, 0, 78)
+                helicopterStatus.Text = "DOES NOT WORK RN."
+                helicopterStatus.BackgroundTransparency = 1
+                helicopterStatus.TextColor3 = Color3.fromRGB(255, 75, 75)
+                helicopterStatus.Font = Enum.Font.GothamBold
+                helicopterStatus.TextSize = 15
+                helicopterStatus.TextXAlignment = Enum.TextXAlignment.Left
+                helicopterStatus.Parent = frame
                 helicopterToggle.MouseButton1Click:Connect(function()
                     SETTINGS.helicopterEnabled = not SETTINGS.helicopterEnabled
                     helicopterToggle.Text = SETTINGS.helicopterEnabled and "ON" or "OFF"
@@ -828,6 +996,7 @@ function UI.create(dependencies)
                 emoteLabel.TextColor3 = Color3.new(1,1,1)
                 emoteLabel.BackgroundTransparency = 1
                 emoteLabel.Parent = frame
+                styleFeatureLabel(emoteLabel)
 
                 local emoteBox = Instance.new("TextBox")
                 emoteBox.Size = UDim2.new(0,160,0,24)
@@ -836,6 +1005,8 @@ function UI.create(dependencies)
                 emoteBox.PlaceholderText = "9527883498"
                 emoteBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
                 emoteBox.TextColor3 = Color3.fromRGB(255,255,255)
+                emoteBox.Font = Enum.Font.GothamMedium
+                emoteBox.TextSize = 16
                 local ebCorner = Instance.new("UICorner") ebCorner.Parent = emoteBox
                 emoteBox.Parent = frame
                 emoteBox.FocusLost:Connect(function()
@@ -991,9 +1162,10 @@ function UI.create(dependencies)
                 autoEmoteLabel.BackgroundTransparency = 1
                 autoEmoteLabel.TextColor3 = Color3.new(1,1,1)
                 autoEmoteLabel.Parent = frame
+                styleFeatureLabel(autoEmoteLabel)
 
                 local autoEmoteToggle = Instance.new("TextButton")
-                autoEmoteToggle.Size = UDim2.new(0,60,0,20)
+                autoEmoteToggle.Size = UDim2.new(0,60,0,24)
                 autoEmoteToggle.Position = UDim2.new(0,140,0,220)
                 autoEmoteToggle.Text = SETTINGS.emotePlaying and "ON" or "OFF"
                 autoEmoteToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
@@ -1009,9 +1181,10 @@ function UI.create(dependencies)
                 spinLabel.BackgroundTransparency = 1
                 spinLabel.TextColor3 = Color3.new(1,1,1)
                 spinLabel.Parent = frame
+                styleFeatureLabel(spinLabel)
 
                 local spinToggle = Instance.new("TextButton")
-                spinToggle.Size = UDim2.new(0,60,0,20)
+                spinToggle.Size = UDim2.new(0,60,0,24)
                 spinToggle.Position = UDim2.new(0,140,0,252)
                 spinToggle.Text = SETTINGS.spinSet and "ON" or "OFF"
                 spinToggle.BackgroundColor3 = Color3.fromRGB(70,70,70)
@@ -1027,6 +1200,7 @@ function UI.create(dependencies)
                 speedLabel.BackgroundTransparency = 1
                 speedLabel.TextColor3 = Color3.new(1,1,1)
                 speedLabel.Parent = frame
+                styleFeatureLabel(speedLabel)
 
                 local speedBox = Instance.new("TextBox")
                 speedBox.Size = UDim2.new(0,80,0,20)
@@ -1035,6 +1209,8 @@ function UI.create(dependencies)
                 speedBox.ClearTextOnFocus = false
                 speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
                 speedBox.TextColor3 = Color3.fromRGB(255,255,255)
+                speedBox.Font = Enum.Font.GothamMedium
+                speedBox.TextSize = 16
                 speedBox.TextXAlignment = Enum.TextXAlignment.Left
                 speedBox.Parent = frame
 
@@ -1687,6 +1863,8 @@ function UI.create(dependencies)
                             populationThreshold = SETTINGS.populationThreshold,
                             boothGoalAmount = SETTINGS.boothGoalAmount,
                             boothGoalTarget = SETTINGS.boothGoalTarget,
+                            goalBarEnabled = SETTINGS.goalBarEnabled,
+                            goalBarTarget = SETTINGS.goalBarTarget,
                             emoteId = SETTINGS.emoteId,
                             emotePlaying = SETTINGS.emotePlaying and true or false,
                             autoServerHop = autoServerHopEnabled,
