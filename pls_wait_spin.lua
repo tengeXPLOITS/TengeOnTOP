@@ -138,12 +138,17 @@ function Spin.create(dependencies)
 
                     local character = LocalPlayer.Character
                     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
-                        announce("Enabling engines...")
-                        local emoteSent, emoteError = sendChatMessage("/e dance2")
-                        if not emoteSent then
-                            warn("[PLS WAIT] Could not start helicopter emote:", emoteError)
-                        end
+                    local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
+                    if not (humanoid and root) then
+                        warn("[PLS WAIT] Helicopter sequence could not start: character or humanoid is unavailable.")
+                        break
+                    end
+                    platform.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
+                    print("[PLS WAIT] Helicopter engine start; countdown begins after rotor spin-up.")
+                    announce("Enabling engines...")
+                    local emoteSent, emoteError = sendChatMessage("/e dance2")
+                    if not emoteSent then
+                        warn("[PLS WAIT] Could not start helicopter emote:", emoteError)
                     end
                     if not waitWhileEnabled(3, generation) then break end
 
@@ -154,6 +159,7 @@ function Spin.create(dependencies)
                     spinUp:Play()
                     if not waitWhileEnabled(4, generation) then break end
 
+                    print("[PLS WAIT] Helicopter countdown started.")
                     announce("TAKEOFF IN 3")
                     if not waitWhileEnabled(1, generation) then break end
                     announce("2")
@@ -164,6 +170,7 @@ function Spin.create(dependencies)
 
                     local baseCFrame = platform.CFrame
                     local liftHeight = raised * 5
+                    print(("[PLS WAIT] Helicopter lift started: Raised delta %.2f, height %.2f studs."):format(raised, liftHeight))
                     local rise = TweenService:Create(platform, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                         CFrame = baseCFrame + Vector3.new(0, liftHeight, 0),
                     })
