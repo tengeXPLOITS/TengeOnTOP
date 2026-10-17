@@ -893,6 +893,7 @@ function UI.create(dependencies)
                     { name = "Victory", id = "10714171628" },
                     { name = "Block Partier", id = "10713988674" },
                     { name = "Shy", id = "10714369325" },
+                    { name = "Helicopter", id = "76510079095692" },
                 }
                 presetFrame.CanvasSize = UDim2.new(0,0,0,28 * #presetEmotes)
                 local function closePreset()
@@ -1753,5 +1754,3 @@ function UI.create(dependencies)
         SpinFeature.startBoothReturnMonitor()
     end
 end
-
-return UI
