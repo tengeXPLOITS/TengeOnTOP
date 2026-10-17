@@ -99,12 +99,13 @@ function Spin.create(dependencies)
                     return settings.helicopterEnabled and helicopterGeneration == generation
                 end
 
-                local function waitWhileEnabled(duration, generation)
-                    local deadline = os.clock() + duration
-                    while isCurrent(generation) and os.clock() < deadline do
-                        task.wait(math.min(0.1, deadline - os.clock()))
+                local function waitWhileEnabled(duration, generation, phase)
+                    task.wait(duration)
+                    local current = isCurrent(generation)
+                    if not current then
+                        warn("[PLS WAIT] Helicopter sequence stopped during " .. phase .. ".")
                     end
-                    return isCurrent(generation)
+                    return current
                 end
 
                 local function announce(message)
@@ -150,23 +151,27 @@ function Spin.create(dependencies)
                     if not emoteSent then
                         warn("[PLS WAIT] Could not start helicopter emote:", emoteError)
                     end
-                    if not waitWhileEnabled(3, generation) then break end
+                    if not waitWhileEnabled(3, generation, "engine start") then break end
 
                     local spinUp = TweenService:Create(rotor, TweenInfo.new(6, Enum.EasingStyle.Linear), {
                         AngularVelocity = Vector3.new(0, 25, 0),
                     })
                     helicopterTweens = { spinUp }
                     spinUp:Play()
-                    if not waitWhileEnabled(4, generation) then break end
+                    print("[PLS WAIT] Helicopter rotor spin-up tween started.")
+                    if not waitWhileEnabled(4, generation, "rotor spin-up") then break end
 
                     print("[PLS WAIT] Helicopter countdown started.")
                     announce("TAKEOFF IN 3")
-                    if not waitWhileEnabled(1, generation) then break end
+                    if not waitWhileEnabled(1, generation, "countdown 3") then break end
                     announce("2")
-                    if not waitWhileEnabled(1, generation) then break end
+                    if not waitWhileEnabled(1, generation, "countdown 2") then break end
                     announce("1")
-                    if not waitWhileEnabled(1, generation) then break end
-                    if not (platform.Parent and rotor.Parent) then break end
+                    if not waitWhileEnabled(1, generation, "countdown 1") then break end
+                    if not (platform.Parent and rotor.Parent) then
+                        warn("[PLS WAIT] Helicopter sequence stopped before takeoff: platform or rotor was removed.")
+                        break
+                    end
 
                     local baseCFrame = platform.CFrame
                     local liftHeight = raised * 5
@@ -177,8 +182,10 @@ function Spin.create(dependencies)
                     helicopterTweens = { rise }
                     rise:Play()
                     local riseState = rise.Completed:Wait()
+                    print("[PLS WAIT] Helicopter lift tween ended:", riseState.Name)
                     if riseState ~= Enum.PlaybackState.Completed or not isCurrent(generation)
                         or not (platform.Parent and rotor.Parent) then
+                        warn("[PLS WAIT] Helicopter sequence stopped before descent.")
                         break
                     end
 
