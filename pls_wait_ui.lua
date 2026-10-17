@@ -123,6 +123,7 @@ function UI.create(dependencies)
                     if cfg.spinSet ~= nil then SETTINGS.spinSet = cfg.spinSet end
                     if cfg.spinOnDonation ~= nil then SETTINGS.spinSet = cfg.spinOnDonation end
                     if cfg.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = cfg.spinSpeedMultiplier end
+                    if cfg.helicopterEnabled ~= nil then SETTINGS.helicopterEnabled = cfg.helicopterEnabled end
                     if cfg.populationHopper ~= nil then SETTINGS.populationHopper = cfg.populationHopper end
                     if cfg.populationThreshold ~= nil then SETTINGS.populationThreshold = cfg.populationThreshold end
                     if cfg.boothGoalAmount ~= nil then SETTINGS.boothGoalAmount = tonumber(cfg.boothGoalAmount) end
@@ -789,6 +790,36 @@ function UI.create(dependencies)
                 end)
                 styleButton(touchToggle)
 
+                local helicopterLabel = Instance.new("TextLabel")
+                helicopterLabel.Size = UDim2.new(0, 120, 0, 20)
+                helicopterLabel.Position = UDim2.new(0, 10, 0, 78)
+                helicopterLabel.Text = "Helicopter On Donation"
+                helicopterLabel.BackgroundTransparency = 1
+                helicopterLabel.TextColor3 = Color3.new(1, 1, 1)
+                helicopterLabel.Parent = frame
+
+                local helicopterToggle = Instance.new("TextButton")
+                helicopterToggle.Size = UDim2.new(0, 60, 0, 20)
+                helicopterToggle.Position = UDim2.new(0, 140, 0, 78)
+                helicopterToggle.Text = SETTINGS.helicopterEnabled and "ON" or "OFF"
+                helicopterToggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+                helicopterToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                helicopterToggle.Parent = frame
+                local helicopterCorner = Instance.new("UICorner")
+                helicopterCorner.Parent = helicopterToggle
+                styleButton(helicopterToggle)
+                helicopterToggle.MouseButton1Click:Connect(function()
+                    SETTINGS.helicopterEnabled = not SETTINGS.helicopterEnabled
+                    helicopterToggle.Text = SETTINGS.helicopterEnabled and "ON" or "OFF"
+                    SpinFeature.setHelicopterEnabled(SETTINGS.helicopterEnabled)
+                    pcall(SaveSettings)
+                    if SETTINGS.helicopterEnabled then
+                        startDonationMonitor()
+                    elseif not SETTINGS.webhookToggle and not SETTINGS.spinSet then
+                        stopDonationMonitor()
+                    end
+                end)
+
                 -- Emote selector / play (Main)
                 local emoteLabel = Instance.new("TextLabel")
                 emoteLabel.Size = UDim2.new(0,120,0,20)
@@ -1023,7 +1054,7 @@ function UI.create(dependencies)
                                 end
                             end
                         end
-                        if not SETTINGS.webhookToggle then
+                        if not SETTINGS.webhookToggle and not SETTINGS.helicopterEnabled then
                             stopDonationMonitor()
                         end
                     else
@@ -1078,6 +1109,7 @@ function UI.create(dependencies)
                     end
                 end)
                 -- Spin and periodic jump features removed from Overview
+                SpinFeature.setHelicopterEnabled(SETTINGS.helicopterEnabled)
 
                 -- Auto-play emote on UI/script execution if an emote is selected
                 pcall(function()
@@ -1465,7 +1497,11 @@ function UI.create(dependencies)
                 whToggle.MouseButton1Click:Connect(function()
                     SETTINGS.webhookToggle = not SETTINGS.webhookToggle
                     whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
-                    if SETTINGS.webhookToggle then startDonationMonitor() else stopDonationMonitor() end
+                    if SETTINGS.webhookToggle then
+                        startDonationMonitor()
+                    elseif not SETTINGS.spinSet and not SETTINGS.helicopterEnabled then
+                        stopDonationMonitor()
+                    end
                     pcall(SaveSettings)
                 end)
 
@@ -1623,7 +1659,7 @@ function UI.create(dependencies)
 
             -- Fade-in removed: UI elements appear immediately (user requested no fade)
 
-            if SETTINGS.webhookToggle or SETTINGS.spinSet then
+            if SETTINGS.webhookToggle or SETTINGS.spinSet or SETTINGS.helicopterEnabled then
                 startDonationMonitor()
             end
             if SETTINGS.webhookToggle then
@@ -1645,6 +1681,7 @@ function UI.create(dependencies)
                             spinOnDonation = SETTINGS.spinSet,
                             spinSet = SETTINGS.spinSet,
                             spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                            helicopterEnabled = SETTINGS.helicopterEnabled,
                             populationHopper = SETTINGS.populationHopper,
                             populationThreshold = SETTINGS.populationThreshold,
                             boothGoalAmount = SETTINGS.boothGoalAmount,
@@ -1678,6 +1715,7 @@ function UI.create(dependencies)
                 LocalPlayer.CharacterAdded:Connect(function(character)
                     task.spawn(function()
                         pcall(function() ensureSpinPart(character) end)
+                        pcall(function() SpinFeature.ensureHelicopter() end)
                     end)
                     task.wait(1)
                     notify("Booth Claim", "Character respawned; attempting booth claim...", 3)
