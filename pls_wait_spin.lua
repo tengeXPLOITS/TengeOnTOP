@@ -87,9 +87,10 @@ function Spin.create(dependencies)
     end
 
     local function applyDonationHelicopter(delta)
-        if not settings.helicopterEnabled or type(delta) ~= "number" or delta <= 0 then return end
+        if not settings.helicopterEnabled or type(delta) ~= "number" or delta <= 0 then return false end
+        print(("[PLS WAIT] Helicopter sequence triggered by Raised increase (+%.2f)."):format(delta))
         pendingHelicopterRaise += delta
-        if helicopterAnimationRunning then return end
+        if helicopterAnimationRunning then return true end
         helicopterAnimationRunning = true
 
         task.spawn(function()
@@ -109,25 +110,40 @@ function Spin.create(dependencies)
                 local function announce(message)
                     local sent, sendError = sendChatMessage(message)
                     if not sent then
-                        notify("Helicopter", "Could not send countdown message: " .. tostring(sendError), 4)
+                        warn("[PLS WAIT] Could not send helicopter countdown message:", sendError)
                     end
                 end
 
                 while settings.helicopterEnabled and pendingHelicopterRaise > 0 do
                     local raised = pendingHelicopterRaise
                     pendingHelicopterRaise = 0
-                    if not ensureHelicopter() then break end
+                    local ready = ensureHelicopter()
+                    local readyDeadline = os.clock() + 10
+                    while not ready and settings.helicopterEnabled and os.clock() < readyDeadline do
+                        task.wait(0.1)
+                        ready = ensureHelicopter()
+                    end
+                    if not ready then
+                        warn("[PLS WAIT] Helicopter sequence could not start: character root part was unavailable.")
+                        break
+                    end
 
                     local generation = helicopterGeneration
                     local platform = helicopterPlatform
                     local rotor = helicopterRotor
-                    if not (platform and rotor) then break end
+                    if not (platform and rotor) then
+                        warn("[PLS WAIT] Helicopter sequence could not start: platform or rotor is missing.")
+                        break
+                    end
 
                     local character = LocalPlayer.Character
                     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                     if humanoid then
                         announce("Enabling engines...")
-                        sendChatMessage("/e dance2")
+                        local emoteSent, emoteError = sendChatMessage("/e dance2")
+                        if not emoteSent then
+                            warn("[PLS WAIT] Could not start helicopter emote:", emoteError)
+                        end
                     end
                     if not waitWhileEnabled(3, generation) then break end
 
@@ -175,7 +191,10 @@ function Spin.create(dependencies)
 
                     table.clear(helicopterTweens)
                     if humanoid and character == LocalPlayer.Character then
-                        sendChatMessage("/e wave")
+                        local emoteSent, emoteError = sendChatMessage("/e wave")
+                        if not emoteSent then
+                            warn("[PLS WAIT] Could not send helicopter landing emote:", emoteError)
+                        end
                     end
                 end
             end)
@@ -190,6 +209,7 @@ function Spin.create(dependencies)
                 applyDonationHelicopter(queuedRaise)
             end
         end)
+        return true
     end
 
     local function ensureSpinPart(character)
