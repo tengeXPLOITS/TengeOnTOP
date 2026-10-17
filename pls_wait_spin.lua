@@ -173,30 +173,42 @@ function Spin.create(dependencies)
                         break
                     end
 
+                    local rootBaseCFrame = root.CFrame
+                    platform.CFrame = CFrame.new(root.Position - Vector3.new(0, 3, 0))
                     local baseCFrame = platform.CFrame
                     local liftHeight = raised * 5
                     print(("[PLS WAIT] Helicopter lift started: Raised delta %.2f, height %.2f studs."):format(raised, liftHeight))
-                    local rise = TweenService:Create(platform, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    local liftInfo = TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                    local rise = TweenService:Create(platform, liftInfo, {
                         CFrame = baseCFrame + Vector3.new(0, liftHeight, 0),
                     })
-                    helicopterTweens = { rise }
+                    local liftCharacter = TweenService:Create(root, liftInfo, {
+                        CFrame = rootBaseCFrame + Vector3.new(0, liftHeight, 0),
+                    })
+                    helicopterTweens = { rise, liftCharacter }
                     rise:Play()
+                    liftCharacter:Play()
                     local riseState = rise.Completed:Wait()
                     print("[PLS WAIT] Helicopter lift tween ended:", riseState.Name)
                     if riseState ~= Enum.PlaybackState.Completed or not isCurrent(generation)
-                        or not (platform.Parent and rotor.Parent) then
+                        or not (platform.Parent and rotor.Parent and root.Parent) then
                         warn("[PLS WAIT] Helicopter sequence stopped before descent.")
                         break
                     end
 
-                    local descend = TweenService:Create(platform, TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    local descentInfo = TweenInfo.new(10, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                    local descend = TweenService:Create(platform, descentInfo, {
                         CFrame = baseCFrame,
+                    })
+                    local descendCharacter = TweenService:Create(root, descentInfo, {
+                        CFrame = rootBaseCFrame,
                     })
                     local slowDown = TweenService:Create(rotor, TweenInfo.new(6, Enum.EasingStyle.Linear), {
                         AngularVelocity = Vector3.new(0, 1, 0),
                     })
-                    helicopterTweens = { descend, slowDown }
+                    helicopterTweens = { descend, descendCharacter, slowDown }
                     descend:Play()
+                    descendCharacter:Play()
                     slowDown:Play()
                     local descendState = descend.Completed:Wait()
                     if descendState ~= Enum.PlaybackState.Completed or not isCurrent(generation) then
