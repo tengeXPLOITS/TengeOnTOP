@@ -1,6 +1,8 @@
 local Config = {}
 
 function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
+    settings.gamepassId = tostring(settings.gamepassId or "")
+    settings.claimPrice = tostring(settings.claimPrice or "50")
     settings.antiAfk = settings.antiAfk or false
     settings.serverStayTime = settings.serverStayTime or 30
     settings.persistToggles = settings.persistToggles or false
@@ -38,6 +40,8 @@ function Config.create(dependencies)
         local data = {
             webhookToggle = settings.webhookToggle,
             webhookUrl = settings.webhookUrl,
+            gamepassId = settings.gamepassId,
+            claimPrice = settings.claimPrice,
             antiAfk = settings.antiAfk,
             touchPreventAFK = settings.touchPreventAFK,
             persistToggles = settings.persistToggles,
@@ -103,6 +107,8 @@ function Config.create(dependencies)
 
         if decoded.webhookToggle ~= nil then settings.webhookToggle = decoded.webhookToggle end
         settings.webhookUrl = decoded.webhookUrl or settings.webhookUrl
+        if decoded.gamepassId ~= nil then settings.gamepassId = tostring(decoded.gamepassId) end
+        if decoded.claimPrice ~= nil then settings.claimPrice = tostring(decoded.claimPrice) end
         if decoded.antiAfk ~= nil then settings.antiAfk = decoded.antiAfk end
         if decoded.touchPreventAFK ~= nil then settings.touchPreventAFK = decoded.touchPreventAFK end
         if decoded.persistToggles ~= nil then settings.persistToggles = decoded.persistToggles end
