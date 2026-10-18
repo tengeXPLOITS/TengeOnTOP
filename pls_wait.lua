@@ -337,36 +337,45 @@ local function getLocalUnclaimedRobux()
 
     local deadline = os.clock() + 3
     local unclaimedValue
+    local unclaimedPath
     repeat
-        local numbersFolders = {}
-        local directNumbers = LocalPlayer:FindFirstChild("Numbers")
-        local stats = LocalPlayer:FindFirstChild("stats")
-        local statsNumbers = stats and stats:FindFirstChild("Numbers")
-        if directNumbers then table.insert(numbersFolders, directNumbers) end
-        if statsNumbers and statsNumbers ~= directNumbers then
-            table.insert(numbersFolders, statsNumbers)
-        end
-
-        for _, numbers in ipairs(numbersFolders) do
-            local candidate = numbers:FindFirstChild("UnclaimedRobux")
-            if candidate and (candidate:IsA("IntValue") or candidate:IsA("NumberValue")) then
+        local stats = LocalPlayer:FindFirstChild("Stats") or LocalPlayer:FindFirstChild("stats")
+        local numbers = stats and stats:FindFirstChild("Numbers")
+        local candidate = numbers and numbers:FindFirstChild("UnclaimedRobux")
+        if candidate and (candidate:IsA("IntValue") or candidate:IsA("NumberValue") or candidate:IsA("StringValue")) then
+            unclaimedValue = candidate
+            unclaimedPath = "LocalPlayer.Stats.Numbers.UnclaimedRobux"
+        else
+            local directNumbers = LocalPlayer:FindFirstChild("Numbers")
+            candidate = directNumbers and directNumbers:FindFirstChild("UnclaimedRobux")
+            if candidate and (candidate:IsA("IntValue") or candidate:IsA("NumberValue") or candidate:IsA("StringValue")) then
                 unclaimedValue = candidate
-                break
+                unclaimedPath = "LocalPlayer.Numbers.UnclaimedRobux"
             end
         end
+
         if unclaimedValue or os.clock() >= deadline then break end
         task.wait(0.1)
     until false
 
     if not unclaimedValue then
-        warn("[PLS WAIT] Could not find LocalPlayer.Numbers.UnclaimedRobux or LocalPlayer.stats.Numbers.UnclaimedRobux for the donation webhook.")
+        warn("[PLS WAIT] Could not find LocalPlayer.Stats.Numbers.UnclaimedRobux for the donation webhook.")
         return nil
     end
 
     -- Let the donation's replicated stat update land before reading its current balance.
-    task.wait(0.25)
-    if not unclaimedValue.Parent then return nil end
-    return unclaimedValue.Value
+    task.wait(0.5)
+    if not unclaimedValue:IsDescendantOf(LocalPlayer) then
+        warn("[PLS WAIT] UnclaimedRobux value was removed before webhook submission.")
+        return nil
+    end
+    local value = tonumber(unclaimedValue.Value)
+    if value == nil then
+        warn("[PLS WAIT] UnclaimedRobux exists at " .. tostring(unclaimedPath) .. " but its value is not numeric.")
+        return nil
+    end
+    print(("[PLS WAIT] Donation webhook read UnclaimedRobux=%s from %s."):format(tostring(value), tostring(unclaimedPath)))
+    return value
 end
 
 local function postWebhookEvent(kind, data)
