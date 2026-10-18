@@ -116,6 +116,8 @@ function UI.create(dependencies)
                     local cfg = _G.__PLS_WAIT_CONFIG
                     if cfg.webhookToggle ~= nil then SETTINGS.webhookToggle = cfg.webhookToggle end
                     SETTINGS.webhookUrl = cfg.webhookUrl or SETTINGS.webhookUrl
+                    if cfg.gamepassId ~= nil then SETTINGS.gamepassId = tostring(cfg.gamepassId) end
+                    if cfg.claimPrice ~= nil then SETTINGS.claimPrice = tostring(cfg.claimPrice) end
                     if cfg.antiAfk ~= nil then SETTINGS.antiAfk = cfg.antiAfk end
                     if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                     serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
@@ -1609,9 +1611,100 @@ function UI.create(dependencies)
                     pcall(SaveSettings)
                 end)
 
+                local gamepassIdBox = Instance.new("TextBox")
+                gamepassIdBox.Size = UDim2.new(0.56, -14, 0, 24)
+                gamepassIdBox.Position = UDim2.new(0, 10, 0, 108)
+                gamepassIdBox.Text = tostring(SETTINGS.gamepassId or "")
+                gamepassIdBox.PlaceholderText = "Gamepass ID"
+                gamepassIdBox.TextXAlignment = Enum.TextXAlignment.Left
+                gamepassIdBox.ClearTextOnFocus = false
+                gamepassIdBox.Parent = frame
+                gamepassIdBox.FocusLost:Connect(function()
+                    SETTINGS.gamepassId = tostring(gamepassIdBox.Text or "")
+                    pcall(SaveSettings)
+                end)
+
+                local claimPriceBox = Instance.new("TextBox")
+                claimPriceBox.Size = UDim2.new(0.44, -16, 0, 24)
+                claimPriceBox.Position = UDim2.new(0.56, 6, 0, 108)
+                claimPriceBox.Text = tostring(SETTINGS.claimPrice or "50")
+                claimPriceBox.PlaceholderText = "Price"
+                claimPriceBox.TextXAlignment = Enum.TextXAlignment.Left
+                claimPriceBox.ClearTextOnFocus = false
+                claimPriceBox.Parent = frame
+                claimPriceBox.FocusLost:Connect(function()
+                    SETTINGS.claimPrice = tostring(claimPriceBox.Text or "")
+                    pcall(SaveSettings)
+                end)
+
+                local claimPendingButton = Instance.new("TextButton")
+                claimPendingButton.Size = UDim2.new(0, 180, 0, 28)
+                claimPendingButton.Position = UDim2.new(0, 10, 0, 144)
+                claimPendingButton.Text = "Claim Pending"
+                claimPendingButton.BackgroundColor3 = Color3.fromRGB(44, 170, 88)
+                claimPendingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                claimPendingButton.Parent = frame
+                styleButton(claimPendingButton, Color3.fromRGB(78, 214, 120))
+
+                local claimPendingBusy = false
+                claimPendingButton.MouseButton1Click:Connect(function()
+                    if claimPendingBusy then return end
+                    claimPendingBusy = true
+                    claimPendingButton.Text = "Opening..."
+
+                    local function finishClaimAttempt(message)
+                        claimPendingButton.Text = "Claim Pending"
+                        claimPendingBusy = false
+                        if message then notify("Claim Pending", message, 5) end
+                    end
+
+                    task.spawn(function()
+                        local ok, err = pcall(function()
+                            local gamePlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+                            local main = gamePlayerGui and gamePlayerGui:FindFirstChild("Main")
+                            local folder = main and main:FindFirstChild("Folder")
+                            local buttons = folder and folder:FindFirstChild("Buttons")
+                            local robuxDisplay = buttons and buttons:FindFirstChild("RobuxDisplay")
+                            if not robuxDisplay or not robuxDisplay:IsA("GuiButton") then
+                                error("Could not find the game's RobuxDisplay button.")
+                            end
+
+                            -- Open the game's own claim panel through its visible UI control.
+                            robuxDisplay:Activate()
+
+                            local claimButton = nil
+                            local deadline = os.clock() + 8
+                            repeat
+                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
+                                    if descendant:IsA("TextButton") then
+                                        local buttonText = tostring(descendant.Text or "")
+                                        if buttonText:lower():gsub("%s+", " "):match("claim to account") then
+                                            claimButton = descendant
+                                            break
+                                        end
+                                    end
+                                end
+                                if claimButton then break end
+                                task.wait(0.2)
+                            until os.clock() >= deadline
+
+                            if not claimButton then
+                                error("The game's 'Claim to Account' button did not appear.")
+                            end
+                            claimButton:Activate()
+                        end)
+                        if ok then
+                            finishClaimAttempt("Pressed the game's Claim to Account button.")
+                        else
+                            warn("[PLS WAIT] Claim Pending UI action failed:", err)
+                            finishClaimAttempt(tostring(err))
+                        end
+                    end)
+                end)
+
                 local donationTestBtn = Instance.new("TextButton")
                 donationTestBtn.Size = UDim2.new(0,160,0,24)
-                donationTestBtn.Position = UDim2.new(0,10,0,108)
+                donationTestBtn.Position = UDim2.new(0,10,0,180)
                 donationTestBtn.Text = "Test Donation"
                 donationTestBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
                 donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1778,6 +1871,8 @@ function UI.create(dependencies)
                         return Http:JSONEncode({
                             webhookToggle = SETTINGS.webhookToggle,
                             webhookUrl = SETTINGS.webhookUrl,
+                            gamepassId = SETTINGS.gamepassId,
+                            claimPrice = SETTINGS.claimPrice,
                             antiAfk = SETTINGS.antiAfk,
                             friendHop = SETTINGS.friendHop,
                             serverStayTime = SETTINGS.serverStayTime,
