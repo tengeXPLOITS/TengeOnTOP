@@ -786,6 +786,9 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 return HttpService:JSONEncode({
                     webhookToggle = SETTINGS.webhookToggle,
                     webhookUrl = SETTINGS.webhookUrl,
+                    gamepassId = SETTINGS.gamepassId,
+                    claimPrice = SETTINGS.claimPrice,
+                    autoClaimPendingRobux = SETTINGS.autoClaimPendingRobux,
                     antiAfk = SETTINGS.antiAfk,
                     friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
