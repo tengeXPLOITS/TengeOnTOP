@@ -124,6 +124,14 @@ donationEnabled = donationEnabled or false
 donationTotals = donationTotals or {}
 donationStatName = donationStatName or "Raised"
 
+-- Replace any monitor left running by a previous execution of this script.
+for key, conn in pairs(donationConns) do
+    pcall(function() conn:Disconnect() end)
+    donationConns[key] = nil
+end
+donationEnabled = false
+donationTotals = {}
+
 local STAFF_ROLES = { Developer = true, Moderator = true }
 
 local function getPlayerRole(player)
@@ -611,64 +619,8 @@ local function tryHookPlayerStat(player)
     currentDonationStat = stat
     currentDonationUid = uid
     donationTotals[uid] = parseAmount(stat.Value)
-    donationConns["stat_"..uid] = stat.Changed:Connect(function()
-        local newv = parseAmount(stat.Value)
-        local prev = donationTotals[uid] or 0
-        if player == LocalPlayer and newv ~= prev then
-            pcall(function()
-                notify("Donation Debug", ("stat changed %d -> %d (delta %d)"):format(prev, newv, newv - prev), 4)
-            end)
-        end
-        if newv ~= prev then
-            local delta = newv - prev
-            donationTotals[uid] = newv
-            if delta > 0 then
-                -- Only notify when the local player (script user) receives the donation
-                if player == LocalPlayer then
-                    if applyDonationHelicopter then
-                        applyDonationHelicopter(delta)
-                    end
-                    -- find nearest other player as donor (best-effort)
-                    local function fetchNearestPlayer()
-                        local best, bestDist = nil, math.huge
-                        local ok, lchar = pcall(function() return LocalPlayer.Character end)
-                        if not ok or not lchar then return nil end
-                        local lroot = lchar:FindFirstChild("HumanoidRootPart") or lchar:FindFirstChild("Torso")
-                        if not lroot then return nil end
-                        for _, pl in ipairs(Players:GetPlayers()) do
-                            if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                                local pr = pl.Character:FindFirstChild("HumanoidRootPart")
-                                local d = (pr.Position - lroot.Position).Magnitude
-                                if d < bestDist then bestDist = d; best = pl end
-                            end
-                        end
-                        return best
-                    end
-                                    local donor, donorName, donorId = nil, nil, nil
-                                    if type(resolveDonationDonor) == "function" then
-                                        donor, donorName, donorId = resolveDonationDonor(nil, nil)
-                                    end
-                                    if not donor then
-                                        donor = LocalPlayer
-                                        donorName = (LocalPlayer and LocalPlayer.Name) or "Unknown"
-                                        donorId = (LocalPlayer and LocalPlayer.UserId) or nil
-                                    end
-                                    local pending = math.floor(delta * 0.6)
-                                    postWebhookEvent("donation", {
-                                        donorName = donorName,
-                                        from = donorName,
-                                        userId = donorId,
-                                        amount = delta,
-                                        total = newv,
-                                        pending = pending,
-                                    })
-                                    notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                                    sendThankYouMessage(delta)
-                                    applyDonationSpin(delta)
-                end
-            end
-        end
-    end)
+    -- Donation side effects are handled only by the monitor's Heartbeat poll below.
+    -- Keeping a Changed handler here as well can send duplicate webhooks/chats and spin twice.
     -- Listen for leaderstats children changes so we can re-hook if the stat object is replaced
     donationConns["ls_child_"..uid] = ls.ChildAdded:Connect(function(child)
         task.wait(0.05)
@@ -950,11 +902,9 @@ local function startDonationMonitor()
                 if applyDonationHelicopter then
                     applyDonationHelicopter(delta)
                 end
-                if LocalPlayer == LocalPlayer then
-                    pcall(function()
-                        notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
-                    end)
-                end
+                pcall(function()
+                    notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
+                end)
                 local donor, donorName, donorId = nil, nil, nil
                 if type(resolveDonationDonor) == "function" then
                     donor, donorName, donorId = resolveDonationDonor(nil, nil)
@@ -1117,7 +1067,7 @@ end
 local function tryFireClaimPrompt(stand)
     local prompt = findClaimPromptForStand(stand)
     if not prompt then return false end
-    local ok = pcall(function()
+    local ok, fired = pcall(function()
         if prompt.Enabled ~= nil then
             prompt.Enabled = true
         end
@@ -1133,7 +1083,7 @@ local function tryFireClaimPrompt(stand)
         end
         return false
     end)
-    return ok and true or false
+    return ok and fired == true
 end
 
 local function moveCharacterToPosition(pos, mode, lookDir)
@@ -1356,8 +1306,9 @@ end
 
 local claimLock = false
 local function claimEmptyStands()
-    if claimLock then return false end
+    if claimLock or SharedEnv.__PLS_WAIT_CLAIM_LOCK then return false end
     claimLock = true
+    SharedEnv.__PLS_WAIT_CLAIM_LOCK = true
     local function _run()
     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:WaitForChild("Stands", 5)
     if not standsFolder then
@@ -1436,13 +1387,18 @@ local function claimEmptyStands()
 
             -- The replicated owner can change after candidate selection or while moving.
             if isAvailable(target) then
-                local promptOk, promptError = pcall(tryFireClaimPrompt, target.stand)
-                if not promptOk then
-                    warn("[PLS WAIT] Could not trigger stand claim prompt:", promptError)
+                local promptTriggered = false
+                local promptCallOk, promptResult = pcall(tryFireClaimPrompt, target.stand)
+                if promptCallOk then
+                    promptTriggered = promptResult == true
+                else
+                    warn("[PLS WAIT] Could not trigger stand claim prompt:", promptResult)
                 end
 
                 local claimOk, claimResult = true, true
-                if not standOwnedByLocalPlayer(target.stand) and isAvailable(target) then
+                -- Use the prompt OR the remote fallback for one attempt, never both.
+                -- Prompt ownership can replicate asynchronously, so do not race it with a second claim call.
+                if not promptTriggered and not standOwnedByLocalPlayer(target.stand) and isAvailable(target) then
                     claimOk, claimResult = pcall(function()
                         return remote:InvokeServer(slot)
                     end)
@@ -1478,6 +1434,7 @@ local function claimEmptyStands()
     end
     local ok, res = pcall(_run)
     claimLock = false
+    SharedEnv.__PLS_WAIT_CLAIM_LOCK = nil
     if ok then return res end
     warn("[PLS WAIT] Booth claim flow failed:", res)
     return false
