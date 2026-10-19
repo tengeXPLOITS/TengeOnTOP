@@ -1662,6 +1662,17 @@ function UI.create(dependencies)
                     return parseAmount(value.Value)
                 end
 
+                local function clickGuiButton(button)
+                    if not button or not button:IsA("GuiButton") then
+                        error("The game's UI button is unavailable.")
+                    end
+                    if not button.Visible then error("The game's UI button is not visible.") end
+                    local clickPosition = button.AbsolutePosition + (button.AbsoluteSize / 2)
+                    local virtualUser = game:GetService("VirtualUser")
+                    virtualUser:CaptureController()
+                    virtualUser:ClickButton1(Vector2.new(clickPosition.X, clickPosition.Y))
+                end
+
                 local function startOfficialClaim(onComplete)
                     if claimPendingBusy then return false end
                     claimPendingBusy = true
@@ -1684,8 +1695,16 @@ function UI.create(dependencies)
                                         end
                                         ancestor = ancestor.Parent
                                     end
-                                    if descendant:IsA("TextButton") and visibleInTree then
-                                        local buttonText = tostring(descendant.Text or "")
+                                    if descendant:IsA("GuiButton") and visibleInTree then
+                                        local buttonText = descendant:IsA("TextButton") and tostring(descendant.Text or "") or ""
+                                        if buttonText == "" then
+                                            for _, child in ipairs(descendant:GetDescendants()) do
+                                                if child:IsA("TextLabel") then
+                                                    buttonText = tostring(child.Text or "")
+                                                    if buttonText ~= "" then break end
+                                                end
+                                            end
+                                        end
                                         if buttonText:lower():gsub("%s+", " "):match("claim to account") then
                                             return descendant
                                         end
@@ -1703,7 +1722,7 @@ function UI.create(dependencies)
                                 if not robuxDisplay or not robuxDisplay:IsA("GuiButton") then
                                     error("Could not find the game's RobuxDisplay button.")
                                 end
-                                robuxDisplay:Activate()
+                                clickGuiButton(robuxDisplay)
 
                                 local deadline = os.clock() + 8
                                 repeat
@@ -1716,7 +1735,7 @@ function UI.create(dependencies)
                             if not claimButton then
                                 error("The game's 'Claim to Account' button did not appear.")
                             end
-                            claimButton:Activate()
+                            clickGuiButton(claimButton)
                         end)
                         claimPendingBusy = false
                         if onComplete then
