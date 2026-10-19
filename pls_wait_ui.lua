@@ -118,6 +118,7 @@ function UI.create(dependencies)
                     SETTINGS.webhookUrl = cfg.webhookUrl or SETTINGS.webhookUrl
                     if cfg.gamepassId ~= nil then SETTINGS.gamepassId = tostring(cfg.gamepassId) end
                     if cfg.claimPrice ~= nil then SETTINGS.claimPrice = tostring(cfg.claimPrice) end
+                    if cfg.autoClaimPendingRobux ~= nil then SETTINGS.autoClaimPendingRobux = cfg.autoClaimPendingRobux end
                     if cfg.antiAfk ~= nil then SETTINGS.antiAfk = cfg.antiAfk end
                     if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                     serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
@@ -1647,59 +1648,154 @@ function UI.create(dependencies)
                 styleButton(claimPendingButton, Color3.fromRGB(78, 214, 120))
 
                 local claimPendingBusy = false
-                claimPendingButton.MouseButton1Click:Connect(function()
-                    if claimPendingBusy then return end
-                    claimPendingBusy = true
-                    claimPendingButton.Text = "Opening..."
-
-                    local function finishClaimAttempt(message)
-                        claimPendingButton.Text = "Claim Pending"
-                        claimPendingBusy = false
-                        if message then notify("Claim Pending", message, 5) end
+                local autoClaimThresholdLatched = false
+                local lastAutoClaimAttemptAt = 0
+                local function readUnclaimedRobux()
+                    local stats = LocalPlayer:FindFirstChild("Stats") or LocalPlayer:FindFirstChild("stats")
+                    local numbers = stats and stats:FindFirstChild("Numbers")
+                    local value = numbers and numbers:FindFirstChild("UnclaimedRobux")
+                    if not value then
+                        numbers = LocalPlayer:FindFirstChild("Numbers")
+                        value = numbers and numbers:FindFirstChild("UnclaimedRobux")
                     end
+                    if not value then return nil end
+                    return parseAmount(value.Value)
+                end
 
+                local function startOfficialClaim(onComplete)
+                    if claimPendingBusy then return false end
+                    claimPendingBusy = true
                     task.spawn(function()
                         local ok, err = pcall(function()
                             local gamePlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-                            local main = gamePlayerGui and gamePlayerGui:FindFirstChild("Main")
-                            local folder = main and main:FindFirstChild("Folder")
-                            local buttons = folder and folder:FindFirstChild("Buttons")
-                            local robuxDisplay = buttons and buttons:FindFirstChild("RobuxDisplay")
-                            if not robuxDisplay or not robuxDisplay:IsA("GuiButton") then
-                                error("Could not find the game's RobuxDisplay button.")
-                            end
+                            if not gamePlayerGui then error("PlayerGui is unavailable.") end
 
-                            -- Open the game's own claim panel through its visible UI control.
-                            robuxDisplay:Activate()
-
-                            local claimButton = nil
-                            local deadline = os.clock() + 8
-                            repeat
+                            local function findVisibleClaimButton()
                                 for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
-                                    if descendant:IsA("TextButton") then
+                                    local visibleInTree = true
+                                    local ancestor = descendant
+                                    while ancestor and ancestor ~= gamePlayerGui do
+                                        if ancestor:IsA("GuiObject") and not ancestor.Visible then
+                                            visibleInTree = false
+                                            break
+                                        elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
+                                            visibleInTree = false
+                                            break
+                                        end
+                                        ancestor = ancestor.Parent
+                                    end
+                                    if descendant:IsA("TextButton") and visibleInTree then
                                         local buttonText = tostring(descendant.Text or "")
                                         if buttonText:lower():gsub("%s+", " "):match("claim to account") then
-                                            claimButton = descendant
-                                            break
+                                            return descendant
                                         end
                                     end
                                 end
-                                if claimButton then break end
-                                task.wait(0.2)
-                            until os.clock() >= deadline
+                                return nil
+                            end
+
+                            local claimButton = findVisibleClaimButton()
+                            if not claimButton then
+                                local main = gamePlayerGui:FindFirstChild("Main")
+                                local folder = main and main:FindFirstChild("Folder")
+                                local buttons = folder and folder:FindFirstChild("Buttons")
+                                local robuxDisplay = buttons and buttons:FindFirstChild("RobuxDisplay")
+                                if not robuxDisplay or not robuxDisplay:IsA("GuiButton") then
+                                    error("Could not find the game's RobuxDisplay button.")
+                                end
+                                robuxDisplay:Activate()
+
+                                local deadline = os.clock() + 8
+                                repeat
+                                    claimButton = findVisibleClaimButton()
+                                    if claimButton then break end
+                                    task.wait(0.2)
+                                until os.clock() >= deadline
+                            end
 
                             if not claimButton then
                                 error("The game's 'Claim to Account' button did not appear.")
                             end
                             claimButton:Activate()
                         end)
-                        if ok then
-                            finishClaimAttempt("Pressed the game's Claim to Account button.")
-                        else
-                            warn("[PLS WAIT] Claim Pending UI action failed:", err)
-                            finishClaimAttempt(tostring(err))
+                        claimPendingBusy = false
+                        if onComplete then
+                            pcall(onComplete, ok, err)
                         end
                     end)
+                    return true
+                end
+
+                claimPendingButton.MouseButton1Click:Connect(function()
+                    if SETTINGS.autoClaimPendingRobux then
+                        local currentBalance = readUnclaimedRobux()
+                        if currentBalance and currentBalance > 50 then
+                            autoClaimThresholdLatched = true
+                            lastAutoClaimAttemptAt = os.clock()
+                        end
+                    end
+                    claimPendingButton.Text = "Opening..."
+                    local started = startOfficialClaim(function(ok, err)
+                        claimPendingButton.Text = "Claim Pending"
+                        if ok then
+                            notify("Claim Pending", "Pressed the game's Claim to Account button.", 5)
+                        else
+                            if SETTINGS.autoClaimPendingRobux then
+                                autoClaimThresholdLatched = false
+                            end
+                            warn("[PLS WAIT] Claim Pending UI action failed:", err)
+                            notify("Claim Pending", tostring(err), 5)
+                        end
+                    end)
+                    if not started then claimPendingButton.Text = "Claim Pending" end
+                end)
+
+                local autoClaimToggle = Instance.new("TextButton")
+                autoClaimToggle.Size = UDim2.new(0, 310, 0, 24)
+                autoClaimToggle.Position = UDim2.new(0, 10, 0, 216)
+                local function refreshAutoClaimToggle()
+                    autoClaimToggle.Text = SETTINGS.autoClaimPendingRobux and "Auto Claim Pending Robux (>50): ON" or "Auto Claim Pending Robux (>50): OFF"
+                    autoClaimToggle.BackgroundColor3 = SETTINGS.autoClaimPendingRobux and Color3.fromRGB(44, 170, 88) or Color3.fromRGB(80, 80, 80)
+                end
+                refreshAutoClaimToggle()
+                autoClaimToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                autoClaimToggle.Parent = frame
+                styleButton(autoClaimToggle)
+                autoClaimToggle.MouseEnter:Connect(refreshAutoClaimToggle)
+                autoClaimToggle.MouseLeave:Connect(refreshAutoClaimToggle)
+                autoClaimToggle.MouseButton1Click:Connect(function()
+                    SETTINGS.autoClaimPendingRobux = not SETTINGS.autoClaimPendingRobux
+                    refreshAutoClaimToggle()
+                    if not SETTINGS.autoClaimPendingRobux then
+                        autoClaimThresholdLatched = false
+                    end
+                    pcall(SaveSettings)
+                end)
+
+                task.spawn(function()
+                    while frame.Parent do
+                        if SETTINGS.autoClaimPendingRobux and not claimPendingBusy then
+                            local currentBalance = readUnclaimedRobux()
+                            if currentBalance and currentBalance <= 50 then
+                                autoClaimThresholdLatched = false
+                            elseif currentBalance and currentBalance > 50
+                                and not autoClaimThresholdLatched
+                                and os.clock() - lastAutoClaimAttemptAt >= 15 then
+                                autoClaimThresholdLatched = true
+                                lastAutoClaimAttemptAt = os.clock()
+                                local started = startOfficialClaim(function(ok, err)
+                                    if ok then
+                                        notify("Auto Claim", ("Claim requested at %d unclaimed Robux."):format(currentBalance), 5)
+                                    else
+                                        autoClaimThresholdLatched = false
+                                        warn("[PLS WAIT] Automatic claim UI action failed:", err)
+                                    end
+                                end)
+                                if not started then autoClaimThresholdLatched = false end
+                            end
+                        end
+                        task.wait(5)
+                    end
                 end)
 
                 local donationTestBtn = Instance.new("TextButton")
@@ -1873,6 +1969,7 @@ function UI.create(dependencies)
                             webhookUrl = SETTINGS.webhookUrl,
                             gamepassId = SETTINGS.gamepassId,
                             claimPrice = SETTINGS.claimPrice,
+                            autoClaimPendingRobux = SETTINGS.autoClaimPendingRobux,
                             antiAfk = SETTINGS.antiAfk,
                             friendHop = SETTINGS.friendHop,
                             serverStayTime = SETTINGS.serverStayTime,
