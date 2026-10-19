@@ -1070,14 +1070,13 @@ end
 local function tryFireClaimPrompt(stand)
     local prompt = findClaimPromptForStand(stand)
     if not prompt then return false end
-    local ok, fired = pcall(function()
+    local ok = pcall(function()
         if prompt.Enabled ~= nil then
             prompt.Enabled = true
         end
         if prompt.InputHoldBegin then
             prompt:InputHoldBegin()
-            local holdDuration = tonumber(prompt.HoldDuration) or 0
-            task.wait(math.max(0.1, holdDuration + 0.1))
+            task.wait(0.08)
             prompt:InputHoldEnd()
             return true
         end
@@ -1087,7 +1086,7 @@ local function tryFireClaimPrompt(stand)
         end
         return false
     end)
-    return ok and fired == true
+    return ok and true or false
 end
 
 local function moveCharacterToPosition(pos, mode, lookDir)
@@ -1310,9 +1309,8 @@ end
 
 local claimLock = false
 local function claimEmptyStands()
-    if claimLock or SharedEnv.__PLS_WAIT_CLAIM_LOCK then return false end
+    if claimLock then return false end
     claimLock = true
-    SharedEnv.__PLS_WAIT_CLAIM_LOCK = true
     local function _run()
     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:WaitForChild("Stands", 5)
     if not standsFolder then
@@ -1391,18 +1389,13 @@ local function claimEmptyStands()
 
             -- The replicated owner can change after candidate selection or while moving.
             if isAvailable(target) then
-                local promptTriggered = false
-                local promptCallOk, promptResult = pcall(tryFireClaimPrompt, target.stand)
-                if promptCallOk then
-                    promptTriggered = promptResult == true
-                else
-                    warn("[PLS WAIT] Could not trigger stand claim prompt:", promptResult)
+                local promptOk, promptError = pcall(tryFireClaimPrompt, target.stand)
+                if not promptOk then
+                    warn("[PLS WAIT] Could not trigger stand claim prompt:", promptError)
                 end
 
                 local claimOk, claimResult = true, true
-                -- Use the prompt OR the remote fallback for one attempt, never both.
-                -- Prompt ownership can replicate asynchronously, so do not race it with a second claim call.
-                if not promptTriggered and not standOwnedByLocalPlayer(target.stand) and isAvailable(target) then
+                if not standOwnedByLocalPlayer(target.stand) and isAvailable(target) then
                     claimOk, claimResult = pcall(function()
                         return remote:InvokeServer(slot)
                     end)
@@ -1438,7 +1431,6 @@ local function claimEmptyStands()
     end
     local ok, res = pcall(_run)
     claimLock = false
-    SharedEnv.__PLS_WAIT_CLAIM_LOCK = nil
     if ok then return res end
     warn("[PLS WAIT] Booth claim flow failed:", res)
     return false
