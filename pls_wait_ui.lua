@@ -1681,40 +1681,46 @@ function UI.create(dependencies)
                             local gamePlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
                             if not gamePlayerGui then error("PlayerGui is unavailable.") end
 
-                            local function findVisibleClaimButton()
-                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
-                                    local visibleInTree = true
-                                    local ancestor = descendant
-                                    while ancestor and ancestor ~= gamePlayerGui do
-                                        if ancestor:IsA("GuiObject") and not ancestor.Visible then
-                                            visibleInTree = false
-                                            break
-                                        elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
-                                            visibleInTree = false
-                                            break
-                                        end
-                                        ancestor = ancestor.Parent
+                            local function isVisibleInTree(object)
+                                local ancestor = object
+                                while ancestor and ancestor ~= gamePlayerGui do
+                                    if ancestor:IsA("GuiObject") and not ancestor.Visible then
+                                        return false
+                                    elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
+                                        return false
                                     end
-                                    if descendant:IsA("GuiButton") and visibleInTree then
-                                        local buttonText = descendant:IsA("TextButton") and tostring(descendant.Text or "") or ""
-                                        if buttonText == "" then
-                                            for _, child in ipairs(descendant:GetDescendants()) do
-                                                if child:IsA("TextLabel") then
-                                                    buttonText = tostring(child.Text or "")
-                                                    if buttonText ~= "" then break end
-                                                end
-                                            end
-                                        end
-                                        if buttonText:lower():gsub("%s+", " "):match("claim to account") then
-                                            return descendant
-                                        end
+                                    ancestor = ancestor.Parent
+                                end
+                                return true
+                            end
+
+                            local function getButtonText(button)
+                                if button:IsA("TextButton") and button.Text ~= "" then
+                                    return tostring(button.Text)
+                                end
+                                for _, child in ipairs(button:GetDescendants()) do
+                                    if child:IsA("TextLabel") and child.Text ~= "" then
+                                        return tostring(child.Text)
+                                    end
+                                end
+                                return ""
+                            end
+
+                            local function findVisibleAccountButton()
+                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
+                                    if descendant:IsA("TextButton")
+                                        and descendant.Name:lower() == "account"
+                                        and descendant.Parent
+                                        and descendant.Parent.Name:lower() == "actions"
+                                        and isVisibleInTree(descendant) then
+                                        return descendant
                                     end
                                 end
                                 return nil
                             end
 
-                            local claimButton = findVisibleClaimButton()
-                            if not claimButton then
+                            local accountButton = findVisibleAccountButton()
+                            if not accountButton then
                                 local main = gamePlayerGui:FindFirstChild("Main")
                                 local folder = main and main:FindFirstChild("Folder")
                                 local buttons = folder and folder:FindFirstChild("Buttons")
@@ -1726,16 +1732,54 @@ function UI.create(dependencies)
 
                                 local deadline = os.clock() + 8
                                 repeat
-                                    claimButton = findVisibleClaimButton()
-                                    if claimButton then break end
+                                    accountButton = findVisibleAccountButton()
+                                    if accountButton then break end
                                     task.wait(0.2)
                                 until os.clock() >= deadline
                             end
 
-                            if not claimButton then
-                                error("The game's 'Claim to Account' button did not appear.")
+                            if not accountButton then
+                                error("The game's Account button under Actions did not appear.")
                             end
-                            clickGuiButton(claimButton)
+                            local previousButtonTexts = {}
+                            for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
+                                if descendant:IsA("GuiButton") and isVisibleInTree(descendant) then
+                                    previousButtonTexts[descendant] = getButtonText(descendant)
+                                end
+                            end
+                            clickGuiButton(accountButton)
+
+                            local function findClaimConfirmationButton()
+                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
+                                    if descendant:IsA("GuiButton") and isVisibleInTree(descendant) then
+                                        local buttonName = descendant.Name:lower():gsub("%s+", "")
+                                        local buttonText = getButtonText(descendant):lower():gsub("%s+", " "):match("^%s*(.-)%s*$")
+                                        local isClaimAction = buttonText == "claim robux"
+                                            or buttonText == "claim"
+                                            or buttonName == "claimrobux"
+                                            or buttonName == "claimrobuxbutton"
+                                            or buttonName == "claimbutton"
+                                            or buttonName == "claim"
+                                        if isClaimAction and previousButtonTexts[descendant] ~= buttonText then
+                                            return descendant
+                                        end
+                                    end
+                                end
+                                return nil
+                            end
+
+                            local confirmationButton = nil
+                            local confirmDeadline = os.clock() + 8
+                            repeat
+                                confirmationButton = findClaimConfirmationButton()
+                                if confirmationButton then break end
+                                task.wait(0.2)
+                            until os.clock() >= confirmDeadline
+
+                            if not confirmationButton then
+                                error("The centered Claim Robux confirmation button did not appear.")
+                            end
+                            clickGuiButton(confirmationButton)
                         end)
                         claimPendingBusy = false
                         if onComplete then
