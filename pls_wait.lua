@@ -1076,7 +1076,8 @@ local function tryFireClaimPrompt(stand)
         end
         if prompt.InputHoldBegin then
             prompt:InputHoldBegin()
-            task.wait(0.08)
+            local holdDuration = tonumber(prompt.HoldDuration) or 0
+            task.wait(math.max(0.1, holdDuration + 0.1))
             prompt:InputHoldEnd()
             return true
         end
