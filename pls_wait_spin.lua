@@ -6,6 +6,7 @@ function Spin.create(dependencies)
     local Workspace = assert(dependencies.Workspace, "Workspace is required")
     local settings = assert(dependencies.settings, "settings table is required")
     local sendChatMessage = assert(dependencies.sendChatMessage, "chat sender is required")
+    local sendDonationThankYou = dependencies.sendDonationThankYou
     local isStandOwned = assert(dependencies.isStandOwned, "stand ownership helper is required")
     local getStandPosition = assert(dependencies.getStandPosition, "stand-position helper is required")
     local computeStandPlacement = assert(dependencies.computeStandPlacement, "stand-placement helper is required")
@@ -224,6 +225,7 @@ function Spin.create(dependencies)
                     local prepTargetCF = getHelicopterTargetCFrame(root)
                     local baseIdleSpeed = helicopterIdleSpinSpeed
                     local body = getHelicopterBody(root)
+                    body.AngularVelocity = Vector3.new(0, 0, 0)
                     local holdCF = root.CFrame
                     local holdStart = tick()
                     while tick() - holdStart < 0.08 and character.Parent and root.Parent and settings.helicopterEnabled do
@@ -238,7 +240,7 @@ function Spin.create(dependencies)
                         local t = math.clamp((tick() - prepStart) / 0.3, 0, 1)
                         local easedT = 1 - ((1 - t) * (1 - t))
                         root.CFrame = holdCF:Lerp(prepTargetCF, easedT)
-                        body.AngularVelocity = Vector3.new(0, baseIdleSpeed + (1.25 * easedT), 0)
+                        body.AngularVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                         task.wait()
@@ -248,26 +250,30 @@ function Spin.create(dependencies)
                     local startPos = prepTargetCF.Position
                     local yaw = 0
                     local lastFrameTick = tick()
-                    for count = 3, 1, -1 do
-                        if not settings.helicopterEnabled or not character.Parent or not root.Parent then break end
-                        local sent, sendError = sendChatMessage("TAKEOFF IN " .. count .. "...")
-                        if not sent then warn("[PLS WAIT] Could not send helicopter countdown:", sendError) end
-                        task.wait(0.55)
+                    if type(sendDonationThankYou) == "function" then
+                        sendDonationThankYou(amount)
                     end
-
-                    local spoolStart = tick()
-                    while tick() - spoolStart < 1.4 and character.Parent and root.Parent and settings.helicopterEnabled do
+                    local countdownDuration = 3
+                    local countdownStart = tick()
+                    local nextCountdownNumber = 4
+                    while tick() - countdownStart < countdownDuration and character.Parent and root.Parent and settings.helicopterEnabled do
                         local now = tick()
+                        local elapsed = now - countdownStart
                         local dt = now - lastFrameTick
                         lastFrameTick = now
-                        local t = math.clamp((now - spoolStart) / 1.4, 0, 1)
-                        local spoolFromSpeed = math.max(0.35, baseIdleSpeed * 0.7)
-                        local spinSpeed = spoolFromSpeed + ((targetSpinSpeed - spoolFromSpeed) * (t * t * t))
+                        local t = math.clamp(elapsed / countdownDuration, 0, 1)
+                        local spinSpeed = 0.45 + ((targetSpinSpeed - 0.45) * (t * t))
                         yaw += spinSpeed * dt
-                        body.AngularVelocity = Vector3.new(0, spinSpeed, 0)
+                        body.AngularVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                         applyHelicopterCFrame(root, startPos, yaw, prepTargetCF.LookVector)
+                        local countdownNumber = math.ceil(countdownDuration - elapsed)
+                        if countdownNumber < nextCountdownNumber then
+                            nextCountdownNumber = countdownNumber
+                            local sent, sendError = sendChatMessage("TAKEOFF IN " .. countdownNumber .. "...")
+                            if not sent then warn("[PLS WAIT] Could not send helicopter countdown:", sendError) end
+                        end
                         task.wait()
                     end
                     if body.Parent then body:Destroy() end
@@ -286,14 +292,18 @@ function Spin.create(dependencies)
                     local ascentStart = tick()
                     lastFrameTick = ascentStart
                     local finalTargetPos = startPos
+                    local forward = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
+                    if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
+                    local diagonalOffset = math.min(16, riseHeight * 0.28)
+                    local ascentTargetPos = startPos + (forward * diagonalOffset) + Vector3.new(0, riseHeight, 0)
                     while tick() - ascentStart < 2.1 and character.Parent and root.Parent and settings.helicopterEnabled do
                         local now = tick()
                         local dt = now - lastFrameTick
                         lastFrameTick = now
                         local p = math.clamp((now - ascentStart) / 2.1, 0, 1)
-                        local easedUp = p * p
-                        finalTargetPos = Vector3.new(startPos.X, startPos.Y + (riseHeight * easedUp), startPos.Z)
-                        local spinSpeed = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (0.25 + (easedUp * 0.75)))
+                        local easedUp = 1 - ((1 - p) * (1 - p) * (1 - p))
+                        finalTargetPos = startPos:Lerp(ascentTargetPos, easedUp)
+                        local spinSpeed = targetSpinSpeed
                         yaw += spinSpeed * dt
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
