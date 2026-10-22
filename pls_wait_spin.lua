@@ -82,7 +82,7 @@ function Spin.create(dependencies)
         if direction.Magnitude < 0.001 then
             direction = Vector3.new(0, 0, -1)
         end
-        local baseYaw = math.atan2(direction.Unit.X, direction.Unit.Z)
+        local baseYaw = math.atan2(-direction.Unit.X, -direction.Unit.Z)
         root.CFrame = CFrame.new(position) * CFrame.Angles(0, baseYaw + spinYaw, 0)
     end
 
@@ -226,28 +226,26 @@ function Spin.create(dependencies)
                     local baseIdleSpeed = helicopterIdleSpinSpeed
                     local body = getHelicopterBody(root)
                     body.AngularVelocity = Vector3.new(0, 0, 0)
-                    local holdCF = root.CFrame
-                    local holdStart = tick()
-                    while tick() - holdStart < 0.08 and character.Parent and root.Parent and settings.helicopterEnabled do
-                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                        root.CFrame = holdCF
-                        task.wait()
-                    end
-
+                    local currentCF = root.CFrame
+                    local currentPosition = currentCF.Position
+                    local awayDirection = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
+                    if awayDirection.Magnitude < 0.001 then awayDirection = Vector3.new(0, 0, -1) else awayDirection = awayDirection.Unit end
+                    local hoverPosition = currentPosition + Vector3.new(0, 1.25, 0)
+                    local facingTargetCF = CFrame.lookAt(hoverPosition, hoverPosition + awayDirection)
                     local prepStart = tick()
-                    while tick() - prepStart < 0.3 and character.Parent and root.Parent and settings.helicopterEnabled do
-                        local t = math.clamp((tick() - prepStart) / 0.3, 0, 1)
-                        local easedT = 1 - ((1 - t) * (1 - t))
-                        root.CFrame = holdCF:Lerp(prepTargetCF, easedT)
+                    local turnDuration = 0.7
+                    while tick() - prepStart < turnDuration and character.Parent and root.Parent and settings.helicopterEnabled do
+                        local t = math.clamp((tick() - prepStart) / turnDuration, 0, 1)
+                        local easedT = t * t * (3 - (2 * t))
+                        root.CFrame = currentCF:Lerp(facingTargetCF, easedT)
                         body.AngularVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                         task.wait()
                     end
-                    root.CFrame = prepTargetCF
+                    root.CFrame = facingTargetCF
 
-                    local startPos = prepTargetCF.Position
+                    local startPos = hoverPosition
                     local yaw = 0
                     local lastFrameTick = tick()
                     if type(sendDonationThankYou) == "function" then
@@ -292,10 +290,7 @@ function Spin.create(dependencies)
                     local ascentStart = tick()
                     lastFrameTick = ascentStart
                     local finalTargetPos = startPos
-                    local forward = Vector3.new(prepTargetCF.LookVector.X, 0, prepTargetCF.LookVector.Z)
-                    if forward.Magnitude < 0.001 then forward = Vector3.new(0, 0, -1) else forward = forward.Unit end
-                    local diagonalOffset = math.min(16, riseHeight * 0.28)
-                    local ascentTargetPos = startPos + (forward * diagonalOffset) + Vector3.new(0, riseHeight, 0)
+                    local ascentTargetPos = startPos + Vector3.new(0, riseHeight, 0)
                     while tick() - ascentStart < 2.1 and character.Parent and root.Parent and settings.helicopterEnabled do
                         local now = tick()
                         local dt = now - lastFrameTick
