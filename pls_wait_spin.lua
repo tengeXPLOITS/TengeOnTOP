@@ -359,20 +359,51 @@ function Spin.create(dependencies)
 
                     local landingTargetCF = getHelicopterTargetCFrame(root)
                     local landingPos = landingTargetCF.Position
-                    local landingStart = tick()
-                    local descentOrigin = finalTargetPos
-                    while tick() - landingStart < 1.1 and character.Parent and root.Parent and settings.helicopterEnabled do
+                    local returnCruisePos = Vector3.new(
+                        landingPos.X,
+                        math.max(finalTargetPos.Y, landingPos.Y + math.min(24, riseHeight * 0.55)),
+                        landingPos.Z
+                    )
+                    local returnOrigin = finalTargetPos
+                    local returnDistance = (returnCruisePos - returnOrigin).Magnitude
+                    local returnDuration = math.clamp(returnDistance / 30, 1.1, 4.2)
+                    local returnStart = tick()
+                    while tick() - returnStart < returnDuration and character.Parent and root.Parent and settings.helicopterEnabled do
                         local now = tick()
                         local dt = now - lastFrameTick
                         lastFrameTick = now
-                        local p = math.clamp((now - landingStart) / 1.1, 0, 1)
+                        local p = math.clamp((now - returnStart) / returnDuration, 0, 1)
                         local smoothP = p * p * (3 - (2 * p))
-                        finalTargetPos = Vector3.new(landingPos.X, descentOrigin.Y + ((landingPos.Y - descentOrigin.Y) * smoothP), landingPos.Z)
-                        local spinSpeed = baseIdleSpeed + ((targetSpinSpeed - baseIdleSpeed) * (1 - smoothP))
+                        finalTargetPos = returnOrigin:Lerp(returnCruisePos, smoothP)
+                        local travelDir = Vector3.new(returnCruisePos.X - returnOrigin.X, 0, returnCruisePos.Z - returnOrigin.Z)
+                        if travelDir.Magnitude < 0.001 then
+                            travelDir = landingTargetCF.LookVector
+                        else
+                            travelDir = travelDir.Unit
+                        end
+                        yaw += targetSpinSpeed * dt
+                        root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                        applyHelicopterCFrame(root, finalTargetPos, yaw, travelDir)
+                        task.wait()
+                    end
+                    finalTargetPos = returnCruisePos
+
+                    local landingStart = tick()
+                    local descentOrigin = finalTargetPos
+                    local landingDuration = 1.8
+                    while tick() - landingStart < landingDuration and character.Parent and root.Parent and settings.helicopterEnabled do
+                        local now = tick()
+                        local dt = now - lastFrameTick
+                        lastFrameTick = now
+                        local p = math.clamp((now - landingStart) / landingDuration, 0, 1)
+                        local smoothP = p * p * (3 - (2 * p))
+                        finalTargetPos = descentOrigin:Lerp(landingPos, smoothP)
+                        local spinSpeed = targetSpinSpeed + ((baseIdleSpeed - targetSpinSpeed) * smoothP)
                         yaw += spinSpeed * dt
                         root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                         root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                        applyHelicopterCFrame(root, finalTargetPos, yaw, Vector3.new(0, -1, 0))
+                        applyHelicopterCFrame(root, finalTargetPos, yaw, landingTargetCF.LookVector)
                         task.wait()
                     end
                     if settings.helicopterEnabled and root.Parent then
