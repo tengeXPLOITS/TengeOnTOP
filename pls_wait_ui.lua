@@ -879,16 +879,6 @@ function UI.create(dependencies)
                 helicopterCorner.Parent = helicopterToggle
                 styleButton(helicopterToggle)
 
-                local helicopterStatus = Instance.new("TextLabel")
-                helicopterStatus.Size = UDim2.new(0, 172, 0, 24)
-                helicopterStatus.Position = UDim2.new(0, 208, 0, 78)
-                helicopterStatus.Text = "DOES NOT WORK RN."
-                helicopterStatus.BackgroundTransparency = 1
-                helicopterStatus.TextColor3 = Color3.fromRGB(255, 75, 75)
-                helicopterStatus.Font = Enum.Font.GothamBold
-                helicopterStatus.TextSize = 15
-                helicopterStatus.TextXAlignment = Enum.TextXAlignment.Left
-                helicopterStatus.Parent = frame
                 helicopterToggle.MouseButton1Click:Connect(function()
                     SETTINGS.helicopterEnabled = not SETTINGS.helicopterEnabled
                     helicopterToggle.Text = SETTINGS.helicopterEnabled and "ON" or "OFF"
