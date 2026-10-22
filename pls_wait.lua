@@ -531,7 +531,7 @@ local function sendChatMessage(msg)
     return false, "The local player is unavailable."
 end
 
-local function sendThankYouMessage(delta)
+local function sendThankYouMessage(delta, immediate)
     if not SETTINGS.chatAutoThankYou then return end
     if type(delta) ~= "number" then delta = 0 end
     if delta <= 0 then return end
@@ -545,12 +545,17 @@ local function sendThankYouMessage(delta)
         msg = getRandomThankYouMessage()
     end
     if msg == "" then return end
-    task.delay(0.8, function()
+    local function send()
         local sent, err = sendChatMessage(msg)
         if not sent then
             notify("Auto Thank You", "Could not send chat message: " .. tostring(err), 5)
         end
-    end)
+    end
+    if immediate then
+        send()
+    else
+        task.delay(0.8, send)
+    end
 end
 
 local function sendPlainWebhook(msg)
@@ -901,8 +906,9 @@ local function startDonationMonitor()
             local delta = newv - prev
             donationTotals[uid] = newv
             if delta > 0 then
+                local helicopterSequenceStarted = false
                 if applyDonationHelicopter then
-                    applyDonationHelicopter(delta)
+                    helicopterSequenceStarted = applyDonationHelicopter(delta) == true
                 end
                 pcall(function()
                     notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
@@ -926,8 +932,10 @@ local function startDonationMonitor()
                     pending = pending,
                 })
                 notify("Donation", ("%d received from %s. Pending: %d"):format(delta, donorName, pending), 5)
-                sendThankYouMessage(delta)
-                applyDonationSpin(delta)
+                if not helicopterSequenceStarted then
+                    sendThankYouMessage(delta)
+                    applyDonationSpin(delta)
+                end
             end
         end
     end)
@@ -1446,6 +1454,9 @@ local spinFeatureOk, spinFeatureOrError = pcall(function()
         Workspace = Workspace,
         settings = SETTINGS,
         sendChatMessage = sendChatMessage,
+        sendDonationThankYou = function(amount)
+            sendThankYouMessage(amount, true)
+        end,
         isStandOwned = standOwnedByLocalPlayer,
         getStandPosition = tryGetPivotPosition,
         computeStandPlacement = computeStandPlacement,
