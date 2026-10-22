@@ -10,7 +10,6 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local GroupService = game:GetService("GroupService")
@@ -1445,7 +1444,6 @@ local spinFeatureOk, spinFeatureOrError = pcall(function()
     return SpinModule.create({
         LocalPlayer = LocalPlayer,
         Workspace = Workspace,
-        TweenService = TweenService,
         settings = SETTINGS,
         sendChatMessage = sendChatMessage,
         isStandOwned = standOwnedByLocalPlayer,
