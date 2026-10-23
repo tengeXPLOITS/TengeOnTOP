@@ -55,6 +55,12 @@ local function loadRemoteModule(fileName)
     local source = game:HttpGet(moduleUrl)
     assert(type(source) == "string" and source ~= "", "module source was empty")
     local chunk, compileError = loadstring(source)
+    if not chunk then
+        local retryUrl = moduleUrl .. "?cache=" .. tostring(os.time())
+        source = game:HttpGet(retryUrl)
+        assert(type(source) == "string" and source ~= "", "module source was empty on retry")
+        chunk, compileError = loadstring(source)
+    end
     assert(chunk, compileError)
     local module = chunk()
     assert(type(module) == "table", "module must return a table")
