@@ -1682,17 +1682,20 @@ function UI.create(dependencies)
                     return parseAmount(value.Value)
                 end
 
-                local function startClaimRequest(onComplete)
+                local function startClaimRequest(source, onComplete)
                     if claimPendingBusy then return false end
                     claimPendingBusy = true
                     task.spawn(function()
+                        local remoteWasInvoked = false
+                        local requestGamepassId
+                        local requestClaimPrice
                         local ok, result = pcall(function()
-                            local gamepassId = tonumber(SETTINGS.gamepassId)
-                            local claimPrice = tonumber(SETTINGS.claimPrice)
-                            if not gamepassId or gamepassId <= 0 or gamepassId % 1 ~= 0 then
+                            requestGamepassId = tonumber(SETTINGS.gamepassId)
+                            requestClaimPrice = tonumber(SETTINGS.claimPrice)
+                            if not requestGamepassId or requestGamepassId <= 0 or requestGamepassId % 1 ~= 0 then
                                 error("Enter a valid numeric Gamepass ID first.")
                             end
-                            if not claimPrice or claimPrice <= 0 or claimPrice % 1 ~= 0 then
+                            if not requestClaimPrice or requestClaimPrice <= 0 or requestClaimPrice % 1 ~= 0 then
                                 error("Enter a valid positive whole-number claim price.")
                             end
 
@@ -1704,7 +1707,8 @@ function UI.create(dependencies)
                             end
 
                             -- API arguments are supplied in the requested order: gamepass ID, then claim price.
-                            local returned = table.pack(claimRemote:InvokeServer(gamepassId, claimPrice))
+                            remoteWasInvoked = true
+                            local returned = table.pack(claimRemote:InvokeServer(requestGamepassId, requestClaimPrice))
                             if returned[1] == false then
                                 error(tostring(returned[2] or "The server rejected the claim request."))
                             end
@@ -1719,6 +1723,19 @@ function UI.create(dependencies)
                             end
                             return #resultParts > 0 and table.concat(resultParts, " | ") or "Claim request completed."
                         end)
+                        if remoteWasInvoked then
+                            pcall(function()
+                                postWebhookEvent("claim", {
+                                    action = "ClaimRobux request",
+                                    source = source or "unknown",
+                                    success = ok,
+                                    gamepassId = requestGamepassId,
+                                    claimPrice = requestClaimPrice,
+                                    unclaimedRobux = readUnclaimedRobux(),
+                                    result = tostring(result),
+                                })
+                            end)
+                        end
                         claimPendingBusy = false
                         if onComplete then
                             pcall(onComplete, ok, result)
@@ -1730,13 +1747,13 @@ function UI.create(dependencies)
                 claimPendingButton.MouseButton1Click:Connect(function()
                     if SETTINGS.autoClaimPendingRobux then
                         local currentBalance = readUnclaimedRobux()
-                        if currentBalance and currentBalance > 50 then
+                        if currentBalance and currentBalance > 0 and currentBalance < 50 then
                             autoClaimThresholdLatched = true
                             lastAutoClaimAttemptAt = os.clock()
                         end
                     end
                     claimPendingButton.Text = "Claiming..."
-                    local started = startClaimRequest(function(ok, err)
+                    local started = startClaimRequest("manual", function(ok, err)
                         claimPendingButton.Text = "Claim Pending"
                         if ok then
                             notify("Claim Pending", tostring(err), 5)
@@ -1755,7 +1772,7 @@ function UI.create(dependencies)
                 autoClaimToggle.Size = UDim2.new(0, 310, 0, 24)
                 autoClaimToggle.Position = UDim2.new(0, 10, 0, 216)
                 local function refreshAutoClaimToggle()
-                    autoClaimToggle.Text = SETTINGS.autoClaimPendingRobux and "Auto Claim Pending Robux (>50): ON" or "Auto Claim Pending Robux (>50): OFF"
+                    autoClaimToggle.Text = SETTINGS.autoClaimPendingRobux and "Auto Claim Pending Robux (<50): ON" or "Auto Claim Pending Robux (<50): OFF"
                     autoClaimToggle.BackgroundColor3 = SETTINGS.autoClaimPendingRobux and Color3.fromRGB(44, 170, 88) or Color3.fromRGB(80, 80, 80)
                 end
                 refreshAutoClaimToggle()
@@ -1777,14 +1794,14 @@ function UI.create(dependencies)
                     while frame.Parent do
                         if SETTINGS.autoClaimPendingRobux and not claimPendingBusy then
                             local currentBalance = readUnclaimedRobux()
-                            if currentBalance and currentBalance <= 50 then
+                            if currentBalance and (currentBalance <= 0 or currentBalance >= 50) then
                                 autoClaimThresholdLatched = false
-                            elseif currentBalance and currentBalance > 50
+                            elseif currentBalance and currentBalance > 0 and currentBalance < 50
                                 and not autoClaimThresholdLatched
                                 and os.clock() - lastAutoClaimAttemptAt >= 15 then
                                 autoClaimThresholdLatched = true
                                 lastAutoClaimAttemptAt = os.clock()
-                                local started = startClaimRequest(function(ok, err)
+                                local started = startClaimRequest("automatic", function(ok, err)
                                     if ok then
                                         notify("Auto Claim", tostring(err), 5)
                                     else
