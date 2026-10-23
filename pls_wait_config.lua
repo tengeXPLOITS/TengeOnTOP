@@ -144,3 +144,6 @@ function Config.create(dependencies)
         save = save,
         load = load,
     }
+end
+
+return Config
