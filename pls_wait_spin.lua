@@ -26,8 +26,10 @@ function Spin.create(dependencies)
     }
     local currentHelicopterSpinTask
     local currentHelicopterIdleTask
+    local currentLapTask
     local currentAstronautIdleTrack
     local pendingHelicopterRaisedAmount = 0
+    local pendingLapCount = 0
     local animateScriptToRestore
     local animateScriptWasEnabled
 
@@ -174,6 +176,118 @@ function Spin.create(dependencies)
         return true
     end
 
+    local function waitForHumanoidMove(humanoid, position, timeout, shouldContinue)
+        local finished = false
+        local reached = false
+        local connection
+        connection = humanoid.MoveToFinished:Connect(function(didReach)
+            finished = true
+            reached = didReach
+        end)
+        local ok = pcall(function() humanoid:MoveTo(position) end)
+        if not ok then
+            connection:Disconnect()
+            return false
+        end
+        local start = tick()
+        while not finished and tick() - start < timeout and (not shouldContinue or shouldContinue()) do
+            task.wait()
+        end
+        connection:Disconnect()
+        return finished and reached
+    end
+
+    local function startRobuxLapTask()
+        if currentLapTask or currentHelicopterSpinTask or not settings.robuxLap or pendingLapCount <= 0 then
+            return false
+        end
+
+        stopHelicopterIdleTask()
+        stopAstronautIdle()
+        local _, _, idleRoot = getCharacterHumanoidRoot()
+        local idleBody = idleRoot and idleRoot:FindFirstChild("HL1__HELI")
+        if idleBody and idleBody:IsA("BodyAngularVelocity") then
+            idleBody.AngularVelocity = Vector3.new(0, 0, 0)
+        end
+
+        currentLapTask = task.defer(function()
+            local activeHumanoid
+            local originalWalkSpeed
+            local interrupted = false
+
+            while pendingLapCount > 0 and settings.robuxLap and not currentHelicopterSpinTask do
+                pendingLapCount -= 1
+                local character, humanoid, root = getCharacterHumanoidRoot()
+                if not (character and humanoid and root) then
+                    interrupted = true
+                    pendingLapCount = 0
+                    break
+                end
+                activeHumanoid = humanoid
+                if not originalWalkSpeed then originalWalkSpeed = humanoid.WalkSpeed end
+                humanoid.WalkSpeed = 50
+
+                local routeY = root.Position.Y
+                for waypointIndex = 1, #helicopterFlightRoute + 1 do
+                    if not settings.robuxLap or character ~= LocalPlayer.Character or not root.Parent then
+                        interrupted = true
+                        break
+                    end
+                    local routeIndex = ((waypointIndex - 1) % #helicopterFlightRoute) + 1
+                    local routePosition = helicopterFlightRoute[routeIndex].Position
+                    local waypoint = Vector3.new(routePosition.X, routeY, routePosition.Z)
+                    local distance = (root.Position - waypoint).Magnitude
+                    local timeout = math.clamp((distance / math.max(1, humanoid.WalkSpeed)) + 6, 8, 24)
+                    if not waitForHumanoidMove(humanoid, waypoint, timeout, function()
+                        return settings.robuxLap and character == LocalPlayer.Character and root.Parent ~= nil
+                    end) then
+                        interrupted = true
+                        break
+                    end
+                end
+                if interrupted then
+                    pendingLapCount = 0
+                    break
+                end
+            end
+
+            if not settings.robuxLap then
+                pendingLapCount = 0
+            end
+
+            local character, humanoid, root = getCharacterHumanoidRoot()
+            if character and humanoid and root then
+                local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:FindFirstChild("stands")
+                if standsFolder then
+                    for _, stand in ipairs(standsFolder:GetChildren()) do
+                        if isStandOwned(stand) then
+                            local returnPosition = computeStandPlacement(stand, root.Position, 4.5)
+                            if returnPosition then
+                                local distance = (root.Position - returnPosition).Magnitude
+                                local timeout = math.clamp((distance / math.max(1, humanoid.WalkSpeed)) + 8, 10, 30)
+                                waitForHumanoidMove(humanoid, returnPosition, timeout, function()
+                                    return character == LocalPlayer.Character and root.Parent ~= nil
+                                end)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+
+            if activeHumanoid and activeHumanoid.Parent and originalWalkSpeed then
+                activeHumanoid.WalkSpeed = originalWalkSpeed
+            end
+            currentLapTask = nil
+            if pendingLapCount > 0 and settings.robuxLap and not currentHelicopterSpinTask then
+                task.defer(startRobuxLapTask)
+            elseif settings.helicopterEnabled and not currentHelicopterSpinTask then
+                task.delay(0.08, startHelicopterIdleMode)
+            end
+        end)
+        return true
+    end
+
     local function restoreAnimateScript()
         if animateScriptToRestore and animateScriptToRestore.Parent and animateScriptWasEnabled ~= nil then
             animateScriptToRestore.Enabled = animateScriptWasEnabled
@@ -196,6 +310,9 @@ function Spin.create(dependencies)
         if body then
             body:Destroy()
         end
+        if pendingLapCount > 0 and settings.robuxLap then
+            task.defer(startRobuxLapTask)
+        end
     end
 
     local function performHelicopterDonationSequence(raisedAmount)
@@ -203,6 +320,9 @@ function Spin.create(dependencies)
         if currentHelicopterSpinTask then return true end
 
         currentHelicopterSpinTask = task.spawn(function()
+            while currentLapTask and settings.helicopterEnabled do
+                task.wait()
+            end
             while pendingHelicopterRaisedAmount > 0 and settings.helicopterEnabled do
                 local amount = math.max(1, tonumber(pendingHelicopterRaisedAmount) or 1)
                 pendingHelicopterRaisedAmount = 0
@@ -420,7 +540,9 @@ function Spin.create(dependencies)
             end
 
             currentHelicopterSpinTask = nil
-            if settings.helicopterEnabled then
+            if pendingLapCount > 0 and settings.robuxLap then
+                startRobuxLapTask()
+            elseif settings.helicopterEnabled then
                 task.delay(0.08, startHelicopterIdleMode)
             end
         end)
@@ -444,6 +566,13 @@ function Spin.create(dependencies)
     local function applyDonationHelicopter(delta)
         if not settings.helicopterEnabled or type(delta) ~= "number" or delta <= 0 then return false end
         return performHelicopterDonationSequence(delta)
+    end
+
+    local function applyDonationLap(delta)
+        if not settings.robuxLap or type(delta) ~= "number" or delta <= 0 then return false end
+        pendingLapCount += math.max(1, math.floor(delta))
+        if currentHelicopterSpinTask or currentLapTask then return true end
+        return startRobuxLapTask()
     end
 
     local function ensureSpinPart(character)
@@ -530,6 +659,7 @@ function Spin.create(dependencies)
         applyDonationSpin = applyDonationSpin,
         startBoothReturnMonitor = startBoothReturnMonitor,
         applyDonationHelicopter = applyDonationHelicopter,
+        applyDonationLap = applyDonationLap,
         setHelicopterEnabled = setHelicopterEnabled,
         ensureHelicopter = ensureHelicopter,
     }
