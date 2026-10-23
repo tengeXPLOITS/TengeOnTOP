@@ -127,6 +127,7 @@ function UI.create(dependencies)
                     if cfg.spinOnDonation ~= nil then SETTINGS.spinSet = cfg.spinOnDonation end
                     if cfg.spinSpeedMultiplier ~= nil then SETTINGS.spinSpeedMultiplier = cfg.spinSpeedMultiplier end
                     if cfg.helicopterEnabled ~= nil then SETTINGS.helicopterEnabled = cfg.helicopterEnabled end
+                    if cfg.robuxLap ~= nil then SETTINGS.robuxLap = cfg.robuxLap end
                     if cfg.populationHopper ~= nil then SETTINGS.populationHopper = cfg.populationHopper end
                     if cfg.populationThreshold ~= nil then SETTINGS.populationThreshold = cfg.populationThreshold end
                     if cfg.goalBarEnabled ~= nil then SETTINGS.goalBarEnabled = cfg.goalBarEnabled end
@@ -886,10 +887,39 @@ function UI.create(dependencies)
                     pcall(SaveSettings)
                     if SETTINGS.helicopterEnabled then
                         startDonationMonitor()
-                    elseif not SETTINGS.webhookToggle and not SETTINGS.spinSet then
+                    elseif not SETTINGS.webhookToggle and not SETTINGS.spinSet and not SETTINGS.robuxLap then
                         stopDonationMonitor()
                     end
                 end)
+
+                local lapLabel = Instance.new("TextLabel")
+                lapLabel.Size = UDim2.new(0, 110, 0, 20)
+                lapLabel.Position = UDim2.new(0, 205, 0, 78)
+                lapLabel.Text = "1R$ = +1 lap"
+                lapLabel.BackgroundTransparency = 1
+                lapLabel.TextColor3 = Color3.new(1, 1, 1)
+                lapLabel.Parent = frame
+                styleFeatureLabel(lapLabel)
+
+                local lapToggle = Instance.new("TextButton")
+                lapToggle.Size = UDim2.new(0, 60, 0, 24)
+                lapToggle.Position = UDim2.new(0, 315, 0, 78)
+                lapToggle.Text = SETTINGS.robuxLap and "ON" or "OFF"
+                lapToggle.BackgroundColor3 = SETTINGS.robuxLap and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                lapToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+                lapToggle.Parent = frame
+                lapToggle.MouseButton1Click:Connect(function()
+                    SETTINGS.robuxLap = not SETTINGS.robuxLap
+                    lapToggle.Text = SETTINGS.robuxLap and "ON" or "OFF"
+                    lapToggle.BackgroundColor3 = SETTINGS.robuxLap and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                    if SETTINGS.robuxLap or SETTINGS.webhookToggle or SETTINGS.spinSet or SETTINGS.helicopterEnabled then
+                        startDonationMonitor()
+                    else
+                        stopDonationMonitor()
+                    end
+                    pcall(SaveSettings)
+                end)
+                styleButton(lapToggle)
 
                 -- Emote selector / play (Main)
                 local emoteLabel = Instance.new("TextLabel")
@@ -1134,7 +1164,7 @@ function UI.create(dependencies)
                                 end
                             end
                         end
-                        if not SETTINGS.webhookToggle and not SETTINGS.helicopterEnabled then
+                        if not SETTINGS.webhookToggle and not SETTINGS.helicopterEnabled and not SETTINGS.robuxLap then
                             stopDonationMonitor()
                         end
                     else
@@ -1580,7 +1610,7 @@ function UI.create(dependencies)
                     whToggle.Text = SETTINGS.webhookToggle and "ON" or "OFF"
                     if SETTINGS.webhookToggle then
                         startDonationMonitor()
-                    elseif not SETTINGS.spinSet and not SETTINGS.helicopterEnabled then
+                    elseif not SETTINGS.spinSet and not SETTINGS.helicopterEnabled and not SETTINGS.robuxLap then
                         stopDonationMonitor()
                     end
                     pcall(SaveSettings)
@@ -2005,7 +2035,7 @@ function UI.create(dependencies)
 
             -- Fade-in removed: UI elements appear immediately (user requested no fade)
 
-            if SETTINGS.webhookToggle or SETTINGS.spinSet or SETTINGS.helicopterEnabled then
+            if SETTINGS.webhookToggle or SETTINGS.spinSet or SETTINGS.helicopterEnabled or SETTINGS.robuxLap then
                 startDonationMonitor()
             end
             if SETTINGS.webhookToggle then
@@ -2031,6 +2061,7 @@ function UI.create(dependencies)
                             spinSet = SETTINGS.spinSet,
                             spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                             helicopterEnabled = SETTINGS.helicopterEnabled,
+                            robuxLap = SETTINGS.robuxLap,
                             populationHopper = SETTINGS.populationHopper,
                             populationThreshold = SETTINGS.populationThreshold,
                             goalBarEnabled = SETTINGS.goalBarEnabled,
