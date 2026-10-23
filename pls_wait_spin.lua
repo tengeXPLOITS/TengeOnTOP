@@ -4,6 +4,7 @@ function Spin.create(dependencies)
     assert(type(dependencies) == "table", "spin dependencies are required")
     local LocalPlayer = assert(dependencies.LocalPlayer, "LocalPlayer is required")
     local Workspace = assert(dependencies.Workspace, "Workspace is required")
+    local TweenService = game:GetService("TweenService")
     local settings = assert(dependencies.settings, "settings table is required")
     local sendChatMessage = assert(dependencies.sendChatMessage, "chat sender is required")
     local sendDonationThankYou = dependencies.sendDonationThankYou
@@ -197,6 +198,38 @@ function Spin.create(dependencies)
         return finished and reached
     end
 
+    local function preventSitting(humanoid)
+        if not humanoid or not humanoid.Parent then return end
+        pcall(function() humanoid.Sit = false end)
+        pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+    end
+
+    local function tweenRootToFirstRoutePoint(root, routeY, shouldContinue)
+        local firstPoint = helicopterFlightRoute[1]
+        if not (root and root.Parent and firstPoint) then return false end
+        local targetPosition = Vector3.new(firstPoint.Position.X, routeY, firstPoint.Position.Z)
+        local targetCFrame = CFrame.new(targetPosition) * (root.CFrame - root.Position)
+        local tween = TweenService:Create(
+            root,
+            TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+            { CFrame = targetCFrame }
+        )
+        local completed = false
+        local connection = tween.Completed:Connect(function(playbackState)
+            completed = playbackState == Enum.PlaybackState.Completed
+        end)
+        tween:Play()
+        local start = tick()
+        while not completed and tick() - start < 2.5 and (not shouldContinue or shouldContinue()) do
+            task.wait()
+        end
+        connection:Disconnect()
+        if not completed then
+            pcall(function() tween:Cancel() end)
+        end
+        return completed
+    end
+
     local function startRobuxLapTask()
         if currentLapTask or currentHelicopterSpinTask or not settings.robuxLap or pendingLapCount <= 0 then
             return false
@@ -213,6 +246,8 @@ function Spin.create(dependencies)
         currentLapTask = task.defer(function()
             local activeHumanoid
             local originalWalkSpeed
+            local originalSeatedStateEnabled
+            local antiSitConnection
             local interrupted = false
 
             while pendingLapCount > 0 and settings.robuxLap and not currentHelicopterSpinTask do
@@ -225,10 +260,30 @@ function Spin.create(dependencies)
                 end
                 activeHumanoid = humanoid
                 if not originalWalkSpeed then originalWalkSpeed = humanoid.WalkSpeed end
+                if originalSeatedStateEnabled == nil then
+                    local ok, enabled = pcall(function()
+                        return humanoid:GetStateEnabled(Enum.HumanoidStateType.Seated)
+                    end)
+                    originalSeatedStateEnabled = ok and enabled or false
+                    pcall(function()
+                        humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+                    end)
+                end
                 humanoid.WalkSpeed = 50
+                preventSitting(humanoid)
+                if antiSitConnection then antiSitConnection:Disconnect() end
+                antiSitConnection = humanoid.Seated:Connect(function(isSeated)
+                    if isSeated then preventSitting(humanoid) end
+                end)
 
                 local routeY = root.Position.Y
-                for waypointIndex = 1, #helicopterFlightRoute + 1 do
+                if not tweenRootToFirstRoutePoint(root, routeY, function()
+                    return settings.robuxLap and character == LocalPlayer.Character and root.Parent ~= nil
+                end) then
+                    interrupted = true
+                end
+                for waypointIndex = 2, #helicopterFlightRoute + 1 do
+                    if interrupted then break end
                     if not settings.robuxLap or character ~= LocalPlayer.Character or not root.Parent then
                         interrupted = true
                         break
@@ -278,6 +333,12 @@ function Spin.create(dependencies)
             if activeHumanoid and activeHumanoid.Parent and originalWalkSpeed then
                 activeHumanoid.WalkSpeed = originalWalkSpeed
             end
+            if activeHumanoid and activeHumanoid.Parent and originalSeatedStateEnabled ~= nil then
+                pcall(function()
+                    activeHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, originalSeatedStateEnabled)
+                end)
+            end
+            if antiSitConnection then antiSitConnection:Disconnect() end
             currentLapTask = nil
             if pendingLapCount > 0 and settings.robuxLap and not currentHelicopterSpinTask then
                 task.defer(startRobuxLapTask)
