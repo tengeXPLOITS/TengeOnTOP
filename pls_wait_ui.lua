@@ -1682,128 +1682,46 @@ function UI.create(dependencies)
                     return parseAmount(value.Value)
                 end
 
-                local function clickGuiButton(button)
-                    if not button or not button:IsA("GuiButton") then
-                        error("The game's UI button is unavailable.")
-                    end
-                    if not button.Visible then error("The game's UI button is not visible.") end
-                    local clickPosition = button.AbsolutePosition + (button.AbsoluteSize / 2)
-                    local virtualUser = game:GetService("VirtualUser")
-                    virtualUser:CaptureController()
-                    virtualUser:ClickButton1(Vector2.new(clickPosition.X, clickPosition.Y))
-                end
-
-                local function startOfficialClaim(onComplete)
+                local function startClaimRequest(onComplete)
                     if claimPendingBusy then return false end
                     claimPendingBusy = true
                     task.spawn(function()
-                        local ok, err = pcall(function()
-                            local gamePlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-                            if not gamePlayerGui then error("PlayerGui is unavailable.") end
-
-                            local function isVisibleInTree(object)
-                                local ancestor = object
-                                while ancestor and ancestor ~= gamePlayerGui do
-                                    if ancestor:IsA("GuiObject") and not ancestor.Visible then
-                                        return false
-                                    elseif ancestor:IsA("ScreenGui") and not ancestor.Enabled then
-                                        return false
-                                    end
-                                    ancestor = ancestor.Parent
-                                end
-                                return true
+                        local ok, result = pcall(function()
+                            local gamepassId = tonumber(SETTINGS.gamepassId)
+                            local claimPrice = tonumber(SETTINGS.claimPrice)
+                            if not gamepassId or gamepassId <= 0 or gamepassId % 1 ~= 0 then
+                                error("Enter a valid numeric Gamepass ID first.")
+                            end
+                            if not claimPrice or claimPrice <= 0 or claimPrice % 1 ~= 0 then
+                                error("Enter a valid positive whole-number claim price.")
                             end
 
-                            local function getButtonText(button)
-                                if button:IsA("TextButton") and button.Text ~= "" then
-                                    return tostring(button.Text)
-                                end
-                                for _, child in ipairs(button:GetDescendants()) do
-                                    if child:IsA("TextLabel") and child.Text ~= "" then
-                                        return tostring(child.Text)
-                                    end
-                                end
-                                return ""
+                            local claimRemote = ReplicatedStorage:FindFirstChild("ClaimRobux")
+                                or ReplicatedStorage:WaitForChild("ClaimRobux", 5)
+                            if not claimRemote then error("ReplicatedStorage.ClaimRobux was not found.") end
+                            if not claimRemote:IsA("RemoteFunction") then
+                                error("ReplicatedStorage.ClaimRobux is not a RemoteFunction.")
                             end
 
-                            local function findVisibleAccountButton()
-                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
-                                    if descendant:IsA("TextButton")
-                                        and descendant.Name:lower() == "account"
-                                        and descendant.Parent
-                                        and descendant.Parent.Name:lower() == "actions"
-                                        and isVisibleInTree(descendant) then
-                                        return descendant
-                                    end
-                                end
-                                return nil
+                            -- API arguments are supplied in the requested order: gamepass ID, then claim price.
+                            local returned = table.pack(claimRemote:InvokeServer(gamepassId, claimPrice))
+                            if returned[1] == false then
+                                error(tostring(returned[2] or "The server rejected the claim request."))
                             end
-
-                            local accountButton = findVisibleAccountButton()
-                            if not accountButton then
-                                local main = gamePlayerGui:FindFirstChild("Main")
-                                local folder = main and main:FindFirstChild("Folder")
-                                local buttons = folder and folder:FindFirstChild("Buttons")
-                                local robuxDisplay = buttons and buttons:FindFirstChild("RobuxDisplay")
-                                if not robuxDisplay or not robuxDisplay:IsA("GuiButton") then
-                                    error("Could not find the game's RobuxDisplay button.")
-                                end
-                                clickGuiButton(robuxDisplay)
-
-                                local deadline = os.clock() + 8
-                                repeat
-                                    accountButton = findVisibleAccountButton()
-                                    if accountButton then break end
-                                    task.wait(0.2)
-                                until os.clock() >= deadline
+                            if returned.n == 0 then
+                                return "Claim request completed."
                             end
-
-                            if not accountButton then
-                                error("The game's Account button under Actions did not appear.")
-                            end
-                            local previousButtonTexts = {}
-                            for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
-                                if descendant:IsA("GuiButton") and isVisibleInTree(descendant) then
-                                    previousButtonTexts[descendant] = getButtonText(descendant)
+                            local resultParts = {}
+                            for index = 1, returned.n do
+                                if returned[index] ~= nil then
+                                    resultParts[#resultParts + 1] = tostring(returned[index])
                                 end
                             end
-                            clickGuiButton(accountButton)
-
-                            local function findClaimConfirmationButton()
-                                for _, descendant in ipairs(gamePlayerGui:GetDescendants()) do
-                                    if descendant:IsA("GuiButton") and isVisibleInTree(descendant) then
-                                        local buttonName = descendant.Name:lower():gsub("%s+", "")
-                                        local buttonText = getButtonText(descendant):lower():gsub("%s+", " "):match("^%s*(.-)%s*$")
-                                        local isClaimAction = buttonText == "claim robux"
-                                            or buttonText == "claim"
-                                            or buttonName == "claimrobux"
-                                            or buttonName == "claimrobuxbutton"
-                                            or buttonName == "claimbutton"
-                                            or buttonName == "claim"
-                                        if isClaimAction and previousButtonTexts[descendant] ~= buttonText then
-                                            return descendant
-                                        end
-                                    end
-                                end
-                                return nil
-                            end
-
-                            local confirmationButton = nil
-                            local confirmDeadline = os.clock() + 8
-                            repeat
-                                confirmationButton = findClaimConfirmationButton()
-                                if confirmationButton then break end
-                                task.wait(0.2)
-                            until os.clock() >= confirmDeadline
-
-                            if not confirmationButton then
-                                error("The centered Claim Robux confirmation button did not appear.")
-                            end
-                            clickGuiButton(confirmationButton)
+                            return #resultParts > 0 and table.concat(resultParts, " | ") or "Claim request completed."
                         end)
                         claimPendingBusy = false
                         if onComplete then
-                            pcall(onComplete, ok, err)
+                            pcall(onComplete, ok, result)
                         end
                     end)
                     return true
@@ -1817,11 +1735,11 @@ function UI.create(dependencies)
                             lastAutoClaimAttemptAt = os.clock()
                         end
                     end
-                    claimPendingButton.Text = "Opening..."
-                    local started = startOfficialClaim(function(ok, err)
+                    claimPendingButton.Text = "Claiming..."
+                    local started = startClaimRequest(function(ok, err)
                         claimPendingButton.Text = "Claim Pending"
                         if ok then
-                            notify("Claim Pending", "Pressed the game's Claim to Account button.", 5)
+                            notify("Claim Pending", tostring(err), 5)
                         else
                             if SETTINGS.autoClaimPendingRobux then
                                 autoClaimThresholdLatched = false
@@ -1866,12 +1784,12 @@ function UI.create(dependencies)
                                 and os.clock() - lastAutoClaimAttemptAt >= 15 then
                                 autoClaimThresholdLatched = true
                                 lastAutoClaimAttemptAt = os.clock()
-                                local started = startOfficialClaim(function(ok, err)
+                                local started = startClaimRequest(function(ok, err)
                                     if ok then
-                                        notify("Auto Claim", ("Claim requested at %d unclaimed Robux."):format(currentBalance), 5)
+                                        notify("Auto Claim", tostring(err), 5)
                                     else
                                         autoClaimThresholdLatched = false
-                                        warn("[PLS WAIT] Automatic claim UI action failed:", err)
+                                        warn("[PLS WAIT] Automatic ClaimRobux request failed:", err)
                                     end
                                 end)
                                 if not started then autoClaimThresholdLatched = false end
