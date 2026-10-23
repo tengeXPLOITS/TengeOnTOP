@@ -103,6 +103,7 @@ local currentDonationStat = nil
 local currentDonationUid = nil
 local applyDonationSpin
 local applyDonationHelicopter
+local applyDonationLap
 local SpinFeature
 local function parseAmount(v)
     if type(v) == "number" then return math.floor(v) end
@@ -797,6 +798,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
+                    robuxLap = SETTINGS.robuxLap,
                         populationHopper = SETTINGS.populationHopper,
                         populationThreshold = SETTINGS.populationThreshold,
                         goalBarEnabled = SETTINGS.goalBarEnabled,
@@ -909,6 +911,9 @@ local function startDonationMonitor()
                 local helicopterSequenceStarted = false
                 if applyDonationHelicopter then
                     helicopterSequenceStarted = applyDonationHelicopter(delta) == true
+                end
+                if applyDonationLap then
+                    applyDonationLap(delta)
                 end
                 pcall(function()
                     notify("Donation Debug", ("poll detected stat changed %d -> %d (delta %d)"):format(prev, newv, delta), 4)
@@ -1473,12 +1478,14 @@ applyDonationSpin = SpinFeature.applyDonationSpin
 if type(applyDonationSpin) ~= "function" or type(SpinFeature.ensureSpinPart) ~= "function"
     or type(SpinFeature.startBoothReturnMonitor) ~= "function"
     or type(SpinFeature.applyDonationHelicopter) ~= "function"
+    or type(SpinFeature.applyDonationLap) ~= "function"
     or type(SpinFeature.setHelicopterEnabled) ~= "function"
     or type(SpinFeature.ensureHelicopter) ~= "function" then
     warn("[PLS WAIT] Spin module is missing required feature methods.")
     return
 end
 applyDonationHelicopter = SpinFeature.applyDonationHelicopter
+applyDonationLap = SpinFeature.applyDonationLap
 
 local uiInitialized, uiError = pcall(function()
     UIModule.create({
