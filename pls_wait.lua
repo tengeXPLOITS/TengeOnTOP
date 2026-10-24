@@ -3,6 +3,17 @@
 
 repeat task.wait() until game:IsLoaded()
 
+local RuntimeEnv = (type(getgenv) == "function" and getgenv()) or _G
+local runtimeServerKey = tostring(game.PlaceId) .. ":" .. tostring(game.JobId)
+local bootLock = RuntimeEnv.PLS_WAIT_BOOT_LOCK
+do
+    if bootLock and bootLock.serverKey == runtimeServerKey and os.clock() - (bootLock.startedAt or 0) < 15 then
+        warn("[PLS WAIT] Duplicate script start ignored for this server.")
+        return
+    end
+    RuntimeEnv.PLS_WAIT_BOOT_LOCK = { serverKey = runtimeServerKey, startedAt = os.clock() }
+end
+
 -- Core services (ensure HttpService and httprequest available for community checks)
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -345,6 +356,21 @@ end
 
 -- Webhook / donation helpers
 local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
+SharedEnv.PLS_WAIT_WEBHOOK_DEDUPE = SharedEnv.PLS_WAIT_WEBHOOK_DEDUPE or {}
+
+local function webhookDuplicate(key, windowSeconds)
+    local now = os.clock()
+    local cache = SharedEnv.PLS_WAIT_WEBHOOK_DEDUPE
+    for cachedKey, timestamp in pairs(cache) do
+        if now - timestamp > 30 then cache[cachedKey] = nil end
+    end
+    local previous = cache[key]
+    if previous and now - previous < (windowSeconds or 8) then
+        return true
+    end
+    cache[key] = now
+    return false
+end
 
 local function getLocalUnclaimedRobux()
     if not LocalPlayer then return nil end
@@ -394,6 +420,12 @@ end
 
 local function postWebhookEvent(kind, data)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    if kind == "claim" or kind == "serverhop" then
+        local signatureOk, signature = pcall(function()
+            return tostring(kind) .. ":" .. HttpService:JSONEncode(data or {})
+        end)
+        if signatureOk and webhookDuplicate(signature, 10) then return end
+    end
     local url = tostring(SETTINGS.webhookUrl or "")
     local embeds = {}
     if kind == "donation" then
@@ -442,7 +474,26 @@ local function postWebhookEvent(kind, data)
             fields = fields,
         })
     else
-        if kind == "serverhop" then
+        if kind == "claim" and data and data.action == "ClaimRobux request" then
+            local userId = tonumber(data.userId) or (LocalPlayer and LocalPlayer.UserId)
+            local requester = tostring(data.userName or (LocalPlayer and LocalPlayer.Name) or "Unknown")
+            local thumbnailUrl = userId and ("https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=150&height=150&format=png"):format(userId) or nil
+            local claimFields = {
+                { name = "Claimed Robux", value = tostring(data.claimedAmount or data.unclaimedBefore or "Unavailable"), inline = true },
+                { name = "Gamepass Used", value = tostring(data.gamepassId or "Unavailable"), inline = true },
+                { name = "Gamepass Price", value = tostring(data.claimPrice or "Unavailable"), inline = true },
+                { name = "Requested By", value = requester, inline = true },
+                { name = "Source", value = tostring(data.source or "unknown"), inline = true },
+                { name = "Result", value = tostring(data.result or "Unavailable"), inline = false },
+            }
+            local claimEmbed = {
+                title = data.success and "PENDING ROBUX CLAIMED" or "PENDING ROBUX CLAIM FAILED",
+                color = data.success and 0x00FF00 or 0xE74C3C,
+                fields = claimFields,
+            }
+            if thumbnailUrl then claimEmbed.thumbnail = { url = thumbnailUrl } end
+            table.insert(embeds, claimEmbed)
+        elseif kind == "serverhop" then
             local initiator = tostring(data and data.user or "Unknown")
             local players = tostring(data and data.players or "")
             local range = tostring(data and data.range or "any")
@@ -567,8 +618,13 @@ end
 
 local function sendPlainWebhook(msg)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
+    local message = tostring(msg or "")
+    if message:find("serverhopped", 1, true)
+        and webhookDuplicate("plain-serverhop:" .. tostring(game.PlaceId) .. ":" .. tostring(game.JobId) .. ":" .. message, 20) then
+        return
+    end
     local url = tostring(SETTINGS.webhookUrl or "")
-    local payload = HttpService:JSONEncode({ content = tostring(msg or "") })
+    local payload = HttpService:JSONEncode({ content = message })
     pcall(function()
         if performHttpRequest then
             performHttpRequest({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = payload })
@@ -800,6 +856,9 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     gamepassId = SETTINGS.gamepassId,
                     claimPrice = SETTINGS.claimPrice,
                     autoClaimPendingRobux = SETTINGS.autoClaimPendingRobux,
+                    autoClaimThreshold = SETTINGS.autoClaimThreshold,
+                    autoUpdateBoothText = SETTINGS.autoUpdateBoothText,
+                    boothText = SETTINGS.boothText,
                     antiAfk = SETTINGS.antiAfk,
                     friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
