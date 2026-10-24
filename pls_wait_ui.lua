@@ -40,6 +40,7 @@ function UI.create(dependencies)
 
             local serverStayTime = SETTINGS.serverStayTime or 30
             local hopRangeText = SETTINGS.hopRange or "19-22"
+            local autoUpdateBoothText = SETTINGS.autoUpdateBoothText == true
             local function parseRange(str)
                 if not str or type(str) ~= "string" then return nil end
                 -- support formats: "MIN-MAX" or a single number meaning 1-MAX
@@ -76,6 +77,7 @@ function UI.create(dependencies)
                     return {
                         hopRange = hopRangeText,
                         serverStayTime = serverStayTime,
+                        autoUpdateBoothText = autoUpdateBoothText,
                         autoServerHop = autoServerHopEnabled,
                         goalBarEnabled = SETTINGS.goalBarEnabled,
                         goalBarTarget = SETTINGS.goalBarTarget,
@@ -84,6 +86,10 @@ function UI.create(dependencies)
                 applyRuntimeState = function(decoded)
                     hopRangeText = decoded.hopRange or hopRangeText
                     serverStayTime = tonumber(decoded.serverStayTime) or serverStayTime
+                    if decoded.autoUpdateBoothText ~= nil then
+                        autoUpdateBoothText = decoded.autoUpdateBoothText == true
+                        SETTINGS.autoUpdateBoothText = autoUpdateBoothText
+                    end
                     if decoded.autoServerHop ~= nil then
                         autoServerHopEnabled = decoded.autoServerHop
                     end
@@ -119,6 +125,11 @@ function UI.create(dependencies)
                     if cfg.gamepassId ~= nil then SETTINGS.gamepassId = tostring(cfg.gamepassId) end
                     if cfg.claimPrice ~= nil then SETTINGS.claimPrice = tostring(cfg.claimPrice) end
                     if cfg.autoClaimPendingRobux ~= nil then SETTINGS.autoClaimPendingRobux = cfg.autoClaimPendingRobux end
+                    SETTINGS.autoClaimThreshold = tonumber(cfg.autoClaimThreshold) or SETTINGS.autoClaimThreshold
+                    if cfg.autoUpdateBoothText ~= nil then
+                        autoUpdateBoothText = cfg.autoUpdateBoothText == true
+                        SETTINGS.autoUpdateBoothText = autoUpdateBoothText
+                    end
                     if cfg.antiAfk ~= nil then SETTINGS.antiAfk = cfg.antiAfk end
                     if cfg.touchPreventAFK ~= nil then SETTINGS.touchPreventAFK = cfg.touchPreventAFK end
                     serverStayTime = tonumber(cfg.serverStayTime) or serverStayTime
@@ -191,14 +202,15 @@ function UI.create(dependencies)
 
             local ensureSpinPart = SpinFeature.ensureSpinPart
 
-            -- Prevent duplicate UIs across teleports / multiple runs: use a shared env flag
+            -- Keep one UI/controller per server so reruns cannot stack event handlers.
             local SharedEnv = (type(getgenv) == "function" and getgenv()) or _G
-            -- If the script was already initialized elsewhere, allow re-init (some executors persist getgenv across teleports)
-            if SharedEnv.PLS_WAIT_SCRIPT_LOADED then
-                -- clear previous marker and allow re-initialization so UI reliably appears after queue_on_teleport
-                pcall(function() SharedEnv.PLS_WAIT_SCRIPT_LOADED = nil end)
+            local currentServerKey = tostring(game.PlaceId) .. ":" .. tostring(game.JobId)
+            if SharedEnv.PLS_WAIT_SCRIPT_LOADED and SharedEnv.PLS_WAIT_SCRIPT_SERVER_KEY == currentServerKey then
+                notify("PLS WAIT", "Already running in this server; duplicate start ignored.", 4)
+                return
             end
             SharedEnv.PLS_WAIT_SCRIPT_LOADED = true
+            SharedEnv.PLS_WAIT_SCRIPT_SERVER_KEY = currentServerKey
             pcall(function()
                 local existing = playerGui:FindFirstChild("PlsWaitUI")
                 if existing then pcall(function() existing:Destroy() end) end
@@ -638,6 +650,22 @@ function UI.create(dependencies)
                 end)
                 boothTextBox.FocusLost:Connect(function()
                     boothTextBox.TextSize = 18
+                end)
+
+                local textUpdateButton = Instance.new("TextButton")
+                textUpdateButton.Size = UDim2.new(0, 140, 0, 28)
+                textUpdateButton.Position = UDim2.new(0, 140, 0, 176)
+                textUpdateButton.Text = autoUpdateBoothText and "Text Update: ON" or "Text Update: OFF"
+                textUpdateButton.BackgroundColor3 = autoUpdateBoothText and Color3.fromRGB(44, 170, 88) or Color3.fromRGB(80, 80, 80)
+                textUpdateButton.TextColor3 = Color3.new(1, 1, 1)
+                textUpdateButton.Parent = boothFrame
+                styleButton(textUpdateButton)
+                textUpdateButton.MouseButton1Click:Connect(function()
+                    autoUpdateBoothText = not autoUpdateBoothText
+                    SETTINGS.autoUpdateBoothText = autoUpdateBoothText
+                    textUpdateButton.Text = autoUpdateBoothText and "Text Update: ON" or "Text Update: OFF"
+                    textUpdateButton.BackgroundColor3 = autoUpdateBoothText and Color3.fromRGB(44, 170, 88) or Color3.fromRGB(80, 80, 80)
+                    pcall(SaveSettings)
                 end)
 
                 local saveBtn = Instance.new("TextButton")
@@ -1670,6 +1698,7 @@ function UI.create(dependencies)
                 local claimPendingBusy = false
                 local autoClaimThresholdLatched = false
                 local lastAutoClaimAttemptAt = 0
+                local autoClaimThreshold = math.max(1, math.floor(tonumber(SETTINGS.autoClaimThreshold) or 50))
                 local function readUnclaimedRobux()
                     local stats = LocalPlayer:FindFirstChild("Stats") or LocalPlayer:FindFirstChild("stats")
                     local numbers = stats and stats:FindFirstChild("Numbers")
@@ -1689,6 +1718,7 @@ function UI.create(dependencies)
                         local remoteWasInvoked = false
                         local requestGamepassId
                         local requestClaimPrice
+                        local unclaimedBefore = readUnclaimedRobux()
                         local ok, result = pcall(function()
                             requestGamepassId = tonumber(SETTINGS.gamepassId)
                             requestClaimPrice = tonumber(SETTINGS.claimPrice)
@@ -1724,6 +1754,21 @@ function UI.create(dependencies)
                             return #resultParts > 0 and table.concat(resultParts, " | ") or "Claim request completed."
                         end)
                         if remoteWasInvoked then
+                            local unclaimedAfter = readUnclaimedRobux()
+                            if ok and unclaimedBefore and unclaimedAfter and unclaimedAfter >= unclaimedBefore then
+                                local deadline = os.clock() + 2
+                                repeat
+                                    task.wait(0.1)
+                                    unclaimedAfter = readUnclaimedRobux()
+                                    if unclaimedAfter and unclaimedAfter < unclaimedBefore then break end
+                                until os.clock() >= deadline
+                            end
+                            local claimedAmount = nil
+                            if unclaimedBefore and unclaimedAfter and unclaimedAfter < unclaimedBefore then
+                                claimedAmount = unclaimedBefore - unclaimedAfter
+                            elseif ok then
+                                claimedAmount = unclaimedBefore
+                            end
                             pcall(function()
                                 postWebhookEvent("claim", {
                                     action = "ClaimRobux request",
@@ -1731,7 +1776,11 @@ function UI.create(dependencies)
                                     success = ok,
                                     gamepassId = requestGamepassId,
                                     claimPrice = requestClaimPrice,
-                                    unclaimedRobux = readUnclaimedRobux(),
+                                    userId = LocalPlayer.UserId,
+                                    userName = LocalPlayer.Name,
+                                    unclaimedBefore = unclaimedBefore,
+                                    unclaimedAfter = unclaimedAfter,
+                                    claimedAmount = claimedAmount,
                                     result = tostring(result),
                                 })
                             end)
@@ -1747,7 +1796,7 @@ function UI.create(dependencies)
                 claimPendingButton.MouseButton1Click:Connect(function()
                     if SETTINGS.autoClaimPendingRobux then
                         local currentBalance = readUnclaimedRobux()
-                        if currentBalance and currentBalance > 0 and currentBalance < 50 then
+                        if currentBalance and currentBalance >= autoClaimThreshold then
                             autoClaimThresholdLatched = true
                             lastAutoClaimAttemptAt = os.clock()
                         end
@@ -1772,7 +1821,9 @@ function UI.create(dependencies)
                 autoClaimToggle.Size = UDim2.new(0, 310, 0, 24)
                 autoClaimToggle.Position = UDim2.new(0, 10, 0, 216)
                 local function refreshAutoClaimToggle()
-                    autoClaimToggle.Text = SETTINGS.autoClaimPendingRobux and "Auto Claim Pending Robux (<50): ON" or "Auto Claim Pending Robux (<50): OFF"
+                    autoClaimToggle.Text = SETTINGS.autoClaimPendingRobux
+                        and ("Auto Claim Pending (≥%d): ON"):format(autoClaimThreshold)
+                        or ("Auto Claim Pending (≥%d): OFF"):format(autoClaimThreshold)
                     autoClaimToggle.BackgroundColor3 = SETTINGS.autoClaimPendingRobux and Color3.fromRGB(44, 170, 88) or Color3.fromRGB(80, 80, 80)
                 end
                 refreshAutoClaimToggle()
@@ -1790,13 +1841,43 @@ function UI.create(dependencies)
                     pcall(SaveSettings)
                 end)
 
+                local thresholdLabel = Instance.new("TextLabel")
+                thresholdLabel.Size = UDim2.new(0, 200, 0, 24)
+                thresholdLabel.Position = UDim2.new(0, 10, 0, 184)
+                thresholdLabel.Text = "Auto Claim At Or Above"
+                thresholdLabel.BackgroundTransparency = 1
+                thresholdLabel.TextColor3 = Color3.new(1, 1, 1)
+                thresholdLabel.TextXAlignment = Enum.TextXAlignment.Left
+                thresholdLabel.Parent = frame
+
+                local thresholdBox = Instance.new("TextBox")
+                thresholdBox.Size = UDim2.new(0, 70, 0, 24)
+                thresholdBox.Position = UDim2.new(0, 220, 0, 184)
+                thresholdBox.Text = tostring(autoClaimThreshold)
+                thresholdBox.PlaceholderText = "50"
+                thresholdBox.ClearTextOnFocus = false
+                thresholdBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                thresholdBox.TextColor3 = Color3.new(1, 1, 1)
+                thresholdBox.Parent = frame
+                styleButton(thresholdBox)
+                thresholdBox.FocusLost:Connect(function()
+                    local value = tonumber(thresholdBox.Text)
+                    if value and value >= 1 then
+                        autoClaimThreshold = math.floor(value)
+                        SETTINGS.autoClaimThreshold = autoClaimThreshold
+                    end
+                    thresholdBox.Text = tostring(autoClaimThreshold)
+                    refreshAutoClaimToggle()
+                    pcall(SaveSettings)
+                end)
+
                 task.spawn(function()
                     while frame.Parent do
                         if SETTINGS.autoClaimPendingRobux and not claimPendingBusy then
                             local currentBalance = readUnclaimedRobux()
-                            if currentBalance and (currentBalance <= 0 or currentBalance >= 50) then
+                            if currentBalance and currentBalance < autoClaimThreshold then
                                 autoClaimThresholdLatched = false
-                            elseif currentBalance and currentBalance > 0 and currentBalance < 50
+                            elseif currentBalance and currentBalance >= autoClaimThreshold
                                 and not autoClaimThresholdLatched
                                 and os.clock() - lastAutoClaimAttemptAt >= 15 then
                                 autoClaimThresholdLatched = true
@@ -1818,7 +1899,7 @@ function UI.create(dependencies)
 
                 local donationTestBtn = Instance.new("TextButton")
                 donationTestBtn.Size = UDim2.new(0,160,0,24)
-                donationTestBtn.Position = UDim2.new(0,10,0,180)
+                donationTestBtn.Position = UDim2.new(0,10,0,252)
                 donationTestBtn.Text = "Test Donation"
                 donationTestBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
                 donationTestBtn.TextColor3 = Color3.fromRGB(255,255,255)
@@ -1988,6 +2069,9 @@ function UI.create(dependencies)
                             gamepassId = SETTINGS.gamepassId,
                             claimPrice = SETTINGS.claimPrice,
                             autoClaimPendingRobux = SETTINGS.autoClaimPendingRobux,
+                            autoClaimThreshold = SETTINGS.autoClaimThreshold,
+                            autoUpdateBoothText = autoUpdateBoothText,
+                            boothText = SETTINGS.boothText,
                             antiAfk = SETTINGS.antiAfk,
                             friendHop = SETTINGS.friendHop,
                             serverStayTime = SETTINGS.serverStayTime,
@@ -2014,13 +2098,28 @@ function UI.create(dependencies)
                     pcall(function() ensureQueuedScript(qcode) end)
                 end
             end)
-            -- Ensure claim runs immediately on UI/script execution and again after respawn
+            local function claimBoothAndRefreshText()
+                pcall(function() claimBooth() end)
+                if autoUpdateBoothText then
+                    task.delay(1.5, function()
+                        if not autoUpdateBoothText or not SETTINGS.boothText then return end
+                        local raisedValue = getLocalRaisedValue()
+                        if raisedValue ~= nil and publishBoothProgress then
+                            pcall(publishBoothProgress, raisedValue)
+                        else
+                            pcall(updateBoothText, SETTINGS.boothText, true)
+                        end
+                    end)
+                end
+            end
+
+            -- Claim on startup and refresh saved booth text after each hop/respawn when enabled.
             pcall(function()
                 task.spawn(function()
                     for attempt = 1, 15 do
                         if LocalPlayer and LocalPlayer.Character then
                             notify("Booth Claim", "Preparing to claim the next available booth...", 3)
-                            pcall(function() claimBooth() end)
+                            claimBoothAndRefreshText()
                             break
                         end
                         task.wait(0.5)
@@ -2034,7 +2133,7 @@ function UI.create(dependencies)
                     end)
                     task.wait(1)
                     notify("Booth Claim", "Character respawned; attempting booth claim...", 3)
-                    pcall(function() claimBooth() end)
+                    claimBoothAndRefreshText()
                 end)
             end)
             if SETTINGS.spinSet then pcall(ensureSpinPart) end
