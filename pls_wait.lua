@@ -418,6 +418,35 @@ local function getLocalUnclaimedRobux()
     return value
 end
 
+local function getRobloxAvatarImageUrl(userId)
+    userId = tonumber(userId)
+    if not userId or userId <= 0 then return nil end
+
+    local endpoint = ("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=%d&size=420x420&format=Png&isCircular=false"):format(userId)
+    local ok, response = pcall(function()
+        if syn and syn.request then
+            return syn.request({ Url = endpoint, Method = "GET" })
+        elseif request then
+            return request({ Url = endpoint, Method = "GET" })
+        elseif http_request then
+            return http_request({ Url = endpoint, Method = "GET" })
+        elseif http and http.request then
+            return http.request({ Url = endpoint, Method = "GET" })
+        end
+        return HttpService:GetAsync(endpoint)
+    end)
+    if ok then
+        local body = type(response) == "table" and (response.Body or response.body or response.responseBody) or response
+        if type(body) == "string" then
+            local decodeOk, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+            local imageUrl = decodeOk and decoded and decoded.data and decoded.data[1] and decoded.data[1].imageUrl
+            if type(imageUrl) == "string" and imageUrl ~= "" then return imageUrl end
+        end
+    end
+
+    return ("https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png"):format(userId)
+end
+
 local function postWebhookEvent(kind, data)
     if not SETTINGS.webhookToggle or not SETTINGS.webhookUrl or SETTINGS.webhookUrl == "" then return end
     if kind == "claim" or kind == "serverhop" then
@@ -475,9 +504,11 @@ local function postWebhookEvent(kind, data)
         })
     else
         if kind == "claim" and data and data.action == "ClaimRobux request" then
-            local avatarUserId = 1457406330
+            local recipientUserId = tonumber(data.userId) or (LocalPlayer and LocalPlayer.UserId)
+            local profileUserId = 1457406330
             local requester = tostring(data.userName or (LocalPlayer and LocalPlayer.Name) or "Unknown")
-            local avatarUrl = ("https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png"):format(avatarUserId)
+            local recipientAvatarUrl = getRobloxAvatarImageUrl(recipientUserId)
+            local profileAvatarUrl = getRobloxAvatarImageUrl(profileUserId)
             local resultText = data.success
                 and "robux claimed successfully and has been purchased by roman (@bvetterdays)"
                 or "you probably don't have sufficient unclaimed R$ or you're on a cooldown."
@@ -485,16 +516,18 @@ local function postWebhookEvent(kind, data)
                 { name = "Claimed Robux", value = tostring(data.claimedAmount or data.unclaimedBefore or "Unavailable"), inline = true },
                 { name = "Gamepass Used", value = tostring(data.gamepassId or "Unavailable"), inline = true },
                 { name = "Gamepass Price", value = tostring(data.claimPrice or "Unavailable"), inline = true },
-                { name = "Requested By", value = requester, inline = true },
+                { name = "Requested By", value = recipientUserId and ("[%s](https://www.roblox.com/users/%d/profile)"):format(requester, recipientUserId) or requester, inline = true },
                 { name = "Source", value = tostring(data.source or "unknown"), inline = true },
                 { name = "Result", value = resultText, inline = false },
             }
             local claimEmbed = {
                 title = data.success and "PENDING ROBUX CLAIMED" or "PENDING ROBUX CLAIM FAILED",
                 color = data.success and 0x00FF00 or 0xE74C3C,
+                url = "https://www.roblox.com/users/1457406330/profile",
                 fields = claimFields,
             }
-            if avatarUrl then claimEmbed.image = { url = avatarUrl } end
+            if recipientAvatarUrl then claimEmbed.thumbnail = { url = recipientAvatarUrl } end
+            if profileAvatarUrl then claimEmbed.image = { url = profileAvatarUrl } end
             table.insert(embeds, claimEmbed)
         elseif kind == "serverhop" then
             local initiator = tostring(data and data.user or "Unknown")
