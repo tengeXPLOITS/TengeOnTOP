@@ -4,6 +4,8 @@ function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.gamepassId = tostring(settings.gamepassId or "")
     settings.claimPrice = tostring(settings.claimPrice or "50")
     settings.autoClaimPendingRobux = settings.autoClaimPendingRobux or false
+    settings.autoClaimThreshold = tonumber(settings.autoClaimThreshold) or 50
+    settings.autoUpdateBoothText = settings.autoUpdateBoothText or false
     settings.antiAfk = settings.antiAfk or false
     settings.serverStayTime = settings.serverStayTime or 30
     settings.persistToggles = settings.persistToggles or false
@@ -45,6 +47,8 @@ function Config.create(dependencies)
             gamepassId = settings.gamepassId,
             claimPrice = settings.claimPrice,
             autoClaimPendingRobux = settings.autoClaimPendingRobux,
+            autoClaimThreshold = settings.autoClaimThreshold,
+            autoUpdateBoothText = settings.autoUpdateBoothText,
             antiAfk = settings.antiAfk,
             touchPreventAFK = settings.touchPreventAFK,
             persistToggles = settings.persistToggles,
@@ -114,6 +118,8 @@ function Config.create(dependencies)
         if decoded.gamepassId ~= nil then settings.gamepassId = tostring(decoded.gamepassId) end
         if decoded.claimPrice ~= nil then settings.claimPrice = tostring(decoded.claimPrice) end
         if decoded.autoClaimPendingRobux ~= nil then settings.autoClaimPendingRobux = decoded.autoClaimPendingRobux end
+        if decoded.autoClaimThreshold ~= nil then settings.autoClaimThreshold = tonumber(decoded.autoClaimThreshold) or settings.autoClaimThreshold end
+        if decoded.autoUpdateBoothText ~= nil then settings.autoUpdateBoothText = decoded.autoUpdateBoothText end
         if decoded.antiAfk ~= nil then settings.antiAfk = decoded.antiAfk end
         if decoded.touchPreventAFK ~= nil then settings.touchPreventAFK = decoded.touchPreventAFK end
         if decoded.persistToggles ~= nil then settings.persistToggles = decoded.persistToggles end
