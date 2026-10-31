@@ -4,7 +4,7 @@ local LEGACY_DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am s
 function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.gamepassId = tostring(settings.gamepassId or "")
     settings.donatePassId = tostring(settings.donatePassId or "1230653127")
-    settings.donateAmount = math.clamp(math.floor(tonumber(settings.donateAmount) or 100), 1, 10000)
+    settings.donateAmount = math.clamp(math.floor(tonumber(settings.donateAmount) or 10), 1, 10000)
     settings.donateTargetUsername = tostring(settings.donateTargetUsername or "")
     settings.autoDonateEnabled = settings.autoDonateEnabled == true
     settings.claimPrice = tostring(settings.claimPrice or "50")
