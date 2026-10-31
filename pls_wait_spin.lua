@@ -255,7 +255,6 @@ function Spin.create(dependencies)
                 local character, humanoid, root = getCharacterHumanoidRoot()
                 if not (character and humanoid and root) then
                     interrupted = true
-                    pendingLapCount = 0
                     break
                 end
                 activeHumanoid = humanoid
@@ -301,13 +300,15 @@ function Spin.create(dependencies)
                     end
                 end
                 if interrupted then
-                    pendingLapCount = 0
                     break
                 end
             end
 
             if not settings.robuxLap then
                 pendingLapCount = 0
+            elseif interrupted then
+                -- Put the interrupted lap back so a death/respawn does not discard it.
+                pendingLapCount += 1
             end
 
             local character, humanoid, root = getCharacterHumanoidRoot()
@@ -341,7 +342,11 @@ function Spin.create(dependencies)
             if antiSitConnection then antiSitConnection:Disconnect() end
             currentLapTask = nil
             if pendingLapCount > 0 and settings.robuxLap and not currentHelicopterSpinTask then
-                task.defer(startRobuxLapTask)
+                if interrupted then
+                    task.delay(1.5, startRobuxLapTask)
+                else
+                    task.defer(startRobuxLapTask)
+                end
             elseif settings.helicopterEnabled and not currentHelicopterSpinTask then
                 task.delay(0.08, startHelicopterIdleMode)
             end
@@ -692,11 +697,21 @@ function Spin.create(dependencies)
         task.spawn(function()
             while true do
                 task.wait(5)
-                if settings.spinSet and not currentHelicopterSpinTask then
+                local boothFeaturesEnabled = settings.spinSet or settings.robuxLap or settings.helicopterEnabled
+                if boothFeaturesEnabled and not currentHelicopterSpinTask and not currentLapTask then
                     local character = LocalPlayer.Character
                     local root = character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso"))
                     local standsFolder = Workspace:FindFirstChild("Stands") or Workspace:FindFirstChild("stands")
                     if root and standsFolder then
+                        if settings.spinSet then
+                            ensureSpinPart(character)
+                        end
+                        if settings.helicopterEnabled then
+                            local heliBody = root:FindFirstChild("HL1__HELI")
+                            if not (heliBody and heliBody:IsA("BodyAngularVelocity")) then
+                                ensureHelicopter()
+                            end
+                        end
                         for _, stand in ipairs(standsFolder:GetChildren()) do
                             if isStandOwned(stand) then
                                 local standPosition = getStandPosition(stand)
