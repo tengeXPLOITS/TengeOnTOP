@@ -25,9 +25,19 @@ function Spin.create(dependencies)
         CFrame.new(-9.13183594, 0.146320343, -74.3499756, -1, 0, 0, 0, 1, 0, 0, 0, -1),
         CFrame.new(50.9318237, 0.146320343, -60.9251099, -0.499959469, 0, 0.866048813, 0, 1, 0, -0.866048813, 0, -0.499959469),
     }
+    -- Lap route from the previous script's 1 Robux = 1 lap path.
+    local lapRoute = {
+        Vector3.new(166.584, 3.47699, 371.398),
+        Vector3.new(228.765, 3.57067, 332.55),
+        Vector3.new(225.878, 3.57066, 274.96),
+        Vector3.new(169.654, 4.11481, 232.826),
+        Vector3.new(102.625, 3.57066, 274.941),
+        Vector3.new(109.353, 3.57066, 351.28),
+    }
     local currentHelicopterSpinTask
     local currentHelicopterIdleTask
     local currentLapTask
+    local accumulatedSpinY
     local currentAstronautIdleTrack
     local pendingHelicopterRaisedAmount = 0
     local pendingLapCount = 0
@@ -204,14 +214,11 @@ function Spin.create(dependencies)
         pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end)
     end
 
-    local function tweenRootToFirstRoutePoint(root, routeY, shouldContinue)
-        local firstPoint = helicopterFlightRoute[1]
-        if not (root and root.Parent and firstPoint) then return false end
-        local targetPosition = Vector3.new(firstPoint.Position.X, routeY, firstPoint.Position.Z)
-        local targetCFrame = CFrame.new(targetPosition) * (root.CFrame - root.Position)
+    local function tweenRootToCFrame(root, targetCFrame, shouldContinue)
+        if not (root and root.Parent and targetCFrame) then return false end
         local tween = TweenService:Create(
             root,
-            TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+            TweenInfo.new(5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
             { CFrame = targetCFrame }
         )
         local completed = false
@@ -220,7 +227,7 @@ function Spin.create(dependencies)
         end)
         tween:Play()
         local start = tick()
-        while not completed and tick() - start < 2.5 and (not shouldContinue or shouldContinue()) do
+        while not completed and tick() - start < 6 and (not shouldContinue or shouldContinue()) do
             task.wait()
         end
         connection:Disconnect()
@@ -275,21 +282,29 @@ function Spin.create(dependencies)
                     if isSeated then preventSitting(humanoid) end
                 end)
 
-                local routeY = root.Position.Y
-                if not tweenRootToFirstRoutePoint(root, routeY, function()
+                local nearestIndex = 1
+                local nearestDistance = math.huge
+                for routeIndex, routePosition in ipairs(lapRoute) do
+                    local distance = (root.Position - routePosition).Magnitude
+                    if distance < nearestDistance then
+                        nearestIndex = routeIndex
+                        nearestDistance = distance
+                    end
+                end
+                local startPosition = lapRoute[nearestIndex]
+                if not tweenRootToCFrame(root, CFrame.new(startPosition), function()
                     return settings.robuxLap and character == LocalPlayer.Character and root.Parent ~= nil
                 end) then
                     interrupted = true
                 end
-                for waypointIndex = 2, #helicopterFlightRoute + 1 do
+                for step = 1, #lapRoute do
                     if interrupted then break end
                     if not settings.robuxLap or character ~= LocalPlayer.Character or not root.Parent then
                         interrupted = true
                         break
                     end
-                    local routeIndex = ((waypointIndex - 1) % #helicopterFlightRoute) + 1
-                    local routePosition = helicopterFlightRoute[routeIndex].Position
-                    local waypoint = Vector3.new(routePosition.X, routeY, routePosition.Z)
+                    local routeIndex = ((nearestIndex + step - 1) % #lapRoute) + 1
+                    local waypoint = lapRoute[routeIndex]
                     local distance = (root.Position - waypoint).Magnitude
                     local timeout = math.clamp((distance / math.max(1, humanoid.WalkSpeed)) + 6, 8, 24)
                     if not waitForHumanoidMove(humanoid, waypoint, timeout, function()
@@ -665,8 +680,13 @@ function Spin.create(dependencies)
             spinPart.Name = "Spin"
             spinPart.MaxTorque = Vector3.new(0, math.huge, 0)
             spinPart.Parent = root
+            if accumulatedSpinY == nil then
+                accumulatedSpinY = 0.25 * (settings.spinSpeedMultiplier or 1)
+            end
+            spinPart.AngularVelocity = Vector3.new(0, accumulatedSpinY, 0)
+        else
+            accumulatedSpinY = tonumber(spinPart.AngularVelocity.Y) or accumulatedSpinY
         end
-        spinPart.AngularVelocity = Vector3.new(0, 0.25 * (settings.spinSpeedMultiplier or 1), 0)
     end
 
     local function applyDonationSpin(delta)
@@ -682,12 +702,9 @@ function Spin.create(dependencies)
         end
         if not (spinPart and spinPart:IsA("BodyAngularVelocity")) then return end
 
-        local currentY = tonumber(spinPart.AngularVelocity.Y) or 0
-        spinPart.AngularVelocity = Vector3.new(
-            0,
-            currentY + (delta / 3) * (settings.spinSpeedMultiplier or 1),
-            0
-        )
+        local currentY = accumulatedSpinY or tonumber(spinPart.AngularVelocity.Y) or (0.25 * (settings.spinSpeedMultiplier or 1))
+        accumulatedSpinY = currentY + (delta / 3) * (settings.spinSpeedMultiplier or 1)
+        spinPart.AngularVelocity = Vector3.new(0, accumulatedSpinY, 0)
         pcall(function()
             notify("Donation Debug", ("spin updated +%d -> %0.2f"):format(delta, spinPart.AngularVelocity.Y), 4)
         end)
