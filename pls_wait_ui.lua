@@ -89,6 +89,9 @@ function UI.create(dependencies)
                     if decoded.autoUpdateBoothText ~= nil then
                         autoUpdateBoothText = decoded.autoUpdateBoothText == true
                         SETTINGS.autoUpdateBoothText = autoUpdateBoothText
+                    else
+                        autoUpdateBoothText = false
+                        SETTINGS.autoUpdateBoothText = false
                     end
                     if decoded.autoServerHop ~= nil then
                         autoServerHopEnabled = decoded.autoServerHop
@@ -112,6 +115,8 @@ function UI.create(dependencies)
                     print("[PLS WAIT] Settings loaded successfully from " .. CONFIG_PATH .. ".")
                 elseif loadError == "not-found" then
                     print("[PLS WAIT] No saved settings found; using defaults.")
+                    -- Persist first-run defaults so subsequent launches count as existing users.
+                    SaveSettings()
                 else
                     warn("[PLS WAIT] Could not load saved settings:", loadError)
                 end
@@ -123,6 +128,10 @@ function UI.create(dependencies)
                     if cfg.webhookToggle ~= nil then SETTINGS.webhookToggle = cfg.webhookToggle end
                     SETTINGS.webhookUrl = cfg.webhookUrl or SETTINGS.webhookUrl
                     if cfg.gamepassId ~= nil then SETTINGS.gamepassId = tostring(cfg.gamepassId) end
+                    if cfg.donatePassId ~= nil then SETTINGS.donatePassId = tostring(cfg.donatePassId) end
+                    if cfg.donateAmount ~= nil then SETTINGS.donateAmount = math.clamp(math.floor(tonumber(cfg.donateAmount) or SETTINGS.donateAmount), 1, 10000) end
+                    if cfg.donateTargetUsername ~= nil then SETTINGS.donateTargetUsername = tostring(cfg.donateTargetUsername) end
+                    if cfg.autoDonateEnabled ~= nil then SETTINGS.autoDonateEnabled = cfg.autoDonateEnabled == true end
                     if cfg.claimPrice ~= nil then SETTINGS.claimPrice = tostring(cfg.claimPrice) end
                     if cfg.autoClaimPendingRobux ~= nil then SETTINGS.autoClaimPendingRobux = cfg.autoClaimPendingRobux end
                     SETTINGS.autoClaimThreshold = tonumber(cfg.autoClaimThreshold) or SETTINGS.autoClaimThreshold
@@ -263,7 +272,7 @@ function UI.create(dependencies)
             uiToggle.Visible = true
 
             -- Glassy admin-panel style layout (smaller width for compact UI)
-            local MAIN_W, MAIN_H = 600, 420
+            local MAIN_W, MAIN_H = 600, 470
             local LEFT_W = 180
             local GAP = 16
             local mainFrame = Instance.new("Frame")
@@ -933,13 +942,13 @@ function UI.create(dependencies)
                 lapToggle.Size = UDim2.new(0, 60, 0, 24)
                 lapToggle.Position = UDim2.new(0, 315, 0, 78)
                 lapToggle.Text = SETTINGS.robuxLap and "ON" or "OFF"
-                lapToggle.BackgroundColor3 = SETTINGS.robuxLap and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                lapToggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
                 lapToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
                 lapToggle.Parent = frame
                 lapToggle.MouseButton1Click:Connect(function()
                     SETTINGS.robuxLap = not SETTINGS.robuxLap
                     lapToggle.Text = SETTINGS.robuxLap and "ON" or "OFF"
-                    lapToggle.BackgroundColor3 = SETTINGS.robuxLap and Color3.fromRGB(46, 128, 76) or Color3.fromRGB(70, 70, 70)
+                    lapToggle.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
                     if SETTINGS.robuxLap or SETTINGS.webhookToggle or SETTINGS.spinSet or SETTINGS.helicopterEnabled then
                         startDonationMonitor()
                     else
@@ -1165,7 +1174,7 @@ function UI.create(dependencies)
 
                 local speedBox = Instance.new("TextBox")
                 speedBox.Size = UDim2.new(0,80,0,20)
-                speedBox.Position = UDim2.new(0,140,0,282)
+                speedBox.Position = UDim2.new(0,180,0,282)
                 speedBox.Text = tostring(SETTINGS.spinSpeedMultiplier or 1)
                 speedBox.ClearTextOnFocus = false
                 speedBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1967,6 +1976,176 @@ function UI.create(dependencies)
                     notify("Donation Test", "Test donation event sent.", 4)
                 end)
 
+                -- Auto Donate to Player: validates the target's pass before sending the game's Purchase request.
+                local donateTitle = Instance.new("TextLabel")
+                donateTitle.Size = UDim2.new(1, -20, 0, 22)
+                donateTitle.Position = UDim2.new(0, 10, 0, 286)
+                donateTitle.BackgroundTransparency = 1
+                donateTitle.Text = "Auto Donate to Player"
+                donateTitle.TextColor3 = Color3.new(1, 1, 1)
+                donateTitle.TextXAlignment = Enum.TextXAlignment.Left
+                donateTitle.Font = Enum.Font.GothamBold
+                donateTitle.Parent = frame
+
+                local donateToggle = Instance.new("TextButton")
+                donateToggle.Size = UDim2.new(0, 64, 0, 22)
+                donateToggle.Position = UDim2.new(0, 10, 0, 312)
+                donateToggle.Text = SETTINGS.autoDonateEnabled and "ON" or "OFF"
+                donateToggle.Parent = frame
+                styleButton(donateToggle)
+
+                local donateAmount = math.clamp(math.floor(tonumber(SETTINGS.donateAmount) or 100), 1, 10000)
+                local amountLabel = Instance.new("TextLabel")
+                amountLabel.Size = UDim2.new(1, -90, 0, 22)
+                amountLabel.Position = UDim2.new(0, 84, 0, 312)
+                amountLabel.BackgroundTransparency = 1
+                amountLabel.TextColor3 = Color3.new(1, 1, 1)
+                amountLabel.TextXAlignment = Enum.TextXAlignment.Left
+                amountLabel.Parent = frame
+
+                local sliderTrack = Instance.new("TextButton")
+                sliderTrack.Size = UDim2.new(1, -20, 0, 12)
+                sliderTrack.Position = UDim2.new(0, 10, 0, 340)
+                sliderTrack.Text = ""
+                sliderTrack.AutoButtonColor = false
+                sliderTrack.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+                sliderTrack.Parent = frame
+                Instance.new("UICorner", sliderTrack).CornerRadius = UDim.new(1, 0)
+                local sliderFill = Instance.new("Frame")
+                sliderFill.Size = UDim2.new((donateAmount - 1) / 9999, 0, 1, 0)
+                sliderFill.BackgroundColor3 = Color3.fromRGB(78, 214, 120)
+                sliderFill.Parent = sliderTrack
+                Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+                local draggingAmount = false
+                local function setDonateAmountFromX(x)
+                    local width = math.max(1, sliderTrack.AbsoluteSize.X)
+                    local alpha = math.clamp((x - sliderTrack.AbsolutePosition.X) / width, 0, 1)
+                    donateAmount = math.clamp(math.floor(1 + alpha * 9999 + 0.5), 1, 10000)
+                    SETTINGS.donateAmount = donateAmount
+                    sliderFill.Size = UDim2.new((donateAmount - 1) / 9999, 0, 1, 0)
+                    amountLabel.Text = ("Amount: %d Robux"):format(donateAmount)
+                end
+                amountLabel.Text = ("Amount: %d Robux"):format(donateAmount)
+                sliderTrack.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        draggingAmount = true
+                        setDonateAmountFromX(input.Position.X)
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(input)
+                    if draggingAmount and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                        setDonateAmountFromX(input.Position.X)
+                    end
+                end)
+                UserInputService.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        if draggingAmount then pcall(SaveSettings) end
+                        draggingAmount = false
+                    end
+                end)
+
+                local targetBox = Instance.new("TextBox")
+                targetBox.Size = UDim2.new(0.5, -14, 0, 26)
+                targetBox.Position = UDim2.new(0, 10, 0, 364)
+                targetBox.Text = tostring(SETTINGS.donateTargetUsername or "")
+                targetBox.PlaceholderText = "Target Roblox username"
+                targetBox.TextXAlignment = Enum.TextXAlignment.Left
+                targetBox.ClearTextOnFocus = false
+                targetBox.Parent = frame
+                local passIdBox = Instance.new("TextBox")
+                passIdBox.Size = UDim2.new(0.5, -14, 0, 26)
+                passIdBox.Position = UDim2.new(0.5, 4, 0, 364)
+                passIdBox.Text = tostring(SETTINGS.donatePassId or "1230653127")
+                passIdBox.PlaceholderText = "Game Pass ID"
+                passIdBox.TextXAlignment = Enum.TextXAlignment.Left
+                passIdBox.ClearTextOnFocus = false
+                passIdBox.Parent = frame
+                local function saveDonateFields()
+                    SETTINGS.donateTargetUsername = tostring(targetBox.Text or ""):match("^%s*(.-)%s*$")
+                    SETTINGS.donatePassId = tostring(passIdBox.Text or ""):match("^%s*(.-)%s*$")
+                    pcall(SaveSettings)
+                end
+                targetBox.FocusLost:Connect(saveDonateFields)
+                passIdBox.FocusLost:Connect(saveDonateFields)
+
+                donateToggle.MouseButton1Click:Connect(function()
+                    SETTINGS.autoDonateEnabled = not SETTINGS.autoDonateEnabled
+                    donateToggle.Text = SETTINGS.autoDonateEnabled and "ON" or "OFF"
+                    pcall(SaveSettings)
+                    notify("Auto Donate", SETTINGS.autoDonateEnabled and "Enabled. Review the username, pass, and amount, then click Donate once to open Roblox's purchase prompt." or "Disabled.", 5)
+                end)
+
+                local donateButton = Instance.new("TextButton")
+                donateButton.Size = UDim2.new(0, 120, 0, 28)
+                donateButton.Position = UDim2.new(0, 10, 0, 400)
+                donateButton.Text = "Donate"
+                donateButton.BackgroundColor3 = Color3.fromRGB(44, 170, 88)
+                donateButton.TextColor3 = Color3.new(1, 1, 1)
+                donateButton.Parent = frame
+                styleButton(donateButton, Color3.fromRGB(78, 214, 120))
+                local donateBusy = false
+                local MarketplaceService = game:GetService("MarketplaceService")
+                donateButton.MouseButton1Click:Connect(function()
+                    if donateBusy then return end
+                    if not SETTINGS.autoDonateEnabled then
+                        notify("Auto Donate", "Enable Auto Donate to Player first.", 4)
+                        return
+                    end
+                    donateBusy = true
+                    task.spawn(function()
+                        local ok, err = pcall(function()
+                            local username = tostring(targetBox.Text or ""):match("^%s*(.-)%s*$")
+                            local passText = tostring(passIdBox.Text or ""):match("^%s*(.-)%s*$")
+                            local passId = tonumber(passText)
+                            if username == "" then error("Enter the recipient's Roblox username.") end
+                            if not passId or passId < 1 or passId % 1 ~= 0 then error("Enter a valid positive whole-number Game Pass ID.") end
+                            if not donateAmount or donateAmount < 1 or donateAmount > 10000 or donateAmount % 1 ~= 0 then error("Choose an amount from 1 to 10,000 Robux.") end
+                            local targetUserId = Players:GetUserIdFromNameAsync(username)
+                            local canonicalName = Players:GetNameFromUserIdAsync(targetUserId)
+                            if string.lower(canonicalName) ~= string.lower(username) then error("That username did not resolve to the expected Roblox account.") end
+                            local info = MarketplaceService:GetProductInfo(passId, Enum.InfoType.GamePass)
+                            local creator = info and info.Creator
+                            if not creator or creator.CreatorType ~= "User" or tonumber(creator.CreatorTargetId) ~= targetUserId then
+                                error("This Game Pass is not owned by the target user; no donation request was sent.")
+                            end
+                            if tonumber(info.PriceInRobux) ~= donateAmount then
+                                error(("This pass costs %s Robux, but the selected amount is %d."):format(tostring(info.PriceInRobux or "unavailable"), donateAmount))
+                            end
+                            if info.IsForSale ~= true then error("This Game Pass is not confirmed as for sale.") end
+                            local donationEvent = ReplicatedStorage:FindFirstChild("PromptPurchase")
+                            if not donationEvent then
+                                donationEvent = ReplicatedStorage:WaitForChild("PromptPurchase", 5)
+                            end
+                            if not donationEvent or not donationEvent:IsA("RemoteEvent") then
+                                error("ReplicatedStorage.PromptPurchase RemoteEvent was not found.")
+                            end
+                            saveDonateFields()
+                            -- CustomDonationScript request signature: pass ID, amount, flags, options.
+                            donationEvent:FireServer(passId, donateAmount, true, true, {
+                                message = "",
+                                wrapped = false,
+                            })
+                            notify("Auto Donate", ("Donation request sent for %s (%d Robux). The server must confirm whether it completed."):format(canonicalName, donateAmount), 6)
+                            donateBusy = false
+                        end)
+                        if not ok then
+                            donateBusy = false
+                            notify("Auto Donate", "Unavailable: " .. tostring(err), 6)
+                        end
+                    end)
+                end)
+                local donateHelp = Instance.new("TextLabel")
+                donateHelp.Size = UDim2.new(1, -145, 0, 42)
+                donateHelp.Position = UDim2.new(0, 140, 0, 394)
+                donateHelp.BackgroundTransparency = 1
+                donateHelp.Text = "Sends the game's Purchase request after checking the target username, pass owner, and selected price. The server decides whether it completes."
+                donateHelp.TextWrapped = true
+                donateHelp.TextColor3 = Color3.fromRGB(190, 190, 190)
+                donateHelp.TextXAlignment = Enum.TextXAlignment.Left
+                donateHelp.TextYAlignment = Enum.TextYAlignment.Top
+                donateHelp.TextSize = 11
+                donateHelp.Parent = frame
+
                 -- donation stat name textbox removed per user request
             end
 
@@ -2067,6 +2246,10 @@ function UI.create(dependencies)
                             webhookToggle = SETTINGS.webhookToggle,
                             webhookUrl = SETTINGS.webhookUrl,
                             gamepassId = SETTINGS.gamepassId,
+                            donatePassId = SETTINGS.donatePassId,
+                            donateAmount = SETTINGS.donateAmount,
+                            donateTargetUsername = SETTINGS.donateTargetUsername,
+                            autoDonateEnabled = SETTINGS.autoDonateEnabled,
                             claimPrice = SETTINGS.claimPrice,
                             autoClaimPendingRobux = SETTINGS.autoClaimPendingRobux,
                             autoClaimThreshold = SETTINGS.autoClaimThreshold,
