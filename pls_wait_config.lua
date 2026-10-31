@@ -1,19 +1,25 @@
 local Config = {}
+local LEGACY_DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
 
 function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     settings.gamepassId = tostring(settings.gamepassId or "")
+    settings.donatePassId = tostring(settings.donatePassId or "1230653127")
+    settings.donateAmount = math.clamp(math.floor(tonumber(settings.donateAmount) or 100), 1, 10000)
+    settings.donateTargetUsername = tostring(settings.donateTargetUsername or "")
+    settings.autoDonateEnabled = settings.autoDonateEnabled == true
     settings.claimPrice = tostring(settings.claimPrice or "50")
     settings.autoClaimPendingRobux = settings.autoClaimPendingRobux or false
     settings.autoClaimThreshold = tonumber(settings.autoClaimThreshold) or 50
-    settings.autoUpdateBoothText = settings.autoUpdateBoothText or false
+    if settings.autoUpdateBoothText == nil then settings.autoUpdateBoothText = true end
     settings.antiAfk = settings.antiAfk or false
     settings.serverStayTime = settings.serverStayTime or 30
     settings.persistToggles = settings.persistToggles or false
     settings.touchPreventAFK = settings.touchPreventAFK or (touchEnabled and true or false)
     settings.staffHop = settings.staffHop or false
     settings.friendHop = settings.friendHop or false
-    settings.spinOnDonation = settings.spinOnDonation or false
-    settings.spinSet = settings.spinSet or settings.spinOnDonation or false
+    if settings.spinSet == nil then settings.spinSet = settings.spinOnDonation end
+    if settings.spinSet == nil then settings.spinSet = true end
+    settings.spinOnDonation = settings.spinSet
     settings.spinSpeedMultiplier = settings.spinSpeedMultiplier or 1
     settings.helicopterEnabled = settings.helicopterEnabled or false
     settings.robuxLap = settings.robuxLap or false
@@ -45,6 +51,10 @@ function Config.create(dependencies)
             webhookToggle = settings.webhookToggle,
             webhookUrl = settings.webhookUrl,
             gamepassId = settings.gamepassId,
+            donatePassId = settings.donatePassId,
+            donateAmount = settings.donateAmount,
+            donateTargetUsername = settings.donateTargetUsername,
+            autoDonateEnabled = settings.autoDonateEnabled,
             claimPrice = settings.claimPrice,
             autoClaimPendingRobux = settings.autoClaimPendingRobux,
             autoClaimThreshold = settings.autoClaimThreshold,
@@ -116,22 +126,42 @@ function Config.create(dependencies)
         if decoded.webhookToggle ~= nil then settings.webhookToggle = decoded.webhookToggle end
         settings.webhookUrl = decoded.webhookUrl or settings.webhookUrl
         if decoded.gamepassId ~= nil then settings.gamepassId = tostring(decoded.gamepassId) end
+        if decoded.donatePassId ~= nil then settings.donatePassId = tostring(decoded.donatePassId) end
+        if decoded.donateAmount ~= nil then settings.donateAmount = math.clamp(math.floor(tonumber(decoded.donateAmount) or settings.donateAmount), 1, 10000) end
+        if decoded.donateTargetUsername ~= nil then settings.donateTargetUsername = tostring(decoded.donateTargetUsername) end
+        if decoded.autoDonateEnabled ~= nil then settings.autoDonateEnabled = decoded.autoDonateEnabled == true end
         if decoded.claimPrice ~= nil then settings.claimPrice = tostring(decoded.claimPrice) end
         if decoded.autoClaimPendingRobux ~= nil then settings.autoClaimPendingRobux = decoded.autoClaimPendingRobux end
         if decoded.autoClaimThreshold ~= nil then settings.autoClaimThreshold = tonumber(decoded.autoClaimThreshold) or settings.autoClaimThreshold end
-        if decoded.autoUpdateBoothText ~= nil then settings.autoUpdateBoothText = decoded.autoUpdateBoothText end
+        if decoded.autoUpdateBoothText ~= nil then
+            settings.autoUpdateBoothText = decoded.autoUpdateBoothText
+        else
+            -- A pre-feature config belongs to an existing user; retain the old opt-out default.
+            settings.autoUpdateBoothText = false
+        end
         if decoded.antiAfk ~= nil then settings.antiAfk = decoded.antiAfk end
         if decoded.touchPreventAFK ~= nil then settings.touchPreventAFK = decoded.touchPreventAFK end
         if decoded.persistToggles ~= nil then settings.persistToggles = decoded.persistToggles end
-        if decoded.spinSet ~= nil then settings.spinSet = decoded.spinSet end
-        if decoded.spinOnDonation ~= nil then settings.spinSet = decoded.spinOnDonation end
+        if decoded.spinSet ~= nil then
+            settings.spinSet = decoded.spinSet
+        elseif decoded.spinOnDonation ~= nil then
+            settings.spinSet = decoded.spinOnDonation
+        else
+            -- Do not turn on a feature for users with an older saved config.
+            settings.spinSet = false
+        end
         if decoded.spinSpeedMultiplier ~= nil then settings.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
         if decoded.helicopterEnabled ~= nil then settings.helicopterEnabled = decoded.helicopterEnabled end
         if decoded.robuxLap ~= nil then settings.robuxLap = decoded.robuxLap end
         if decoded.populationHopper ~= nil then settings.populationHopper = decoded.populationHopper end
         if decoded.populationThreshold ~= nil then settings.populationThreshold = decoded.populationThreshold end
         settings.emoteId = decoded.emoteId or settings.emoteId
-        settings.boothText = decoded.boothText or settings.boothText
+        if decoded.boothText ~= nil then
+            settings.boothText = decoded.boothText
+        elseif settings.boothText == '<font color="#16A34A" face="PermanentMarker">✅ ROBUX DONATED: FASTER SPINNING ✅</font>' then
+            -- Older saved configs did not store booth text; keep their prior default.
+            settings.boothText = LEGACY_DEFAULT_BOOTH_TEXT
+        end
         if decoded.staffHop ~= nil then settings.staffHop = decoded.staffHop end
         if decoded.friendHop ~= nil then settings.friendHop = decoded.friendHop end
         if decoded.goalBarEnabled ~= nil then settings.goalBarEnabled = decoded.goalBarEnabled end
