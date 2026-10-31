@@ -866,7 +866,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
     -- if nil passed, treat as any player count (no filter)
     if minPlayers then minPlayers = tonumber(minPlayers) end
     if maxPlayers then maxPlayers = tonumber(maxPlayers) end
-    local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100"):format(tostring(PLACE_ID))
+    local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(tostring(PLACE_ID))
     -- retry behavior: fast=true does a single quick attempt, otherwise retry a few times
     local res = nil
     local attempts = fast and 1 or 3
@@ -878,9 +878,15 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
     if not (res and type(res.Body) == "string" and res.Body ~= "") then return false end
     local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
     if not (ok and decoded and type(decoded.data) == "table") then return false end
+    -- Randomize the single response page so hops distribute across matching servers quickly.
+    for index = #decoded.data, 2, -1 do
+        local swapIndex = math.random(index)
+        decoded.data[index], decoded.data[swapIndex] = decoded.data[swapIndex], decoded.data[index]
+    end
     for _, server in ipairs(decoded.data) do
         local playing = tonumber(server.playing) or 0
-        if server.id and tostring(server.id) ~= tostring(game.JobId) then
+        local capacity = math.min(24, tonumber(server.maxPlayers) or 24)
+        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing < capacity then
             if minPlayers and maxPlayers and not (playing >= minPlayers and playing <= maxPlayers) then
                 -- skip this server (out of requested range)
             else
@@ -899,6 +905,9 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
+                    spinSet = SETTINGS.spinSet,
+                    spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
+                    helicopterEnabled = SETTINGS.helicopterEnabled,
                     robuxLap = SETTINGS.robuxLap,
                         populationHopper = SETTINGS.populationHopper,
                         populationThreshold = SETTINGS.populationThreshold,
