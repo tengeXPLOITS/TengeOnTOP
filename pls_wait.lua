@@ -113,7 +113,7 @@ print("[PLS WAIT] UI module loaded successfully.")
 
 SETTINGS = SETTINGS or {}
 -- Webhook / donation helpers
-local DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
+local DEFAULT_BOOTH_TEXT = '<font color="#16A34A" face="PermanentMarker">✅ ROBUX DONATED: FASTER SPINNING ✅</font>'
 local touchEnabled = UserInputService and UserInputService.TouchEnabled
 ConfigModule.initializeSettings(SETTINGS, touchEnabled, DEFAULT_BOOTH_TEXT)
 local currentDonationStat = nil
