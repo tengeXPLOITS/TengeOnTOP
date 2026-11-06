@@ -1,0 +1,190 @@
+local Config = {}
+local LEGACY_DEFAULT_BOOTH_TEXT = '<font color="#3afdd6" face="Arial">💸i am satisfied with any amount of R$ you give me (: 💸</font>'
+
+function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
+    settings.gamepassId = tostring(settings.gamepassId or "")
+    settings.donatePassId = tostring(settings.donatePassId or "1230653127")
+    settings.donateAmount = math.clamp(math.floor(tonumber(settings.donateAmount) or 10), 1, 10000)
+    settings.donateTargetUsername = tostring(settings.donateTargetUsername or "")
+    settings.autoDonateEnabled = settings.autoDonateEnabled == true
+    settings.claimPrice = tostring(settings.claimPrice or "50")
+    settings.autoClaimPendingRobux = settings.autoClaimPendingRobux or false
+    settings.autoClaimThreshold = tonumber(settings.autoClaimThreshold) or 50
+    if settings.autoUpdateBoothText == nil then settings.autoUpdateBoothText = true end
+    settings.antiAfk = settings.antiAfk or false
+    settings.serverStayTime = settings.serverStayTime or 30
+    settings.hopRange = tostring(settings.hopRange or "19-22")
+    settings.autoServerHop = settings.autoServerHop == true
+    settings.populationThreshold = math.clamp(math.floor(tonumber(settings.populationThreshold) or 17), 2, 24)
+    settings.persistToggles = settings.persistToggles or false
+    settings.touchPreventAFK = settings.touchPreventAFK or (touchEnabled and true or false)
+    settings.staffHop = settings.staffHop or false
+    settings.friendHop = settings.friendHop or false
+    if settings.spinSet == nil then settings.spinSet = settings.spinOnDonation end
+    if settings.spinSet == nil then settings.spinSet = true end
+    settings.spinOnDonation = settings.spinSet
+    settings.spinSpeedMultiplier = settings.spinSpeedMultiplier or 1
+    settings.helicopterEnabled = settings.helicopterEnabled or false
+    settings.robuxLap = settings.robuxLap or false
+    settings.goalBarEnabled = settings.goalBarEnabled or false
+    settings.goalBarTarget = tonumber(settings.goalBarTarget) or 40000
+    settings.chatAutoThankYou = settings.chatAutoThankYou or false
+    settings.thankYouMessages = settings.thankYouMessages or {"thanks!", "thank you", "ty (:"}
+    settings.emotePlaying = settings.emotePlaying or false
+    settings.boothText = settings.boothText or defaultBoothText
+end
+
+function Config.create(dependencies)
+    assert(type(dependencies) == "table", "config dependencies are required")
+    local HttpService = assert(dependencies.HttpService, "HttpService is required")
+    local settings = assert(dependencies.settings, "settings table is required")
+    local path = assert(dependencies.path, "config path is required")
+    local getRuntimeState = assert(dependencies.getRuntimeState, "runtime-state getter is required")
+    local applyRuntimeState = assert(dependencies.applyRuntimeState, "runtime-state setter is required")
+    local readFile = dependencies.readFile
+    local writeFile = dependencies.writeFile
+    local isFile = dependencies.isFile
+
+    local function save()
+        if type(writeFile) ~= "function" then
+            return false, "No supported file-writing function is available."
+        end
+
+        local data = {
+            webhookToggle = settings.webhookToggle,
+            webhookUrl = settings.webhookUrl,
+            gamepassId = settings.gamepassId,
+            donatePassId = settings.donatePassId,
+            donateAmount = settings.donateAmount,
+            donateTargetUsername = settings.donateTargetUsername,
+            autoDonateEnabled = settings.autoDonateEnabled,
+            claimPrice = settings.claimPrice,
+            autoClaimPendingRobux = settings.autoClaimPendingRobux,
+            autoClaimThreshold = settings.autoClaimThreshold,
+            autoUpdateBoothText = settings.autoUpdateBoothText,
+            antiAfk = settings.antiAfk,
+            touchPreventAFK = settings.touchPreventAFK,
+            persistToggles = settings.persistToggles,
+            spinOnDonation = settings.spinSet,
+            spinSet = settings.spinSet,
+            spinSpeedMultiplier = settings.spinSpeedMultiplier,
+            helicopterEnabled = settings.helicopterEnabled,
+            robuxLap = settings.robuxLap,
+            populationHopper = settings.populationHopper,
+            populationThreshold = settings.populationThreshold,
+            emoteId = settings.emoteId,
+            boothText = settings.boothText,
+            staffHop = settings.staffHop,
+            friendHop = settings.friendHop,
+            goalBarEnabled = settings.goalBarEnabled,
+            goalBarTarget = settings.goalBarTarget,
+            emotePlaying = settings.emotePlaying and true or false,
+            chatAutoThankYou = settings.chatAutoThankYou,
+            thankYouMessages = settings.thankYouMessages,
+        }
+        for key, value in pairs(getRuntimeState()) do
+            data[key] = value
+        end
+
+        local encodedOk, encoded = pcall(function()
+            return HttpService:JSONEncode(data)
+        end)
+        if not encodedOk then
+            return false, "Could not encode settings: " .. tostring(encoded)
+        end
+
+        local writeOk, writeError = pcall(writeFile, path, encoded)
+        if not writeOk then
+            return false, "Could not write settings: " .. tostring(writeError)
+        end
+        return true
+    end
+
+    local function load()
+        if type(readFile) ~= "function" then
+            return false, "No supported file-reading function is available."
+        end
+        if type(isFile) == "function" then
+            local checkOk, exists = pcall(isFile, path)
+            if checkOk and not exists then
+                return false, "not-found"
+            end
+        end
+
+        local readOk, content = pcall(readFile, path)
+        if not readOk then
+            return false, "Could not read settings: " .. tostring(content)
+        end
+        if type(content) ~= "string" or content == "" then
+            return false, "not-found"
+        end
+
+        local decodeOk, decoded = pcall(function()
+            return HttpService:JSONDecode(content)
+        end)
+        if not decodeOk or type(decoded) ~= "table" then
+            return false, "Could not decode settings: " .. tostring(decoded)
+        end
+
+        if decoded.webhookToggle ~= nil then settings.webhookToggle = decoded.webhookToggle end
+        settings.webhookUrl = decoded.webhookUrl or settings.webhookUrl
+        if decoded.gamepassId ~= nil then settings.gamepassId = tostring(decoded.gamepassId) end
+        if decoded.donatePassId ~= nil then settings.donatePassId = tostring(decoded.donatePassId) end
+        if decoded.donateAmount ~= nil then settings.donateAmount = math.clamp(math.floor(tonumber(decoded.donateAmount) or settings.donateAmount), 1, 10000) end
+        if decoded.donateTargetUsername ~= nil then settings.donateTargetUsername = tostring(decoded.donateTargetUsername) end
+        if decoded.autoDonateEnabled ~= nil then settings.autoDonateEnabled = decoded.autoDonateEnabled == true end
+        if decoded.claimPrice ~= nil then settings.claimPrice = tostring(decoded.claimPrice) end
+        if decoded.autoClaimPendingRobux ~= nil then settings.autoClaimPendingRobux = decoded.autoClaimPendingRobux end
+        if decoded.autoClaimThreshold ~= nil then settings.autoClaimThreshold = tonumber(decoded.autoClaimThreshold) or settings.autoClaimThreshold end
+        if decoded.autoUpdateBoothText ~= nil then
+            settings.autoUpdateBoothText = decoded.autoUpdateBoothText
+        else
+            -- A pre-feature config belongs to an existing user; retain the old opt-out default.
+            settings.autoUpdateBoothText = false
+        end
+        if decoded.antiAfk ~= nil then settings.antiAfk = decoded.antiAfk end
+        if decoded.touchPreventAFK ~= nil then settings.touchPreventAFK = decoded.touchPreventAFK end
+        if decoded.persistToggles ~= nil then settings.persistToggles = decoded.persistToggles end
+        if decoded.spinSet ~= nil then
+            settings.spinSet = decoded.spinSet
+        elseif decoded.spinOnDonation ~= nil then
+            settings.spinSet = decoded.spinOnDonation
+        else
+            -- Do not turn on a feature for users with an older saved config.
+            settings.spinSet = false
+        end
+        if decoded.spinSpeedMultiplier ~= nil then settings.spinSpeedMultiplier = decoded.spinSpeedMultiplier end
+        if decoded.helicopterEnabled ~= nil then settings.helicopterEnabled = decoded.helicopterEnabled end
+        if decoded.robuxLap ~= nil then settings.robuxLap = decoded.robuxLap end
+        if decoded.populationHopper ~= nil then settings.populationHopper = decoded.populationHopper end
+        if decoded.populationThreshold ~= nil then
+            settings.populationThreshold = math.clamp(math.floor(tonumber(decoded.populationThreshold) or settings.populationThreshold or 17), 2, 24)
+        end
+        settings.emoteId = decoded.emoteId or settings.emoteId
+        if decoded.boothText ~= nil then
+            settings.boothText = decoded.boothText
+        elseif settings.boothText == '<font color="#16A34A" face="PermanentMarker">✅ ROBUX DONATED: FASTER SPINNING ✅</font>' then
+            -- Older saved configs did not store booth text; keep their prior default.
+            settings.boothText = LEGACY_DEFAULT_BOOTH_TEXT
+        end
+        if decoded.staffHop ~= nil then settings.staffHop = decoded.staffHop end
+        if decoded.friendHop ~= nil then settings.friendHop = decoded.friendHop end
+        if decoded.goalBarEnabled ~= nil then settings.goalBarEnabled = decoded.goalBarEnabled end
+        if decoded.goalBarTarget ~= nil then settings.goalBarTarget = tonumber(decoded.goalBarTarget) or settings.goalBarTarget end
+        if decoded.emotePlaying ~= nil then settings.emotePlaying = decoded.emotePlaying end
+        if decoded.chatAutoThankYou ~= nil then settings.chatAutoThankYou = decoded.chatAutoThankYou end
+        if type(decoded.thankYouMessages) == "table" then
+            settings.thankYouMessages = decoded.thankYouMessages
+        end
+
+        applyRuntimeState(decoded)
+        return true
+    end
+
+    return {
+        save = save,
+        load = load,
+    }
+end
+
+return Config
