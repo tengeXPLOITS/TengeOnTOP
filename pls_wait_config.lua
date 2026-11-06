@@ -13,6 +13,9 @@ function Config.initializeSettings(settings, touchEnabled, defaultBoothText)
     if settings.autoUpdateBoothText == nil then settings.autoUpdateBoothText = true end
     settings.antiAfk = settings.antiAfk or false
     settings.serverStayTime = settings.serverStayTime or 30
+    settings.hopRange = tostring(settings.hopRange or "19-22")
+    settings.autoServerHop = settings.autoServerHop == true
+    settings.populationThreshold = math.clamp(math.floor(tonumber(settings.populationThreshold) or 17), 2, 24)
     settings.persistToggles = settings.persistToggles or false
     settings.touchPreventAFK = settings.touchPreventAFK or (touchEnabled and true or false)
     settings.staffHop = settings.staffHop or false
@@ -154,7 +157,9 @@ function Config.create(dependencies)
         if decoded.helicopterEnabled ~= nil then settings.helicopterEnabled = decoded.helicopterEnabled end
         if decoded.robuxLap ~= nil then settings.robuxLap = decoded.robuxLap end
         if decoded.populationHopper ~= nil then settings.populationHopper = decoded.populationHopper end
-        if decoded.populationThreshold ~= nil then settings.populationThreshold = decoded.populationThreshold end
+        if decoded.populationThreshold ~= nil then
+            settings.populationThreshold = math.clamp(math.floor(tonumber(decoded.populationThreshold) or settings.populationThreshold or 17), 2, 24)
+        end
         settings.emoteId = decoded.emoteId or settings.emoteId
         if decoded.boothText ~= nil then
             settings.boothText = decoded.boothText
