@@ -62,12 +62,13 @@ end
 local MODULE_BASE_URL = "https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/"
 
 local function loadRemoteModule(fileName)
-    local moduleUrl = MODULE_BASE_URL .. fileName
+    -- Avoid stale raw-content caches so the UI and controller modules stay on the same revision.
+    local moduleUrl = MODULE_BASE_URL .. fileName .. "?cache=" .. tostring(os.time())
     local source = game:HttpGet(moduleUrl)
     assert(type(source) == "string" and source ~= "", "module source was empty")
     local chunk, compileError = loadstring(source)
     if not chunk then
-        local retryUrl = moduleUrl .. "?cache=" .. tostring(os.time())
+        local retryUrl = MODULE_BASE_URL .. fileName .. "?cache=" .. tostring(os.time()) .. "_retry"
         source = game:HttpGet(retryUrl)
         assert(type(source) == "string" and source ~= "", "module source was empty on retry")
         chunk, compileError = loadstring(source)
