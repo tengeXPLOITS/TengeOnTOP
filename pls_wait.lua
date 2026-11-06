@@ -166,6 +166,8 @@ local function isStaffRole(role)
     return type(role) == "string" and STAFF_ROLES[role]
 end
 
+local serverHopNow
+local notify
 local function checkServerForStaff()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
@@ -186,7 +188,13 @@ local function hopIfStaffPresent()
     if staffPlayer and staffRole then
         notify("Staff Detected", ("Detected %s (%s) in server; hopping immediately."):format(staffPlayer.Name, staffRole), 5)
         task.spawn(function()
-            pcall(function() serverHopNow(nil, nil, true) end)
+            for _ = 1, 40 do
+                if type(serverHopNow) == "function" then
+                    serverHopNow(nil, nil, true)
+                    return
+                end
+                task.wait(0.25)
+            end
         end)
     end
 end
@@ -207,106 +215,10 @@ task.spawn(function()
     hopIfStaffPresent()
 end)
 
-local function notify(title, text, duration)
+notify = function(title, text, duration)
     -- Notifications suppressed per user request
     return
 end
-
--- Community place lookup and basic server-hop helper
-local function getCommunityPlaceIds()
-    local placeIds = {}
-    local seen = {}
-    local function addId(id)
-        local n = tonumber(id)
-        if n and n > 0 and not seen[n] then
-            seen[n] = true
-            table.insert(placeIds, n)
-        end
-    end
-
-    addId(game.PlaceId)
-    local ok, res = pcall(function()
-        local url = ("https://games.roblox.com/v1/groups/%s/games?accessFilter=Public&limit=100"):format(tostring(COMMUNITY_ID))
-        if httprequest then
-            local r = httprequest({Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" }})
-            return r and (r.Body or r.body or r.responseBody or r.text)
-        else
-            return HttpService:GetAsync(url)
-        end
-    end)
-
-    if ok and res then
-        pcall(function()
-            local decoded = HttpService:JSONDecode(res)
-            if decoded and decoded.data then
-                for _, v in ipairs(decoded.data) do
-                    addId(v.id or v.placeId or v.place_id)
-                end
-            end
-        end)
-    end
-
-    return placeIds
-end
-
-local function fetchServerList(placeId)
-    local url = "https://games.roblox.com/v1/games/" .. tostring(placeId) .. "/servers/Public?sortOrder=Desc&limit=100"
-    local ok, res = pcall(function()
-        if httprequest then
-            local r = httprequest({Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" }})
-            return r and (r.Body or r.body or r.responseBody or r.text)
-        elseif type(HttpService.GetAsync) == "function" then
-            return HttpService:GetAsync(url)
-        else
-            return game:HttpGet(url)
-        end
-    end)
-    if ok and res then
-        local decoded = nil
-        pcall(function() decoded = HttpService:JSONDecode(res) end)
-        return decoded
-    end
-    return nil
-end
-
-local function serverHopNow(minPlayers, maxPlayers)
-    minPlayers = tonumber(minPlayers) or 0
-    maxPlayers = tonumber(maxPlayers) or 0
-
-    local placeIds = getCommunityPlaceIds()
-    if not placeIds or #placeIds == 0 then
-        notify("No community place IDs found for hop.")
-        return false
-    end
-
-    for _, placeId in ipairs(placeIds) do
-        local list = fetchServerList(placeId)
-        if list and type(list.data) == "table" then
-            local candidates = {}
-            for _, s in ipairs(list.data) do
-                local playing = tonumber(s.playing or 0) or 0
-                if tostring(s.id) ~= tostring(game.JobId) then
-                    if (minPlayers <= 0 or playing >= minPlayers) and (maxPlayers <= 0 or playing <= maxPlayers) then
-                        table.insert(candidates, s)
-                    end
-                end
-            end
-            if #candidates > 0 then
-                local target = candidates[math.random(1, #candidates)]
-                pcall(function()
-                    TeleportService:TeleportToPlaceInstance(placeId, target.id, LocalPlayer)
-                end)
-                return true
-            end
-        end
-        task.wait(0.2)
-    end
-
-    notify("No matching servers found for community hop.")
-    return false
-end
-
-
 
 local antiAfkConn = nil
 local function enableAntiAfk()
@@ -862,22 +774,27 @@ local function ensureQueuedScript(codeString)
 end
 
 -- Single search attempt: returns true if teleport was initiated
+local serverPageCursor = nil
 local function serverSearchAttempt(minPlayers, maxPlayers, fast)
-    -- if nil passed, treat as any player count (no filter)
-    if minPlayers then minPlayers = tonumber(minPlayers) end
-    if maxPlayers then maxPlayers = tonumber(maxPlayers) end
+    minPlayers = math.clamp(math.floor(tonumber(minPlayers) or 19), 1, 24)
+    maxPlayers = math.clamp(math.floor(tonumber(maxPlayers) or 22), minPlayers, 24)
     local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(tostring(PLACE_ID))
-    -- retry behavior: fast=true does a single quick attempt, otherwise retry a few times
-    local res = nil
-    local attempts = fast and 1 or 3
-    for i=1,attempts do
-        res = performHttpRequest({ Url = url, Method = "GET" })
-        if res and type(res.Body) == "string" and res.Body ~= "" then break end
-        if not fast then task.wait(0.25) end
+    if serverPageCursor then
+        url ..= "&cursor=" .. HttpService:UrlEncode(serverPageCursor)
     end
-    if not (res and type(res.Body) == "string" and res.Body ~= "") then return false end
-    local ok, decoded = pcall(function() return HttpService:JSONDecode(res.Body) end)
+    local requestOk, res = pcall(function()
+        if httprequest then
+            return httprequest({ Url = url, Method = "GET", Headers = { ["User-Agent"] = "Roblox" } })
+        end
+        return { Body = HttpService:GetAsync(url) }
+    end)
+    if not requestOk or not res then return false end
+    local body = res.Body or res.body or res.responseBody or res.text
+    if type(body) ~= "string" or body == "" then return false end
+    local ok, decoded = pcall(function() return HttpService:JSONDecode(body) end)
     if not (ok and decoded and type(decoded.data) == "table") then return false end
+    local nextCursor = decoded.nextPageCursor
+    serverPageCursor = type(nextCursor) == "string" and nextCursor ~= "" and nextCursor or nil
     -- Randomize the single response page so hops distribute across matching servers quickly.
     for index = #decoded.data, 2, -1 do
         local swapIndex = math.random(index)
@@ -886,10 +803,10 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
     for _, server in ipairs(decoded.data) do
         local playing = tonumber(server.playing) or 0
         local capacity = math.min(24, tonumber(server.maxPlayers) or 24)
-        if server.id and tostring(server.id) ~= tostring(game.JobId) and playing < capacity then
-            if minPlayers and maxPlayers and not (playing >= minPlayers and playing <= maxPlayers) then
-                -- skip this server (out of requested range)
-            else
+        local populationAfterJoin = playing + 1
+        if server.id and tostring(server.id) ~= tostring(game.JobId)
+            and playing < capacity and populationAfterJoin <= capacity
+            and populationAfterJoin >= minPlayers and populationAfterJoin <= maxPlayers then
             -- queue this script to re-run on the destination and pass current settings via _G
             local ok2, cfgJson = pcall(function()
                 return HttpService:JSONEncode({
@@ -905,6 +822,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                     friendHop = SETTINGS.friendHop,
                     serverStayTime = SETTINGS.serverStayTime,
                     persistToggles = SETTINGS.persistToggles,
+                    hopRange = SETTINGS.hopRange,
                     spinSet = SETTINGS.spinSet,
                     spinSpeedMultiplier = SETTINGS.spinSpeedMultiplier,
                     helicopterEnabled = SETTINGS.helicopterEnabled,
@@ -915,7 +833,7 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                         goalBarTarget = SETTINGS.goalBarTarget,
                         emoteId = SETTINGS.emoteId,
                     emotePlaying = SETTINGS.emotePlaying and true or false,
-                    autoServerHop = autoServerHopEnabled,
+                    autoServerHop = SETTINGS.autoServerHop,
                 })
             end)
             local qcore = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/tengeXPLOITS/TengeOnTOP/refs/heads/main/pls_wait.lua"))()'
@@ -929,62 +847,83 @@ local function serverSearchAttempt(minPlayers, maxPlayers, fast)
                 ts:TeleportToPlaceInstance(PLACE_ID, server.id, LocalPlayer)
             end)
             if okt then
+                SETTINGS.serverHopStatus = ("Found a %d-player server; joining..."):format(populationAfterJoin)
                 return true
             else
                 local terrs = tostring(terr or "")
-                local lterrs = terrs:lower()
-                -- Robust detection for "GameFull" / Error 772 / raiseTeleportInitFailedEvent messages
-                local isGameFull = false
-                if lterrs:find("772") or lterrs:find("error code: 772") then isGameFull = true end
-                if lterrs:find("gamefull") or lterrs:find("game full") then isGameFull = true end
-                if lterrs:find("requested experience is full") or lterrs:find("requested experience") then isGameFull = true end
-                if lterrs:find("raiseteleportinitfail") or lterrs:find("raise teleport") or lterrs:find("raiseteleportinitfailedevent") then isGameFull = true end
-
-                if isGameFull then
-                    -- ensure qcode available; queue it again to be safe
-                    pcall(function() ensureQueuedScript(qcode) end)
-                    -- Kick the player so Roblox will attempt the queued script on rejoin
-                    task.spawn(function()
-                        task.wait(0.05)
-                        pcall(function() LocalPlayer:Kick("finding a suitable server for you") end)
-                    end)
-                    return false
-                end
-
-                if lterrs:find("teleport failed") then
-                    -- ignore and continue searching
-                else
-                    pcall(function() notify("Server Hop", ("Teleport error: %s"):format(terrs), 6) end)
-                end
-            end
+                pcall(function() notify("Server Hop", ("Teleport failed; retrying: %s"):format(terrs), 4) end)
             end
         end
     end
     return false
 end
 
--- Replace older serverHopNow with controller that can run one-shot or persistent
-local function serverHopNow(minPlayers, maxPlayers, persistent)
-    minPlayers = tonumber(minPlayers) or 19
-    maxPlayers = tonumber(maxPlayers) or 22
-    persistent = persistent == true
-    task.spawn(function()
-        local backoff = 0.3
-        local maxBackoff = 10
-        while true do
-            local ok = serverSearchAttempt(minPlayers, maxPlayers)
-            if ok then break end
-            if not persistent then
-                notify("Server Hop", "No suitable servers found.", 4)
-                break
+local activeHopTask = nil
+local lastHopMinPlayers, lastHopMaxPlayers = 19, 22
+local activeHopMinPlayers, activeHopMaxPlayers = 19, 22
+local function resolveHopRange(minPlayers, maxPlayers)
+    if minPlayers == nil or maxPlayers == nil then
+        local savedRange = tostring(SETTINGS.hopRange or "19-22"):lower():gsub("%s+", "")
+        if savedRange == "any" or savedRange == "" then
+            minPlayers, maxPlayers = 1, 24
+        else
+            local minText, maxText = savedRange:match("^(%d+)%-(%d+)$")
+            if minText and maxText then
+                minPlayers, maxPlayers = tonumber(minText), tonumber(maxText)
+            else
+                local exact = tonumber(savedRange)
+                minPlayers, maxPlayers = exact, exact
             end
-            -- safe exponential backoff with jitter to avoid rate limits
-            local jitter = math.random() * 0.4
-            task.wait(backoff + jitter)
-            backoff = math.min(maxBackoff, backoff * 1.5)
+        end
+    end
+    minPlayers = tonumber(minPlayers)
+    maxPlayers = tonumber(maxPlayers)
+    if not minPlayers or not maxPlayers then minPlayers, maxPlayers = 19, 22 end
+    minPlayers = math.clamp(math.floor(minPlayers), 1, 24)
+    maxPlayers = math.clamp(math.floor(maxPlayers), minPlayers, 24)
+    return minPlayers, maxPlayers
+end
+
+serverHopNow = function(minPlayers, maxPlayers, persistent)
+    minPlayers, maxPlayers = resolveHopRange(minPlayers, maxPlayers)
+    lastHopMinPlayers, lastHopMaxPlayers = minPlayers, maxPlayers
+    activeHopMinPlayers, activeHopMaxPlayers = minPlayers, maxPlayers
+    if activeHopTask then return activeHopTask end
+    activeHopTask = task.spawn(function()
+        local cycleAttempt = 0
+        while LocalPlayer and LocalPlayer.Parent do
+            cycleAttempt = (cycleAttempt % 5) + 1
+            local targetMin, targetMax = activeHopMinPlayers, activeHopMaxPlayers
+            SETTINGS.serverHopStatus = ("Searching for servers %d/5 · target %d–%d players"):format(cycleAttempt, targetMin, targetMax)
+            local searchCallOk, found = pcall(serverSearchAttempt, targetMin, targetMax, true)
+            if searchCallOk and found then
+                activeHopTask = nil
+                return
+            end
+            if not searchCallOk then
+                warn("[PLS WAIT] Server search failed:", found)
+            end
+            if cycleAttempt == 5 then
+                SETTINGS.serverHopStatus = ("No match in 5 searches; retrying for %d–%d players..."):format(activeHopMinPlayers, activeHopMaxPlayers)
+                task.wait(1)
+            else
+                task.wait(0.2)
+            end
+        end
+        activeHopTask = nil
+    end)
+    return activeHopTask
+end
+
+TeleportService.TeleportInitFailed:Connect(function(player, result, message, placeId)
+    if player ~= LocalPlayer or (placeId and tonumber(placeId) ~= PLACE_ID) then return end
+    SETTINGS.serverHopStatus = "Teleport failed; restarting preferred-server search..."
+    task.delay(0.5, function()
+        if LocalPlayer and LocalPlayer.Parent then
+            serverHopNow(lastHopMinPlayers, lastHopMaxPlayers, true)
         end
     end)
-end
+end)
 
 local function hookPlayer(player)
     if tryHookPlayerStat(player) then return end
@@ -1409,22 +1348,21 @@ end
 -- Global simple range parser used outside UI
 local function parseRangeGlobal(str)
     if not str or type(str) ~= "string" then return nil end
-    -- support formats: "MIN-MAX" or a single number meaning 1-MAX
+    -- support formats: "MIN-MAX" or one exact target population
     local a,b = str:match("%s*(%d+)%s*%-%s*(%d+)%s*")
     if a and b then
         local mn = tonumber(a)
         local mx = tonumber(b)
         if not mn or not mx then return nil end
-        if mn < 0 then mn = 0 end
+        if mn < 1 or mx > 24 then return nil end
         if mx < mn then return nil end
         return mn, mx
     end
     local single = str:match("%s*(%d+)%s*")
     if single then
-        local mx = tonumber(single)
-        if not mx then return nil end
-        if mx < 1 then return nil end
-        return 1, mx
+        local exact = tonumber(single)
+        if not exact or exact < 1 or exact > 24 then return nil end
+        return exact, exact
     end
     return nil
 end
